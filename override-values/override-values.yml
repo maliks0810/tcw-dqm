@@ -1,0 +1,30 @@
+
+useHostName: true
+useIngress: true
+useAutoScaling: false
+
+service:
+  serviceName: 'tcw-dqm'
+  ports:
+    - name: 'http'
+      protocol: 'TCP'
+      port: 80
+      targetPort: 80
+
+container:
+  port: 80
+
+livenessProbe:
+  port: 80
+  healthPath: '/'
+  initialDelaySeconds: 5
+  periodSeconds: 120
+
+ingress:
+  paths:
+    - path: "/"
+      pathType: "Prefix"
+      serviceName: 'tcw-dqm'
+      servicePort: 80
+
+

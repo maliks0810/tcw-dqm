@@ -1,0 +1,15 @@
+include:
+  - project: 'tcw-group/technology/platform-engineering/development-operations/cicd-configurations'
+    ref: 'main'
+    file: '/html/pipelines/x1/react.application.cloud.default.pipeline.yml'
+
+variables:
+  PROJECT_NAME: tcw-dqm
+  DOMAIN: dqm
+  DEPLOYMENT_NAME: tcw-dqm
+
+  ## AKS Tags ####################################################################################
+  APPLICATION_OWNER: 'data-management'
+  APPLICATION_TYPE: 'react'
+  APPLICATION_SENSITIVITY: 'confidential'
+  ################################################################################################
