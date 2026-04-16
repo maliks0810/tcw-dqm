@@ -1,3 +1,10 @@
 {
-    "environment": "DEV"
+    "environment": "DEV",
+    "okta": {
+        "issuer": "https://tcw.okta.com/oauth2/default",
+        "clientId": "",
+        "redirectUri": "http://localhost:8501/login/callback",
+        "scopes": ["openid", "profile", "email"],
+        "identityFieldInToken": "preferred_username"
+    }
 }

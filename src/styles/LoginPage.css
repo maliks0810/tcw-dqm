@@ -1,0 +1,308 @@
+/* =========================================================
+   TCW DQM – BEST UI (LEFT IMAGE + RIGHT PREMIUM PANEL)
+   ========================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.tcw-login-layout {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  overflow: hidden;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* =========================================================
+   LEFT (65%) – TCW BUILDING + BRAND OVERLAY + PARALLAX READY
+   ========================================================= */
+.tcw-login-left {
+  position: relative;
+  flex: 0 0 65%;
+  padding: clamp(24px, 4vw, 54px);
+  color: #ffffff;
+  overflow: hidden;
+
+  perspective: 1000px;
+
+  /* parallax vars */
+  --bg-x: 50%;
+  --bg-y: 50%;
+
+  /* 3D tilt vars */
+  --rx: 0deg;
+  --ry: 0deg;
+}
+
+/* Background image layer */
+.tcw-login-left::after {
+  content: "";
+  position: absolute;
+  inset: -6%;
+  z-index: 0;
+
+  background-image: url("../assets/tcw-building.jpg");
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: var(--bg-x) var(--bg-y);
+
+  /* make it crisp + premium */
+  transform: scale(1.04);
+  filter: contrast(1.08) saturate(1.05) brightness(1.03);
+
+  transition: background-position 120ms ease;
+}
+
+/* Brand overlay (balanced visibility) */
+.tcw-login-left::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+
+  background:
+    radial-gradient(900px 420px at 16% 20%, rgba(30, 136, 229, 0.18), transparent 60%),
+    radial-gradient(700px 350px at 86% 12%, rgba(0, 179, 184, 0.14), transparent 60%),
+    linear-gradient(135deg, rgba(11, 42, 92, 0.76), rgba(7, 26, 58, 0.82));
+}
+
+/* Inner content (tilts) */
+.tcw-left-inner {
+  position: relative;
+  z-index: 2;
+
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transform-style: preserve-3d;
+  transition: transform 160ms ease;
+
+  padding: clamp(18px, 2.2vw, 30px);
+  border-radius: 20px;
+
+  /* premium glass + border */
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.22);
+}
+
+.tcw-brand-logo {
+  width: 160px;
+  max-width: 60%;
+  margin: 0 0 14px 0;
+  transform: translateZ(18px);
+}
+
+.tcw-brand-title {
+  font-size: clamp(26px, 2.4vw, 40px);
+  font-weight: 900;
+  margin: 0 0 10px 0;
+  letter-spacing: 0.8px;
+  transform: translateZ(20px);
+}
+
+.tcw-brand-desc {
+  max-width: 560px;
+  font-size: clamp(13px, 1.1vw, 15px);
+  line-height: 1.6;
+  opacity: 0.95;
+  margin: 0;
+  transform: translateZ(14px);
+}
+
+.tcw-brand-pills {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  transform: translateZ(16px);
+}
+
+.tcw-pill {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  letter-spacing: 0.2px;
+}
+
+/* =========================================================
+   RIGHT (35%) – PREMIUM BACKGROUND + GLASS LOGIN CARD
+   ========================================================= */
+.tcw-login-right {
+  position: relative;
+  flex: 0 0 35%;
+  overflow: hidden;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* Elegant light panel gradient */
+  background: linear-gradient(180deg, #f9fbff 0%, #eef4ff 100%);
+}
+
+/* Decorative circles for right background (subtle, professional) */
+.tcw-login-right::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+
+  background:
+    radial-gradient(420px 280px at 20% 10%, rgba(30, 136, 229, 0.12), transparent 60%),
+    radial-gradient(360px 240px at 85% 18%, rgba(0, 179, 184, 0.12), transparent 60%),
+    radial-gradient(520px 320px at 45% 95%, rgba(11, 42, 92, 0.06), transparent 70%);
+}
+
+/* Login card (glass + crisp border) */
+.tcw-login-card {
+  position: relative;
+  z-index: 1;
+
+  width: min(410px, 88%);
+  padding: 30px 28px;
+  border-radius: 18px;
+
+  /* Glass effect on light panel */
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
+
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  box-shadow:
+    0 30px 70px rgba(2, 6, 23, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset;
+
+  text-align: left;
+}
+
+/* top area */
+.tcw-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.tcw-card-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+
+  color: #0b2a5c;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+
+  background: rgba(11, 42, 92, 0.08);
+  border: 1px solid rgba(11, 42, 92, 0.12);
+}
+
+.tcw-login-title {
+  font-size: 22px;
+  font-weight: 900;
+  margin: 0 0 6px 0;
+  color: #0f172a;
+}
+
+.tcw-login-subtitle {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  color: rgba(15, 23, 42, 0.70);
+}
+
+/* Button */
+.tcw-login-button {
+  width: 100%;
+  height: 48px;
+
+  margin: 18px 0 0 0;
+  padding: 0 14px;
+
+  border: none;
+  border-radius: 14px;
+
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+
+  color: #ffffff;
+  cursor: pointer;
+
+  background: linear-gradient(135deg, #1e88e5 0%, #00b3b8 100%);
+  box-shadow: 0 12px 28px rgba(30, 136, 229, 0.20);
+
+  transition: transform 0.08s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tcw-login-button:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 14px 34px rgba(30, 136, 229, 0.24);
+}
+
+.tcw-login-button:active {
+  transform: translateY(1px);
+}
+
+.tcw-login-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  box-shadow: none;
+}
+
+/* helper + footer */
+.tcw-login-helper {
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.64);
+}
+
+.tcw-login-footer {
+  margin-top: 18px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.52);
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width: 900px) {
+  .tcw-login-layout {
+    flex-direction: column;
+  }
+
+  .tcw-login-left,
+  .tcw-login-right {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .tcw-login-left {
+    padding: 24px 18px;
+    perspective: 700px;
+  }
+
+  .tcw-left-inner {
+    transform: none; /* disable tilt on small screens */
+  }
+
+  .tcw-login-card {
+    text-align: center;
+  }
+
+  .tcw-card-top {
+    justify-content: center;
+    text-align: left;
+  }
+}
