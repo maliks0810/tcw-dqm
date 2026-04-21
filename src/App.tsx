@@ -6,8 +6,20 @@ import LoginCallbackPage from "./features/auth/pages/LoginCallback";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
 import Home from "./features/home/pages/Home";
 import DqMonitorPage from "./features/dq-monitor/pages/DqMonitorPage";
+import { USE_OKTA } from "./services/auth-mode";
 
 export default function App() {
+  if (!USE_OKTA) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<DqMonitorPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
   return (
     <OktaProvider>
       <BrowserRouter>
@@ -25,7 +37,7 @@ export default function App() {
           />
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes> 
+        </Routes>
       </BrowserRouter>
     </OktaProvider>
   );
