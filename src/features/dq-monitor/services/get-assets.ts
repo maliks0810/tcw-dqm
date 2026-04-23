@@ -61,5 +61,10 @@ export async function fetchAssets(signal?: AbortSignal): Promise<SecurityRow[]> 
   if (!Array.isArray(raw)) {
     throw new Error("getAssets: expected array response");
   }
-  return raw.map(toSecurityRow);
+  const sorted = raw.slice().sort((a, b) => {
+    const ta = a.exception_date ? new Date(a.exception_date).getTime() : 0;
+    const tb = b.exception_date ? new Date(b.exception_date).getTime() : 0;
+    return tb - ta;
+  });
+  return sorted.map(toSecurityRow);
 }

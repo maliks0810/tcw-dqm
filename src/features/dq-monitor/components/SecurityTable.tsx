@@ -5,6 +5,8 @@ type SecurityTableProps = {
   data: SecurityRow[];
   selectedRow: number | null;
   onRowSelect: (index: number) => void;
+  assigneeOptions: string[];
+  onAssignToChange: (index: number, value: string) => void;
 };
 
 function getPriorityClass(priority: string): string {
@@ -20,10 +22,14 @@ function getPriorityClass(priority: string): string {
   }
 }
 
+const UNASSIGNED_LABEL = "— Unassigned —";
+
 export default function SecurityTable({
   data,
   selectedRow,
   onRowSelect,
+  assigneeOptions,
+  onAssignToChange,
 }: SecurityTableProps) {
   return (
     <div className="dq-table-container">
@@ -35,7 +41,7 @@ export default function SecurityTable({
             <th>Severity</th>
             <th>Type</th>
             <th>Assign To</th>
-            <th>Aladdin ID</th>
+            <th>Asset Id</th>
             <th>FIGI</th>
             <th>Security Description</th>
             <th>Trader</th>
@@ -47,38 +53,63 @@ export default function SecurityTable({
         </thead>
 
         <tbody>
-          {data.map((row, index) => (
-            <tr
-              key={`${row.aladdinId}-${index}`}
-              onClick={() => onRowSelect(index)}
-              className={[
-                "dq-table-row",
-                selectedRow === index
-                  ? "dq-table-row-selected"
-                  : index % 2 === 0
-                  ? "dq-table-row-even"
-                  : "dq-table-row-odd",
-              ].join(" ")}
-            >
-              <td>{row.dateTime}</td>
-              <td>
-                <span className={getPriorityClass(row.priority)}>{row.priority}</span>
-              </td>
-              <td>{row.severity}</td>
-              <td>{row.type}</td>
-              <td>{row.assignTo}</td>
-              <td>{row.aladdinId}</td>
-              <td>{row.figi}</td>
-              <td>{row.securityDescription}</td>
-              <td>{row.trader}</td>
-              <td>{row.tradingTeam}</td>
-              <td>{row.exceptionCount}</td>
-              <td>{row.bbgLastRefresh}</td>
-              <td>
-                <input type="checkbox" checked={row.triggerBbg} readOnly />
-              </td>
-            </tr>
-          ))}
+          {data.map((row, index) => {
+            const currentAssignee = row.assignTo ?? "";
+            const optionSet = new Set(assigneeOptions);
+            if (currentAssignee) optionSet.add(currentAssignee);
+            const options = Array.from(optionSet).sort((a, b) =>
+              a.localeCompare(b)
+            );
+
+            return (
+              <tr
+                key={`${row.aladdinId}-${index}`}
+                onClick={() => onRowSelect(index)}
+                className={[
+                  "dq-table-row",
+                  selectedRow === index
+                    ? "dq-table-row-selected"
+                    : index % 2 === 0
+                    ? "dq-table-row-even"
+                    : "dq-table-row-odd",
+                ].join(" ")}
+              >
+                <td>{row.dateTime}</td>
+                <td>
+                  <span className={getPriorityClass(row.priority)}>
+                    {row.priority}
+                  </span>
+                </td>
+                <td>{row.severity}</td>
+                <td>{row.type}</td>
+                <td>
+                  <select
+                    className="dq-assign-select"
+                    value={currentAssignee}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => onAssignToChange(index, e.target.value)}
+                  >
+                    <option value="">{UNASSIGNED_LABEL}</option>
+                    {options.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>{row.aladdinId}</td>
+                <td>{row.figi}</td>
+                <td>{row.securityDescription}</td>
+                <td>{row.trader}</td>
+                <td>{row.tradingTeam}</td>
+                <td>{row.exceptionCount}</td>
+                <td>{row.bbgLastRefresh}</td>
+                <td>
+                  <input type="checkbox" checked={row.triggerBbg} readOnly />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

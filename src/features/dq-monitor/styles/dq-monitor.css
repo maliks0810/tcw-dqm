@@ -213,6 +213,18 @@
   color: #6d28d9;
 }
 
+.dq-assign-select {
+  width: 100%;
+  min-width: 120px;
+  padding: 2px 6px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
 .dq-empty-state {
   padding: 24px;
   text-align: center;
