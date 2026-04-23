@@ -43,8 +43,8 @@
 
 .dq-header-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 18px;
+  font-weight: 700;
   color: #111827;
   line-height: 1.2;
 }
@@ -136,11 +136,12 @@
 .dq-table th,
 .dq-table td {
   border: 1px solid #9ca3af;
-  padding: 8px 10px;
+  padding: 6px 10px;
   font-size: 13px;
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
 .dq-table th {
