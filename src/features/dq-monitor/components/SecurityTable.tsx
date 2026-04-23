@@ -51,7 +51,6 @@ export default function SecurityTable({
             <tr
               key={`${row.aladdinId}-${index}`}
               onClick={() => onRowSelect(index)}
-              onMouseEnter={() => onRowSelect(index)}
               className={[
                 "dq-table-row",
                 selectedRow === index
