@@ -6,7 +6,7 @@ const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/
 
 type ApiException = {
   security_exception_id?: number;
-  rule_id?: number;
+  rule_name?: string;
   aladdin_id?: string;
   run_date?: string;
   run_start?: string;
@@ -45,7 +45,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
   return {
     dateTime: formatDateTime(e.run_date),
     priority: e.severity_type_id != null ? String(e.severity_type_id) : "",
-    ruleName: e.rule_id != null ? `Rule ${e.rule_id}` : "",
+    ruleName: e.rule_name != null ? `Rule ${e.rule_name}` : "",
     issue: e.issue_description ?? "",
     aladdin: "",
     vendor: "",
