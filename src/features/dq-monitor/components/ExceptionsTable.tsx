@@ -36,7 +36,7 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
             <th>Priority</th>
             <th>Rule Name</th>
             <th>Issue</th>
-            <th>Aladdin</th>
+            <th>Asset Id</th>
             <th>Vendor</th>
             <th>Action</th>
             <th>Comments</th>

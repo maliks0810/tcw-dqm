@@ -69,5 +69,10 @@ export async function fetchSecurityExceptions(
   if (!Array.isArray(raw)) {
     throw new Error("getSecurityExceptions: expected array response");
   }
-  return raw.map(toExceptionRow);
+  const sorted = raw.slice().sort((a, b) => {
+    const ta = a.run_date ? new Date(a.run_date).getTime() : 0;
+    const tb = b.run_date ? new Date(b.run_date).getTime() : 0;
+    return tb - ta;
+  });
+  return sorted.map(toExceptionRow);
 }

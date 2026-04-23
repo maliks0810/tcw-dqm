@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
@@ -36,6 +36,23 @@ export default function DqMonitorPage() {
 
   const selectedAladdinId =
     selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
+
+  const assigneeOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const a of assets) {
+      if (a.assignTo) names.add(a.assignTo);
+    }
+    return Array.from(names).sort((x, y) => x.localeCompare(y));
+  }, [assets]);
+
+  const handleAssignToChange = (index: number, value: string) => {
+    setAssets((prev) => {
+      if (!prev[index] || prev[index].assignTo === value) return prev;
+      const next = prev.slice();
+      next[index] = { ...next[index], assignTo: value };
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!selectedAladdinId) {
@@ -77,6 +94,8 @@ export default function DqMonitorPage() {
             data={assets}
             selectedRow={selectedRow}
             onRowSelect={setSelectedRow}
+            assigneeOptions={assigneeOptions}
+            onAssignToChange={handleAssignToChange}
           />
         )}
       </section>
