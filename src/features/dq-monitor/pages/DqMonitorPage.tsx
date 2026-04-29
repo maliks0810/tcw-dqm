@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
+import { subscribeToEvents } from "../services/stream-events";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
@@ -17,6 +18,24 @@ export default function DqMonitorPage() {
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const selectedAladdinId =
+    selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
+
+  const selectedAladdinRef = useRef<string>("");
+  useEffect(() => {
+    selectedAladdinRef.current = selectedAladdinId;
+  }, [selectedAladdinId]);
+
+  useEffect(() => {
+    return subscribeToEvents((event) => {
+      if (event.type === "security_exception.inserted") {
+        setRefreshTick((n) => n + 1);
+      }
+    });
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -24,6 +43,11 @@ export default function DqMonitorPage() {
     fetchAssets(controller.signal)
       .then((rows) => {
         setAssets(rows);
+        const wantedAladdin = selectedAladdinRef.current;
+        if (wantedAladdin) {
+          const idx = rows.findIndex((r) => r.aladdinId === wantedAladdin);
+          setSelectedRow(idx >= 0 ? idx : null);
+        }
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -32,10 +56,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, []);
-
-  const selectedAladdinId =
-    selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
+  }, [refreshTick]);
 
   const assigneeOptions = useMemo(() => {
     const names = new Set<string>();
@@ -75,7 +96,7 @@ export default function DqMonitorPage() {
         setExceptionsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedAladdinId]);
+  }, [selectedAladdinId, refreshTick]);
 
   return (
     <div className="dq-page">
