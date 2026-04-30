@@ -16,8 +16,14 @@ export function subscribeToEvents(handler: EventHandler): () => void {
 
   const onSecurityExceptionInserted = (e: MessageEvent) => {
     try {
-      const payload = JSON.parse(e.data);
-      handler({ type: "security_exception.inserted", payload });
+      const parsed = JSON.parse(e.data) as {
+        type?: DomainEventType;
+        payload?: unknown;
+      };
+      handler({
+        type: "security_exception.inserted",
+        payload: parsed.payload ?? parsed,
+      });
     } catch {
       // ignore malformed event payloads
     }

@@ -175,6 +175,36 @@
   background: #dbeafe;
 }
 
+@keyframes dq-row-blink {
+  0%, 100% {
+    background: #fef3c7;
+  }
+  50% {
+    background: #fde68a;
+  }
+}
+
+.dq-table-row-blinking td {
+  animation: dq-row-blink 0.9s ease-in-out infinite;
+}
+
+.dq-status-bar {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  padding: 6px 12px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 12px;
+  font-family: Consolas, "Courier New", monospace;
+  border-top-right-radius: 6px;
+  z-index: 10;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dq-badge {
   display: inline-block;
   padding: 4px 10px;
