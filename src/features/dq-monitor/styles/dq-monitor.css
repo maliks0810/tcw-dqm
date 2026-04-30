@@ -177,10 +177,10 @@
 
 @keyframes dq-row-blink {
   0%, 100% {
-    background: #fef3c7;
+    background: #fee2e2;
   }
   50% {
-    background: #fde68a;
+    background: #fecaca;
   }
 }
 
