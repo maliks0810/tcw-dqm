@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
+import { subscribeToEvents } from "../services/stream-events";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
@@ -17,6 +18,89 @@ export default function DqMonitorPage() {
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [lastEvent, setLastEvent] = useState<{
+    aladdinId: string;
+    ruleId: string;
+    receivedAt: string;
+  } | null>(null);
+  const [blinkingAladdinId, setBlinkingAladdinId] = useState<string | null>(
+    null
+  );
+
+  const originalTitleRef = useRef<string>(
+    typeof document !== "undefined" ? document.title : ""
+  );
+  const titleBlinkRef = useRef<number | null>(null);
+
+  const stopTitleBlink = () => {
+    if (titleBlinkRef.current != null) {
+      window.clearInterval(titleBlinkRef.current);
+      titleBlinkRef.current = null;
+    }
+    document.title = originalTitleRef.current;
+  };
+
+  const startTitleBlink = () => {
+    if (titleBlinkRef.current != null) return;
+    let alt = false;
+    titleBlinkRef.current = window.setInterval(() => {
+      document.title = alt ? originalTitleRef.current : "🔔 New exception";
+      alt = !alt;
+    }, 800);
+  };
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) stopTitleBlink();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", stopTitleBlink);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", stopTitleBlink);
+      stopTitleBlink();
+    };
+  }, []);
+
+  const selectedAladdinId =
+    selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
+
+  const selectedAladdinRef = useRef<string>("");
+  useEffect(() => {
+    selectedAladdinRef.current = selectedAladdinId;
+  }, [selectedAladdinId]);
+
+  useEffect(() => {
+    return subscribeToEvents((event) => {
+      if (event.type === "security_exception.inserted") {
+        const payload = (event.payload ?? {}) as {
+          aladdin_id?: string;
+          rule_id?: string | number;
+        };
+        const aladdinId = payload.aladdin_id ?? "";
+        const ruleId =
+          payload.rule_id != null ? String(payload.rule_id) : "";
+        setLastEvent({
+          aladdinId,
+          ruleId,
+          receivedAt: new Date().toLocaleTimeString(),
+        });
+        if (aladdinId) setBlinkingAladdinId(aladdinId);
+        if (document.hidden) startTitleBlink();
+        setRefreshTick((n) => n + 1);
+      }
+    });
+  }, []);
+
+  const handleRowSelect = (index: number) => {
+    setSelectedRow(index);
+    const clicked = assets[index]?.aladdinId;
+    if (clicked && clicked === blinkingAladdinId) {
+      setBlinkingAladdinId(null);
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -24,6 +108,11 @@ export default function DqMonitorPage() {
     fetchAssets(controller.signal)
       .then((rows) => {
         setAssets(rows);
+        const wantedAladdin = selectedAladdinRef.current;
+        if (wantedAladdin) {
+          const idx = rows.findIndex((r) => r.aladdinId === wantedAladdin);
+          setSelectedRow(idx >= 0 ? idx : null);
+        }
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -32,10 +121,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, []);
-
-  const selectedAladdinId =
-    selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
+  }, [refreshTick]);
 
   const assigneeOptions = useMemo(() => {
     const names = new Set<string>();
@@ -75,7 +161,7 @@ export default function DqMonitorPage() {
         setExceptionsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedAladdinId]);
+  }, [selectedAladdinId, refreshTick]);
 
   return (
     <div className="dq-page">
@@ -93,9 +179,10 @@ export default function DqMonitorPage() {
           <SecurityTable
             data={assets}
             selectedRow={selectedRow}
-            onRowSelect={setSelectedRow}
+            onRowSelect={handleRowSelect}
             assigneeOptions={assigneeOptions}
             onAssignToChange={handleAssignToChange}
+            blinkingAladdinId={blinkingAladdinId}
           />
         )}
       </section>
@@ -121,6 +208,12 @@ export default function DqMonitorPage() {
 
         <ExceptionsTable data={exceptions} />
       </section>
+
+      <div className="dq-status-bar">
+        {lastEvent
+          ? `Aladdin_id = ${lastEvent.aladdinId}, RuleId = ${lastEvent.ruleId}, Received at ${lastEvent.receivedAt}`
+          : "Idle"}
+      </div>
     </div>
   );
 }

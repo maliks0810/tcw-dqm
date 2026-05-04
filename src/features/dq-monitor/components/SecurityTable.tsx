@@ -7,6 +7,7 @@ type SecurityTableProps = {
   onRowSelect: (index: number) => void;
   assigneeOptions: string[];
   onAssignToChange: (index: number, value: string) => void;
+  blinkingAladdinId?: string | null;
 };
 
 function getPriorityClass(priority: string): string {
@@ -30,6 +31,7 @@ export default function SecurityTable({
   onRowSelect,
   assigneeOptions,
   onAssignToChange,
+  blinkingAladdinId,
 }: SecurityTableProps) {
   return (
     <div className="dq-table-container">
@@ -61,6 +63,8 @@ export default function SecurityTable({
               a.localeCompare(b)
             );
 
+            const isBlinking =
+              !!blinkingAladdinId && row.aladdinId === blinkingAladdinId;
             return (
               <tr
                 key={`${row.aladdinId}-${index}`}
@@ -72,7 +76,10 @@ export default function SecurityTable({
                     : index % 2 === 0
                     ? "dq-table-row-even"
                     : "dq-table-row-odd",
-                ].join(" ")}
+                  isBlinking ? "dq-table-row-blinking" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 <td>{row.dateTime}</td>
                 <td>
