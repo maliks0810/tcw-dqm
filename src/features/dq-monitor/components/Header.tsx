@@ -2,7 +2,11 @@ import React, { useEffect, useState } from "react";
 import { useOktaAuth } from "@okta/okta-react";
 import { USE_OKTA } from "../../../services/auth-mode";
 
-export default function Header() {
+type HeaderProps = {
+  onExportClick?: () => void;
+};
+
+export default function Header({ onExportClick }: HeaderProps = {}) {
   const oktaCtx = useOktaAuth();
   const oktaAuth = oktaCtx?.oktaAuth;
   const authState = oktaCtx?.authState;
@@ -48,6 +52,15 @@ export default function Header() {
       </div>
 
       <div className="dq-header-right">
+        {onExportClick && (
+          <button
+            className="dq-export-btn"
+            type="button"
+            onClick={onExportClick}
+          >
+            Export to Excel
+          </button>
+        )}
         <div className="dq-user">👤 {user}</div>
         {USE_OKTA && (
           <button className="dq-logout-btn" onClick={handleLogout}>

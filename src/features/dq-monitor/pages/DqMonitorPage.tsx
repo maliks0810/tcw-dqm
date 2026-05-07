@@ -6,6 +6,7 @@ import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
 import { subscribeToEvents } from "../services/stream-events";
+import { exportAssetsToExcel } from "../../../utils/export-to-excel";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
@@ -27,6 +28,16 @@ export default function DqMonitorPage() {
   const [blinkingAladdinId, setBlinkingAladdinId] = useState<string | null>(
     null
   );
+
+  const [severity, setSeverity] = useState<string>("Trading");
+  const [dqmType, setDqmType] = useState<string>("Security Setup");
+  const [priority, setPriority] = useState<string>("High");
+  const [assignToFilter, setAssignToFilter] = useState<string>("Paul Cohen");
+  const [viewMode, setViewMode] = useState<"security" | "group" | "rule">(
+    "security"
+  );
+  const [viewByGroup, setViewByGroup] = useState<string>("All");
+  const [viewByRule, setViewByRule] = useState<string>("All");
 
   const originalTitleRef = useRef<string>(
     typeof document !== "undefined" ? document.title : ""
@@ -165,49 +176,152 @@ export default function DqMonitorPage() {
 
   return (
     <div className="dq-page">
-      <Header />
+      <Header onExportClick={() => exportAssetsToExcel(assets)} />
 
-      <section className="dq-section">
-        <h2 className="dq-section-title">Assets</h2>
-        {loading && <div className="dq-section-subtitle">Loading assets…</div>}
-        {error && (
-          <div className="dq-section-subtitle" style={{ color: "crimson" }}>
-            Failed to load assets: {error}
-          </div>
-        )}
-        {!loading && !error && (
-          <SecurityTable
-            data={assets}
-            selectedRow={selectedRow}
-            onRowSelect={handleRowSelect}
-            assigneeOptions={assigneeOptions}
-            onAssignToChange={handleAssignToChange}
-            blinkingAladdinId={blinkingAladdinId}
-          />
-        )}
-      </section>
+      <div className="dq-body">
+        <aside className="dq-sidebar">
+          <h3 className="dq-sidebar-title">DQM Type</h3>
+          <select
+            className="dq-sidebar-select"
+            value={dqmType}
+            onChange={(e) => setDqmType(e.target.value)}
+          >
+            <option value="Security Setup">Security Setup</option>
+            <option value="SOD">SOD</option>
+            <option value="EOD">EOD</option>
+          </select>
 
-      <section className="dq-section">
-        <h2 className="dq-section-title">Exceptions</h2>
+          <h3 className="dq-sidebar-title">Severity</h3>
+          <select
+            className="dq-sidebar-select"
+            value={severity}
+            onChange={(e) => setSeverity(e.target.value)}
+          >
+            <option value="Trading">Trading</option>
+            <option value="Compliance">Compliance</option>
+            <option value="Settlements">Settlements</option>
+            <option value="Reporting">Reporting</option>
+          </select>
 
-        {selectedRow !== null && assets[selectedRow] && (
-          <div className="dq-section-subtitle dq-asset-title">
-            {assets[selectedRow].securityDescription} —{" "}
-            {assets[selectedRow].aladdinId}
-            {exceptionsLoading
-              ? " (loading…)"
-              : ` (${exceptions.length} exceptions)`}
-          </div>
-        )}
+          <h3 className="dq-sidebar-title">Priority</h3>
+          <select
+            className="dq-sidebar-select"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          >
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
 
-        {exceptionsError && (
-          <div className="dq-section-subtitle" style={{ color: "crimson" }}>
-            Failed to load exceptions: {exceptionsError}
-          </div>
-        )}
+          <h3 className="dq-sidebar-title">Assign To</h3>
+          <select
+            className="dq-sidebar-select"
+            value={assignToFilter}
+            onChange={(e) => setAssignToFilter(e.target.value)}
+          >
+            <option value="Paul Cohen">Paul Cohen</option>
+            <option value="Jake Rigney">Jake Rigney</option>
+            <option value="Anush Safaryan">Anush Safaryan</option>
+            <option value="Jimmy Fu">Jimmy Fu</option>
+            <option value="Natasha Cabrera">Natasha Cabrera</option>
+          </select>
 
-        <ExceptionsTable data={exceptions} />
-      </section>
+          <button
+            className="dq-sidebar-button"
+            type="button"
+            onClick={() => setViewMode("group")}
+          >
+            View by Group
+          </button>
+
+          <select
+            className="dq-sidebar-select"
+            value={viewByGroup}
+            onChange={(e) => setViewByGroup(e.target.value)}
+          >
+            <option value="All">All</option>
+            <option value="Bloomberg Compare">Bloomberg Compare</option>
+            <option value="Miscellaneos">Miscellaneos</option>
+          </select>
+
+          <button
+            className="dq-sidebar-button"
+            type="button"
+            onClick={() => setViewMode("rule")}
+          >
+            View by Rule
+          </button>
+
+          <select
+            className="dq-sidebar-select"
+            value={viewByRule}
+            onChange={(e) => setViewByRule(e.target.value)}
+          >
+            <option value="All">All</option>
+            <option value="Rule_Registration">Rule_Registration</option>
+          </select>
+
+          <button
+            className="dq-sidebar-button"
+            type="button"
+            onClick={() => setViewMode("security")}
+          >
+            View by Security
+          </button>
+        </aside>
+
+        <div className="dq-main">
+          {viewMode === "security" && (
+            <section className="dq-section">
+              <h2 className="dq-section-title">Assets</h2>
+              {loading && (
+                <div className="dq-section-subtitle">Loading assets…</div>
+              )}
+              {error && (
+                <div
+                  className="dq-section-subtitle"
+                  style={{ color: "crimson" }}
+                >
+                  Failed to load assets: {error}
+                </div>
+              )}
+              {!loading && !error && (
+                <SecurityTable
+                  data={assets}
+                  selectedRow={selectedRow}
+                  onRowSelect={handleRowSelect}
+                  assigneeOptions={assigneeOptions}
+                  onAssignToChange={handleAssignToChange}
+                  blinkingAladdinId={blinkingAladdinId}
+                />
+              )}
+            </section>
+          )}
+
+          <section className="dq-section">
+            <h2 className="dq-section-title">Exceptions</h2>
+
+            {selectedRow !== null && assets[selectedRow] && (
+              <div className="dq-section-subtitle dq-asset-title">
+                {assets[selectedRow].securityDescription} —{" "}
+                {assets[selectedRow].aladdinId}
+                {exceptionsLoading
+                  ? " (loading…)"
+                  : ` (${exceptions.length} exceptions)`}
+              </div>
+            )}
+
+            {exceptionsError && (
+              <div className="dq-section-subtitle" style={{ color: "crimson" }}>
+                Failed to load exceptions: {exceptionsError}
+              </div>
+            )}
+
+            <ExceptionsTable data={exceptions} />
+          </section>
+        </div>
+      </div>
 
       <div className="dq-status-bar">
         {lastEvent
