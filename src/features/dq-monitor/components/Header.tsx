@@ -36,19 +36,11 @@ export default function Header({ onExportClick }: HeaderProps = {}) {
   return (
     <div className="dq-header">
       <div className="dq-header-left">
-        <div className="dq-header-brand">TCW</div>
+        {USE_OKTA && <div className="dq-header-brand">TCW</div>}
       </div>
 
       <div className="dq-header-title-wrap">
         <h1 className="dq-header-title">DATA QUALITY MONITOR</h1>
-        <div className="dq-header-date">
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        </div>
       </div>
 
       <div className="dq-header-right">
@@ -61,11 +53,13 @@ export default function Header({ onExportClick }: HeaderProps = {}) {
             Export to Excel
           </button>
         )}
-        <div className="dq-user">👤 {user}</div>
         {USE_OKTA && (
-          <button className="dq-logout-btn" onClick={handleLogout}>
-            Logout
-          </button>
+          <>
+            <div className="dq-user">👤 {user}</div>
+            <button className="dq-logout-btn" onClick={handleLogout}>
+              Logout
+            </button>
+          </>
         )}
       </div>
     </div>

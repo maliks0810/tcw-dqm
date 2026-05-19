@@ -86,10 +86,10 @@ export default function DqMonitorPage() {
     return subscribeToEvents((event) => {
       if (event.type === "security_exception.inserted") {
         const payload = (event.payload ?? {}) as {
-          aladdin_id?: string;
+          asset_id?: string;
           rule_id?: string | number;
         };
-        const aladdinId = payload.aladdin_id ?? "";
+        const aladdinId = payload.asset_id ?? "";
         const ruleId =
           payload.rule_id != null ? String(payload.rule_id) : "";
         setLastEvent({
@@ -326,7 +326,7 @@ export default function DqMonitorPage() {
       <div className="dq-status-bar">
         {lastEvent
           ? `Aladdin_id = ${lastEvent.aladdinId}, RuleId = ${lastEvent.ruleId}, Received at ${lastEvent.receivedAt}`
-          : "Idle"}
+          : ""}
       </div>
     </div>
   );

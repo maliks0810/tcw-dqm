@@ -7,7 +7,7 @@ const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/
 type ApiException = {
   security_exception_id?: number;
   rule_name?: string;
-  aladdin_id?: string;
+  asset_id?: string;
   run_date?: string;
   run_start?: string;
   result_type_id?: number;
@@ -55,10 +55,10 @@ function toExceptionRow(e: ApiException): ExceptionRow {
 }
 
 export async function fetchSecurityExceptions(
-  aladdinId: string,
+  assetId: string,
   signal?: AbortSignal
 ): Promise<ExceptionRow[]> {
-  const url = `${EXCEPTIONS_ENDPOINT}?aladdin_id=${encodeURIComponent(aladdinId)}`;
+  const url = `${EXCEPTIONS_ENDPOINT}?asset_id=${encodeURIComponent(assetId)}`;
   const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(
