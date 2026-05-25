@@ -52,8 +52,19 @@ function toSecurityRow(a: ApiAsset): SecurityRow {
   };
 }
 
-export async function fetchAssets(signal?: AbortSignal): Promise<SecurityRow[]> {
-  const res = await fetch(ASSETS_ENDPOINT, { signal });
+export async function fetchAssets(
+  signal?: AbortSignal,
+  exceptionType?: string,
+  severity?: string,
+  priority?: string
+): Promise<SecurityRow[]> {
+  const params = new URLSearchParams();
+  if (exceptionType) params.set("exception_type", exceptionType);
+  if (severity && severity !== "All") params.set("severity", severity);
+  if (priority && priority !== "All") params.set("priority", priority);
+  const qs = params.toString();
+  const url = qs ? `${ASSETS_ENDPOINT}?${qs}` : ASSETS_ENDPOINT;
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`getAssets failed: ${res.status} ${res.statusText}`);
   }

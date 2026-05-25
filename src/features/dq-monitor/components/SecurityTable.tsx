@@ -10,19 +10,6 @@ type SecurityTableProps = {
   blinkingAladdinId?: string | null;
 };
 
-function getPriorityClass(priority: string): string {
-  switch (priority.toLowerCase()) {
-    case "high":
-      return "dq-badge dq-badge-red";
-    case "medium":
-      return "dq-badge dq-badge-yellow";
-    case "low":
-      return "dq-badge dq-badge-green";
-    default:
-      return "dq-badge dq-badge-gray";
-  }
-}
-
 const UNASSIGNED_LABEL = "— Unassigned —";
 
 export default function SecurityTable({
@@ -82,11 +69,7 @@ export default function SecurityTable({
                   .join(" ")}
               >
                 <td>{row.dateTime}</td>
-                <td>
-                  <span className={getPriorityClass(row.priority)}>
-                    {row.priority}
-                  </span>
-                </td>
+                <td>{row.priority}</td>
                 <td>{row.severity}</td>
                 <td>{row.type}</td>
                 <td>

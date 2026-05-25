@@ -5,6 +5,9 @@ import ExceptionsTable from "../components/ExceptionsTable";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
+import { fetchExceptionTypes } from "../services/get-exception-types";
+import { fetchSeverityTypes } from "../services/get-severity-type";
+import { fetchPriorityTypes } from "../services/get-priority-type";
 import { subscribeToEvents } from "../services/stream-events";
 import { exportAssetsToExcel } from "../../../utils/export-to-excel";
 import "../styles/dq-monitor.css";
@@ -29,9 +32,12 @@ export default function DqMonitorPage() {
     null
   );
 
-  const [severity, setSeverity] = useState<string>("Trading");
+  const [severity, setSeverity] = useState<string>("All");
+  const [severityOptions, setSeverityOptions] = useState<string[]>([]);
   const [dqmType, setDqmType] = useState<string>("Security Setup");
-  const [priority, setPriority] = useState<string>("High");
+  const [exceptionTypes, setExceptionTypes] = useState<string[]>([]);
+  const [priority, setPriority] = useState<string>("All");
+  const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("Paul Cohen");
   const [viewMode, setViewMode] = useState<"security" | "group" | "rule">(
     "security"
@@ -83,6 +89,42 @@ export default function DqMonitorPage() {
   }, [selectedAladdinId]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetchExceptionTypes(controller.signal)
+      .then((codes) => {
+        setExceptionTypes(codes);
+        if (codes.length === 0) return;
+        setDqmType((current) =>
+          codes.includes(current) ? current : codes[0]
+        );
+      })
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSeverityTypes(controller.signal)
+      .then((codes) => setSeverityOptions(codes))
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPriorityTypes(controller.signal)
+      .then((codes) => setPriorityOptions(codes))
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     return subscribeToEvents((event) => {
       if (event.type === "security_exception.inserted") {
         const payload = (event.payload ?? {}) as {
@@ -116,7 +158,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchAssets(controller.signal)
+    fetchAssets(controller.signal, dqmType, severity, priority)
       .then((rows) => {
         setAssets(rows);
         const wantedAladdin = selectedAladdinRef.current;
@@ -132,7 +174,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick]);
+  }, [refreshTick, dqmType, severity, priority]);
 
   const assigneeOptions = useMemo(() => {
     const names = new Set<string>();
@@ -161,7 +203,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setExceptionsLoading(true);
     setExceptionsError(null);
-    fetchSecurityExceptions(selectedAladdinId, controller.signal)
+    fetchSecurityExceptions(selectedAladdinId, controller.signal, dqmType, severity, priority)
       .then((rows) => {
         setExceptions(rows);
         setExceptionsLoading(false);
@@ -172,7 +214,7 @@ export default function DqMonitorPage() {
         setExceptionsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedAladdinId, refreshTick]);
+  }, [selectedAladdinId, refreshTick, dqmType, severity, priority]);
 
   return (
     <div className="dq-page">
@@ -180,15 +222,18 @@ export default function DqMonitorPage() {
 
       <div className="dq-body">
         <aside className="dq-sidebar">
-          <h3 className="dq-sidebar-title">DQM Type</h3>
+          <h3 className="dq-sidebar-title">Type</h3>
           <select
             className="dq-sidebar-select"
             value={dqmType}
             onChange={(e) => setDqmType(e.target.value)}
           >
-            <option value="Security Setup">Security Setup</option>
-            <option value="SOD">SOD</option>
-            <option value="EOD">EOD</option>
+            <option value="">All</option>
+            {exceptionTypes.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
           </select>
 
           <h3 className="dq-sidebar-title">Severity</h3>
@@ -197,10 +242,12 @@ export default function DqMonitorPage() {
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
           >
-            <option value="Trading">Trading</option>
-            <option value="Compliance">Compliance</option>
-            <option value="Settlements">Settlements</option>
-            <option value="Reporting">Reporting</option>
+            <option value="All">All</option>
+            {severityOptions.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
           </select>
 
           <h3 className="dq-sidebar-title">Priority</h3>
@@ -209,9 +256,12 @@ export default function DqMonitorPage() {
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
           >
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
+            <option value="All">All</option>
+            {priorityOptions.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
           </select>
 
           <h3 className="dq-sidebar-title">Assign To</h3>

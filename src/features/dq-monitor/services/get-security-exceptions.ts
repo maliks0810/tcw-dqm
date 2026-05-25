@@ -6,7 +6,9 @@ const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/
 
 type ApiException = {
   security_exception_id?: number;
+  rule_id?: number;
   rule_name?: string;
+  priority?: string;
   asset_id?: string;
   run_date?: string;
   run_start?: string;
@@ -42,12 +44,18 @@ function formatDateTime(iso?: string): string {
 }
 
 function toExceptionRow(e: ApiException): ExceptionRow {
+  const ruleLabel =
+    e.rule_name && e.rule_name.length > 0
+      ? e.rule_name
+      : e.rule_id != null
+      ? String(e.rule_id)
+      : "";
   return {
     dateTime: formatDateTime(e.run_date),
-    priority: e.severity_type_id != null ? String(e.severity_type_id) : "",
-    ruleName: e.rule_name != null ? `Rule ${e.rule_name}` : "",
+    priority: e.priority ?? "",
+    ruleName: ruleLabel,
     issue: e.issue_description ?? "",
-    aladdin: "",
+    aladdin: e.asset_id ?? "",
     vendor: "",
     action: "",
     comments: "",
@@ -56,9 +64,21 @@ function toExceptionRow(e: ApiException): ExceptionRow {
 
 export async function fetchSecurityExceptions(
   assetId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  exceptionType?: string,
+  severity?: string,
+  priority?: string
 ): Promise<ExceptionRow[]> {
-  const url = `${EXCEPTIONS_ENDPOINT}?asset_id=${encodeURIComponent(assetId)}`;
+  let url = `${EXCEPTIONS_ENDPOINT}?asset_id=${encodeURIComponent(assetId)}`;
+  if (exceptionType) {
+    url += `&exception_type=${encodeURIComponent(exceptionType)}`;
+  }
+  if (severity && severity !== "All") {
+    url += `&severity=${encodeURIComponent(severity)}`;
+  }
+  if (priority && priority !== "All") {
+    url += `&priority=${encodeURIComponent(priority)}`;
+  }
   const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(
