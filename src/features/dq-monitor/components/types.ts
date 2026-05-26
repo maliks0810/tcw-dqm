@@ -7,6 +7,7 @@ export type ExceptionRow = {
   vendor: string;
   action: string;
   comments: string;
+  status: string;
 };
 
 export type SecurityRow = {
@@ -23,5 +24,6 @@ export type SecurityRow = {
   exceptionCount: number;
   bbgLastRefresh: string;
   triggerBbg: boolean;
+  allComplete: boolean;
   exceptions: ExceptionRow[];
 };

@@ -27,6 +27,7 @@ type ApiException = {
   created_by?: string;
   modified_date?: string;
   modified_by?: string;
+  exception_status?: string;
 };
 
 function formatDateTime(iso?: string): string {
@@ -59,6 +60,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     vendor: "",
     action: "",
     comments: "",
+    status: e.exception_status ?? "",
   };
 }
 
@@ -67,18 +69,26 @@ export async function fetchSecurityExceptions(
   signal?: AbortSignal,
   exceptionType?: string,
   severity?: string,
-  priority?: string
+  priority?: string,
+  ruleType?: string,
+  ruleName?: string,
+  ruleGroup?: string,
+  exceptionStatus?: string,
+  assignTo?: string
 ): Promise<ExceptionRow[]> {
-  let url = `${EXCEPTIONS_ENDPOINT}?asset_id=${encodeURIComponent(assetId)}`;
-  if (exceptionType) {
-    url += `&exception_type=${encodeURIComponent(exceptionType)}`;
-  }
-  if (severity && severity !== "All") {
-    url += `&severity=${encodeURIComponent(severity)}`;
-  }
-  if (priority && priority !== "All") {
-    url += `&priority=${encodeURIComponent(priority)}`;
-  }
+  const params = new URLSearchParams();
+  if (assetId) params.set("asset_id", assetId);
+  if (exceptionType) params.set("exception_type", exceptionType);
+  if (severity && severity !== "All") params.set("severity", severity);
+  if (priority && priority !== "All") params.set("priority", priority);
+  if (ruleType && ruleType !== "All") params.set("rule_type", ruleType);
+  if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
+  if (ruleGroup && ruleGroup !== "All") params.set("rule_group", ruleGroup);
+  if (exceptionStatus && exceptionStatus !== "All")
+    params.set("exception_status", exceptionStatus);
+  if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
+  const qs = params.toString();
+  const url = qs ? `${EXCEPTIONS_ENDPOINT}?${qs}` : EXCEPTIONS_ENDPOINT;
   const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(

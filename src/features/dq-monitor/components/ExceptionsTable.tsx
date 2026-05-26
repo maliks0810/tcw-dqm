@@ -44,20 +44,27 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
         </thead>
 
         <tbody>
-          {data.map((row, index) => (
-            <tr key={`${row.ruleName}-${index}`} className="dq-table-row dq-table-row-even">
-              <td>{row.dateTime}</td>
-              <td>{row.priority}</td>
-              <td>{row.ruleName}</td>
-              <td>{row.issue}</td>
-              <td>{row.aladdin}</td>
-              <td>{row.vendor}</td>
-              <td>
-                <span className={getActionClass(row.action)}>{row.action}</span>
-              </td>
-              <td>{row.comments}</td>
-            </tr>
-          ))}
+          {data.map((row, index) => {
+            const isComplete = row.status === "Complete";
+            const cls = [
+              "dq-table-row",
+              isComplete ? "dq-table-row-complete" : "dq-table-row-even",
+            ].join(" ");
+            return (
+              <tr key={`${row.ruleName}-${index}`} className={cls}>
+                <td>{row.dateTime}</td>
+                <td>{row.priority}</td>
+                <td>{row.ruleName}</td>
+                <td>{row.issue}</td>
+                <td>{row.aladdin}</td>
+                <td>{row.vendor}</td>
+                <td>
+                  <span className={getActionClass(row.action)}>{row.action}</span>
+                </td>
+                <td>{row.comments}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

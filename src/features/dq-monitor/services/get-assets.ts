@@ -17,6 +17,7 @@ type ApiAsset = {
   trading_team?: string;
   exception_count?: number;
   bbg_last_refresh?: string;
+  all_complete?: boolean;
 };
 
 function formatDateTime(iso?: string): string {
@@ -48,6 +49,7 @@ function toSecurityRow(a: ApiAsset): SecurityRow {
     exceptionCount: a.exception_count ?? 0,
     bbgLastRefresh: a.bbg_last_refresh ?? "",
     triggerBbg: false,
+    allComplete: !!a.all_complete,
     exceptions: [],
   };
 }
@@ -56,12 +58,21 @@ export async function fetchAssets(
   signal?: AbortSignal,
   exceptionType?: string,
   severity?: string,
-  priority?: string
+  priority?: string,
+  ruleType?: string,
+  ruleName?: string,
+  exceptionStatus?: string,
+  assignTo?: string
 ): Promise<SecurityRow[]> {
   const params = new URLSearchParams();
   if (exceptionType) params.set("exception_type", exceptionType);
   if (severity && severity !== "All") params.set("severity", severity);
   if (priority && priority !== "All") params.set("priority", priority);
+  if (ruleType && ruleType !== "All") params.set("rule_type", ruleType);
+  if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
+  if (exceptionStatus && exceptionStatus !== "All")
+    params.set("exception_status", exceptionStatus);
+  if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
   const qs = params.toString();
   const url = qs ? `${ASSETS_ENDPOINT}?${qs}` : ASSETS_ENDPOINT;
   const res = await fetch(url, { signal });

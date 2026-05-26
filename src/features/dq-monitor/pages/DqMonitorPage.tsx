@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
@@ -8,6 +8,11 @@ import { fetchSecurityExceptions } from "../services/get-security-exceptions";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-type";
 import { fetchPriorityTypes } from "../services/get-priority-type";
+import { fetchExceptionStatus } from "../services/get-exception-status";
+import { fetchDMUsers } from "../services/get-dm-users";
+import { fetchRuleGroups } from "../services/get-rule-groups";
+import { fetchRuleTypes } from "../services/get-rule-types";
+import { fetchRules } from "../services/get-rules";
 import { subscribeToEvents } from "../services/stream-events";
 import { exportAssetsToExcel } from "../../../utils/export-to-excel";
 import "../styles/dq-monitor.css";
@@ -25,7 +30,7 @@ export default function DqMonitorPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [lastEvent, setLastEvent] = useState<{
     aladdinId: string;
-    ruleId: string;
+    count: number;
     receivedAt: string;
   } | null>(null);
   const [blinkingAladdinId, setBlinkingAladdinId] = useState<string | null>(
@@ -38,12 +43,19 @@ export default function DqMonitorPage() {
   const [exceptionTypes, setExceptionTypes] = useState<string[]>([]);
   const [priority, setPriority] = useState<string>("All");
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
-  const [assignToFilter, setAssignToFilter] = useState<string>("Paul Cohen");
-  const [viewMode, setViewMode] = useState<"security" | "group" | "rule">(
-    "security"
-  );
+  const [assignToFilter, setAssignToFilter] = useState<string>("All");
+  const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
+  const [exceptionStatus, setExceptionStatus] = useState<string>("All");
+  const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<
+    "security" | "group" | "ruleType" | "rule"
+  >("security");
   const [viewByGroup, setViewByGroup] = useState<string>("All");
+  const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
+  const [viewByRuleType, setViewByRuleType] = useState<string>("All");
+  const [ruleTypeOptions, setRuleTypeOptions] = useState<string[]>([]);
   const [viewByRule, setViewByRule] = useState<string>("All");
+  const [ruleOptions, setRuleOptions] = useState<string[]>([]);
 
   const originalTitleRef = useRef<string>(
     typeof document !== "undefined" ? document.title : ""
@@ -125,18 +137,90 @@ export default function DqMonitorPage() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetchExceptionStatus(controller.signal)
+      .then((codes) => setExceptionStatusOptions(codes))
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDMUsers(controller.signal)
+      .then((users) => setDmUserOptions(users))
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchRuleGroups(controller.signal)
+      .then((names) => setRuleGroupOptions(names))
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!viewByGroup || viewByGroup === "All") {
+      setRuleTypeOptions([]);
+      setViewByRuleType("All");
+      return;
+    }
+    const controller = new AbortController();
+    fetchRuleTypes(viewByGroup, controller.signal)
+      .then((names) => {
+        setRuleTypeOptions(names);
+        setViewByRuleType((current) =>
+          names.includes(current) ? current : "All"
+        );
+      })
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, [viewByGroup]);
+
+  useEffect(() => {
+    if (!viewByRuleType || viewByRuleType === "All") {
+      setRuleOptions([]);
+      setViewByRule("All");
+      return;
+    }
+    const controller = new AbortController();
+    fetchRules(viewByRuleType, controller.signal)
+      .then((rules) => {
+        const names = rules
+          .map((r) => r.rule_name)
+          .filter((n): n is string => !!n);
+        setRuleOptions(names);
+        setViewByRule((current) =>
+          names.includes(current) ? current : "All"
+        );
+      })
+      .catch((e: unknown) => {
+        if ((e as any)?.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, [viewByRuleType]);
+
+  useEffect(() => {
     return subscribeToEvents((event) => {
       if (event.type === "security_exception.inserted") {
         const payload = (event.payload ?? {}) as {
           asset_id?: string;
-          rule_id?: string | number;
+          count?: number;
         };
         const aladdinId = payload.asset_id ?? "";
-        const ruleId =
-          payload.rule_id != null ? String(payload.rule_id) : "";
+        const count = typeof payload.count === "number" ? payload.count : 0;
         setLastEvent({
           aladdinId,
-          ruleId,
+          count,
           receivedAt: new Date().toLocaleTimeString(),
         });
         if (aladdinId) setBlinkingAladdinId(aladdinId);
@@ -158,7 +242,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchAssets(controller.signal, dqmType, severity, priority)
+    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleType, viewByRule, exceptionStatus, assignToFilter)
       .then((rows) => {
         setAssets(rows);
         const wantedAladdin = selectedAladdinRef.current;
@@ -174,15 +258,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick, dqmType, severity, priority]);
-
-  const assigneeOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const a of assets) {
-      if (a.assignTo) names.add(a.assignTo);
-    }
-    return Array.from(names).sort((x, y) => x.localeCompare(y));
-  }, [assets]);
+  }, [refreshTick, dqmType, severity, priority, viewByRuleType, viewByRule, exceptionStatus, assignToFilter]);
 
   const handleAssignToChange = (index: number, value: string) => {
     setAssets((prev) => {
@@ -194,7 +270,10 @@ export default function DqMonitorPage() {
   };
 
   useEffect(() => {
-    if (!selectedAladdinId) {
+    const inGroupMode = viewMode === "group";
+    const inRuleTypeMode = viewMode === "ruleType";
+    const usesAsset = !inGroupMode && !inRuleTypeMode;
+    if (usesAsset && !selectedAladdinId) {
       setExceptions([]);
       setExceptionsError(null);
       setExceptionsLoading(false);
@@ -203,7 +282,22 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setExceptionsLoading(true);
     setExceptionsError(null);
-    fetchSecurityExceptions(selectedAladdinId, controller.signal, dqmType, severity, priority)
+    const assetArg = usesAsset ? selectedAladdinId : "";
+    const ruleGroupArg =
+      inGroupMode || inRuleTypeMode ? viewByGroup : undefined;
+    const ruleTypeArg = inGroupMode ? undefined : viewByRuleType;
+    fetchSecurityExceptions(
+      assetArg,
+      controller.signal,
+      dqmType,
+      severity,
+      priority,
+      ruleTypeArg,
+      viewByRule,
+      ruleGroupArg,
+      exceptionStatus,
+      assignToFilter
+    )
       .then((rows) => {
         setExceptions(rows);
         setExceptionsLoading(false);
@@ -214,7 +308,19 @@ export default function DqMonitorPage() {
         setExceptionsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedAladdinId, refreshTick, dqmType, severity, priority]);
+  }, [
+    selectedAladdinId,
+    refreshTick,
+    dqmType,
+    severity,
+    priority,
+    viewByRuleType,
+    viewByRule,
+    viewMode,
+    viewByGroup,
+    exceptionStatus,
+    assignToFilter,
+  ]);
 
   return (
     <div className="dq-page">
@@ -270,11 +376,26 @@ export default function DqMonitorPage() {
             value={assignToFilter}
             onChange={(e) => setAssignToFilter(e.target.value)}
           >
-            <option value="Paul Cohen">Paul Cohen</option>
-            <option value="Jake Rigney">Jake Rigney</option>
-            <option value="Anush Safaryan">Anush Safaryan</option>
-            <option value="Jimmy Fu">Jimmy Fu</option>
-            <option value="Natasha Cabrera">Natasha Cabrera</option>
+            <option value="All">All</option>
+            {dmUserOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+
+          <h3 className="dq-sidebar-title">Exception Status</h3>
+          <select
+            className="dq-sidebar-select"
+            value={exceptionStatus}
+            onChange={(e) => setExceptionStatus(e.target.value)}
+          >
+            <option value="All">All</option>
+            {exceptionStatusOptions.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
           </select>
 
           <button
@@ -282,7 +403,7 @@ export default function DqMonitorPage() {
             type="button"
             onClick={() => setViewMode("group")}
           >
-            View by Group
+            View by Rule Group
           </button>
 
           <select
@@ -291,8 +412,32 @@ export default function DqMonitorPage() {
             onChange={(e) => setViewByGroup(e.target.value)}
           >
             <option value="All">All</option>
-            <option value="Bloomberg Compare">Bloomberg Compare</option>
-            <option value="Miscellaneos">Miscellaneos</option>
+            {ruleGroupOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            className="dq-sidebar-button"
+            type="button"
+            onClick={() => setViewMode("ruleType")}
+          >
+            View by Rule Type
+          </button>
+
+          <select
+            className="dq-sidebar-select"
+            value={viewByRuleType}
+            onChange={(e) => setViewByRuleType(e.target.value)}
+          >
+            <option value="All">All</option>
+            {ruleTypeOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
 
           <button
@@ -309,7 +454,11 @@ export default function DqMonitorPage() {
             onChange={(e) => setViewByRule(e.target.value)}
           >
             <option value="All">All</option>
-            <option value="Rule_Registration">Rule_Registration</option>
+            {ruleOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
 
           <button
@@ -341,7 +490,7 @@ export default function DqMonitorPage() {
                   data={assets}
                   selectedRow={selectedRow}
                   onRowSelect={handleRowSelect}
-                  assigneeOptions={assigneeOptions}
+                  assigneeOptions={dmUserOptions}
                   onAssignToChange={handleAssignToChange}
                   blinkingAladdinId={blinkingAladdinId}
                 />
@@ -352,10 +501,28 @@ export default function DqMonitorPage() {
           <section className="dq-section">
             <h2 className="dq-section-title">Exceptions</h2>
 
-            {selectedRow !== null && assets[selectedRow] && (
+            {viewMode === "security" && selectedRow !== null && assets[selectedRow] && (
               <div className="dq-section-subtitle dq-asset-title">
                 {assets[selectedRow].securityDescription} —{" "}
                 {assets[selectedRow].aladdinId}
+                {exceptionsLoading
+                  ? " (loading…)"
+                  : ` (${exceptions.length} exceptions)`}
+              </div>
+            )}
+
+            {viewMode === "group" && (
+              <div className="dq-section-subtitle dq-asset-title">
+                Rule Group: {viewByGroup}
+                {exceptionsLoading
+                  ? " (loading…)"
+                  : ` (${exceptions.length} exceptions)`}
+              </div>
+            )}
+
+            {viewMode === "ruleType" && (
+              <div className="dq-section-subtitle dq-asset-title">
+                Rule Group: {viewByGroup} / Rule Type: {viewByRuleType}
                 {exceptionsLoading
                   ? " (loading…)"
                   : ` (${exceptions.length} exceptions)`}
@@ -375,7 +542,7 @@ export default function DqMonitorPage() {
 
       <div className="dq-status-bar">
         {lastEvent
-          ? `Aladdin_id = ${lastEvent.aladdinId}, RuleId = ${lastEvent.ruleId}, Received at ${lastEvent.receivedAt}`
+          ? `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
           : ""}
       </div>
     </div>
