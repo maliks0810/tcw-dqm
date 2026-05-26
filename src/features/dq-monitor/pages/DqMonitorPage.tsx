@@ -19,6 +19,7 @@ import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
+  const [visibleAssets, setVisibleAssets] = useState<SecurityRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -324,7 +325,7 @@ export default function DqMonitorPage() {
 
   return (
     <div className="dq-page">
-      <Header onExportClick={() => exportAssetsToExcel(assets)} />
+      <Header onExportClick={() => exportAssetsToExcel(visibleAssets)} />
 
       <div className="dq-body">
         <aside className="dq-sidebar">
@@ -493,6 +494,7 @@ export default function DqMonitorPage() {
                   assigneeOptions={dmUserOptions}
                   onAssignToChange={handleAssignToChange}
                   blinkingAladdinId={blinkingAladdinId}
+                  onVisibleRowsChange={setVisibleAssets}
                 />
               )}
             </section>
