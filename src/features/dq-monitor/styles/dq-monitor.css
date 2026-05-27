@@ -1,5 +1,9 @@
 .dq-page {
-  height: 100vh;
+  /* Fill the host container (own viewport when standalone, the iframe's
+     box when embedded) rather than the global viewport, so it adapts to
+     whatever space the parent app gives it. */
+  height: 100%;
+  min-height: 600px;
   overflow: hidden;
   background: #f8f9fa;
   color: #1a1a2e;
@@ -374,6 +378,50 @@
 
 .dq-col-filter-actions button:hover {
   background: #e5e7eb;
+}
+
+.dq-combo {
+  position: relative;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.dq-combo-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: #111827;
+}
+
+.dq-combo-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+}
+
+.dq-combo-item:hover {
+  background: #fef3c7;
+}
+
+.dq-combo-empty {
+  padding: 5px 8px;
+  color: #6b7280;
+  font-style: italic;
 }
 
 .dq-col-filter-apply {

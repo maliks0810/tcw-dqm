@@ -74,7 +74,8 @@ export async function fetchSecurityExceptions(
   ruleName?: string,
   ruleGroup?: string,
   exceptionStatus?: string,
-  assignTo?: string
+  assignTo?: string,
+  ruleNamePattern?: string
 ): Promise<ExceptionRow[]> {
   const params = new URLSearchParams();
   if (assetId) params.set("asset_id", assetId);
@@ -87,6 +88,14 @@ export async function fetchSecurityExceptions(
   if (exceptionStatus && exceptionStatus !== "All")
     params.set("exception_status", exceptionStatus);
   if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
+  if (ruleNamePattern && ruleNamePattern.trim() !== "") {
+    const trimmed = ruleNamePattern.trim();
+    const pattern =
+      trimmed.includes("%") || trimmed.includes("_")
+        ? trimmed
+        : `%${trimmed}%`;
+    params.set("rule_name_pattern", pattern);
+  }
   const qs = params.toString();
   const url = qs ? `${EXCEPTIONS_ENDPOINT}?${qs}` : EXCEPTIONS_ENDPOINT;
   const res = await fetch(url, { signal });

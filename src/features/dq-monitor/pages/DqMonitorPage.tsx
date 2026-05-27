@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
@@ -6,8 +6,8 @@ import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
 import { fetchExceptionTypes } from "../services/get-exception-types";
-import { fetchSeverityTypes } from "../services/get-severity-type";
-import { fetchPriorityTypes } from "../services/get-priority-type";
+import { fetchSeverityTypes } from "../services/get-severity-types";
+import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
@@ -27,6 +27,7 @@ export default function DqMonitorPage() {
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
+  const [exceptionsLimitExceeded, setExceptionsLimitExceeded] = useState(false);
 
   const [refreshTick, setRefreshTick] = useState(0);
   const [lastEvent, setLastEvent] = useState<{
@@ -57,6 +58,10 @@ export default function DqMonitorPage() {
   const [ruleTypeOptions, setRuleTypeOptions] = useState<string[]>([]);
   const [viewByRule, setViewByRule] = useState<string>("All");
   const [ruleOptions, setRuleOptions] = useState<string[]>([]);
+  const [ruleNameSearchApplied, setRuleNameSearchApplied] = useState<string>("");
+  const [ruleQuery, setRuleQuery] = useState<string>("");
+  const [ruleComboOpen, setRuleComboOpen] = useState<boolean>(false);
+  const ruleComboRef = useRef<HTMLDivElement | null>(null);
 
   const originalTitleRef = useRef<string>(
     typeof document !== "undefined" ? document.title : ""
@@ -187,10 +192,64 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, [viewByGroup]);
 
+  const filteredRuleOptions = (() => {
+    if (!ruleQuery) return ruleOptions;
+    const needle = ruleQuery.toLowerCase();
+    return ruleOptions.filter((name) => name.toLowerCase().includes(needle));
+  })();
+
+  const commitRuleQuery = useCallback(() => {
+    const trimmed = ruleQuery.trim();
+    const exact = ruleOptions.find(
+      (n) => n.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (trimmed === "" || trimmed.toLowerCase() === "all") {
+      setViewByRule("All");
+      setRuleNameSearchApplied("");
+      setRuleQuery("All");
+    } else if (exact) {
+      setViewByRule(exact);
+      setRuleNameSearchApplied("");
+      setRuleQuery(exact);
+    } else {
+      setViewByRule("All");
+      setRuleNameSearchApplied(`%${trimmed}%`);
+    }
+    setRuleComboOpen(false);
+  }, [ruleQuery, ruleOptions]);
+
+  const pickRuleFromCombo = (name: string) => {
+    if (name === "All") {
+      setRuleQuery("All");
+      setViewByRule("All");
+    } else {
+      setRuleQuery(name);
+      setViewByRule(name);
+    }
+    setRuleNameSearchApplied("");
+    setRuleComboOpen(false);
+  };
+
+  useEffect(() => {
+    if (!ruleComboOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        ruleComboRef.current &&
+        !ruleComboRef.current.contains(e.target as Node)
+      ) {
+        commitRuleQuery();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [ruleComboOpen, commitRuleQuery]);
+
   useEffect(() => {
     if (!viewByRuleType || viewByRuleType === "All") {
       setRuleOptions([]);
       setViewByRule("All");
+      setRuleQuery("");
+      setRuleNameSearchApplied("");
       return;
     }
     const controller = new AbortController();
@@ -273,19 +332,22 @@ export default function DqMonitorPage() {
   useEffect(() => {
     const inGroupMode = viewMode === "group";
     const inRuleTypeMode = viewMode === "ruleType";
-    const usesAsset = !inGroupMode && !inRuleTypeMode;
+    const inRuleMode = viewMode === "rule";
+    const usesAsset = viewMode === "security";
     if (usesAsset && !selectedAladdinId) {
       setExceptions([]);
       setExceptionsError(null);
       setExceptionsLoading(false);
+      setExceptionsLimitExceeded(false);
       return;
     }
     const controller = new AbortController();
     setExceptionsLoading(true);
     setExceptionsError(null);
+    setExceptionsLimitExceeded(false);
     const assetArg = usesAsset ? selectedAladdinId : "";
     const ruleGroupArg =
-      inGroupMode || inRuleTypeMode ? viewByGroup : undefined;
+      inGroupMode || inRuleTypeMode || inRuleMode ? viewByGroup : undefined;
     const ruleTypeArg = inGroupMode ? undefined : viewByRuleType;
     fetchSecurityExceptions(
       assetArg,
@@ -297,10 +359,17 @@ export default function DqMonitorPage() {
       viewByRule,
       ruleGroupArg,
       exceptionStatus,
-      assignToFilter
+      assignToFilter,
+      ruleNameSearchApplied
     )
       .then((rows) => {
-        setExceptions(rows);
+        if (rows.length > 1000) {
+          setExceptions([]);
+          setExceptionsLimitExceeded(true);
+        } else {
+          setExceptions(rows);
+          setExceptionsLimitExceeded(false);
+        }
         setExceptionsLoading(false);
       })
       .catch((e: unknown) => {
@@ -321,6 +390,7 @@ export default function DqMonitorPage() {
     viewByGroup,
     exceptionStatus,
     assignToFilter,
+    ruleNameSearchApplied,
   ]);
 
   return (
@@ -449,18 +519,62 @@ export default function DqMonitorPage() {
             View by Rule
           </button>
 
-          <select
-            className="dq-sidebar-select"
-            value={viewByRule}
-            onChange={(e) => setViewByRule(e.target.value)}
-          >
-            <option value="All">All</option>
-            {ruleOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <div className="dq-combo" ref={ruleComboRef}>
+            <input
+              className="dq-sidebar-select"
+              type="text"
+              placeholder="Pick a rule or type a pattern (% wildcard)"
+              value={ruleQuery}
+              onChange={(e) => {
+                setRuleQuery(e.target.value);
+                setRuleComboOpen(true);
+              }}
+              onFocus={() => setRuleComboOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitRuleQuery();
+                } else if (e.key === "Escape") {
+                  setRuleQuery("");
+                  setViewByRule("All");
+                  setRuleNameSearchApplied("");
+                  setRuleComboOpen(false);
+                }
+              }}
+            />
+            {ruleComboOpen && (
+              <div className="dq-combo-popover">
+                <button
+                  type="button"
+                  className="dq-combo-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pickRuleFromCombo("All");
+                  }}
+                >
+                  All
+                </button>
+                {filteredRuleOptions.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="dq-combo-item"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pickRuleFromCombo(name);
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))}
+                {filteredRuleOptions.length === 0 && ruleQuery && (
+                  <div className="dq-combo-empty">
+                    No rules — will search as pattern
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <button
             className="dq-sidebar-button"
@@ -534,6 +648,15 @@ export default function DqMonitorPage() {
             {exceptionsError && (
               <div className="dq-section-subtitle" style={{ color: "crimson" }}>
                 Failed to load exceptions: {exceptionsError}
+              </div>
+            )}
+
+            {exceptionsLimitExceeded && (
+              <div
+                className="dq-section-subtitle"
+                style={{ color: "crimson", fontWeight: 700 }}
+              >
+                More than 1000 exceptions — refine your filters
               </div>
             )}
 
