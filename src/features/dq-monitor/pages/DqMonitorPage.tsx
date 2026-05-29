@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
+import RuleTreeView from "../components/RuleTreeView";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
@@ -23,6 +24,37 @@ export default function DqMonitorPage() {
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(240);
+  const sidebarResizingRef = useRef<boolean>(false);
+
+  const startSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    sidebarResizingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!sidebarResizingRef.current) return;
+      const min = 180;
+      const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
+      setSidebarWidth(Math.min(max, Math.max(min, e.clientX - 16)));
+    };
+    const onUp = () => {
+      if (!sidebarResizingRef.current) return;
+      sidebarResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
@@ -398,7 +430,10 @@ export default function DqMonitorPage() {
       <Header onExportClick={() => exportAssetsToExcel(visibleAssets)} />
 
       <div className="dq-body">
-        <aside className="dq-sidebar">
+        <aside
+          className="dq-sidebar"
+          style={{ flex: `0 0 ${sidebarWidth}px` }}
+        >
           <h3 className="dq-sidebar-title">Type</h3>
           <select
             className="dq-sidebar-select"
@@ -469,54 +504,57 @@ export default function DqMonitorPage() {
             ))}
           </select>
 
-          <button
-            className="dq-sidebar-button"
-            type="button"
-            onClick={() => setViewMode("group")}
-          >
-            View by Rule Group
-          </button>
-
-          <select
-            className="dq-sidebar-select"
-            value={viewByGroup}
-            onChange={(e) => setViewByGroup(e.target.value)}
-          >
-            <option value="All">All</option>
-            {ruleGroupOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            className="dq-sidebar-button"
-            type="button"
-            onClick={() => setViewMode("ruleType")}
-          >
-            View by Rule Type
-          </button>
-
-          <select
-            className="dq-sidebar-select"
-            value={viewByRuleType}
-            onChange={(e) => setViewByRuleType(e.target.value)}
-          >
-            <option value="All">All</option>
-            {ruleTypeOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <h3 className="dq-sidebar-title">View Exceptions</h3>
+          <RuleTreeView
+            groups={ruleGroupOptions}
+            getTypes={(group) => fetchRuleTypes(group)}
+            getRules={async (type) => {
+              const rules = await fetchRules(type);
+              return rules
+                .map((r) => r.rule_name)
+                .filter((n): n is string => !!n);
+            }}
+            selection={{
+              group: viewByGroup,
+              type: viewByRuleType,
+              rule: viewByRule,
+            }}
+            onSelectAll={() => {
+              setViewMode("rule");
+              setViewByGroup("All");
+              setViewByRuleType("All");
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+            }}
+            onSelectGroup={(g) => {
+              setViewMode("group");
+              setViewByGroup(g);
+              setViewByRuleType("All");
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+            }}
+            onSelectType={(g, t) => {
+              setViewMode("ruleType");
+              setViewByGroup(g);
+              setViewByRuleType(t);
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+            }}
+            onSelectRule={(g, t, r) => {
+              setViewMode("rule");
+              setViewByGroup(g);
+              setViewByRuleType(t);
+              setViewByRule(r);
+              setRuleNameSearchApplied("");
+            }}
+          />
 
           <button
             className="dq-sidebar-button"
             type="button"
             onClick={() => setViewMode("rule")}
           >
-            View by Rule
+            View by Rule Pattern
           </button>
 
           <div className="dq-combo" ref={ruleComboRef}>
@@ -584,6 +622,32 @@ export default function DqMonitorPage() {
             View by Security
           </button>
         </aside>
+
+        <div
+          className="dq-sidebar-resizer"
+          onMouseDown={startSidebarResize}
+          onKeyDown={(e) => {
+            const min = 180;
+            const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
+            const step = e.shiftKey ? 40 : 10;
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              setSidebarWidth((w) => Math.max(min, w - step));
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              setSidebarWidth((w) => Math.min(max, w + step));
+            }
+          }}
+          role="slider"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={180}
+          aria-valuemax={Math.floor(
+            typeof window !== "undefined" ? window.innerWidth * 0.6 : 800
+          )}
+          tabIndex={0}
+        />
 
         <div className="dq-main">
           {viewMode === "security" && (

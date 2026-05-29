@@ -113,6 +113,20 @@
   gap: 12px;
 }
 
+.dq-sidebar-resizer {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: transparent;
+  align-self: stretch;
+  border-radius: 3px;
+  transition: background-color 0.15s ease;
+}
+
+.dq-sidebar-resizer:hover,
+.dq-sidebar-resizer:active {
+  background: #d1d5db;
+}
+
 .dq-sidebar {
   flex: 0 0 15%;
   background: #ffffff;
@@ -146,6 +160,88 @@
   background: #ffffff;
   color: #111827;
   cursor: pointer;
+}
+
+.dq-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 6px;
+  padding: 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f9fafb;
+  min-height: 22vh;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.dq-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dq-tree-row-l1 {
+  padding-left: 14px;
+}
+
+.dq-tree-row-l2 {
+  padding-left: 28px;
+}
+
+.dq-tree-toggle {
+  width: 14px;
+  height: 18px;
+  line-height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 11px;
+  cursor: pointer;
+  flex: 0 0 14px;
+  text-align: center;
+}
+
+.dq-tree-toggle:hover {
+  color: #111827;
+}
+
+.dq-tree-toggle-empty {
+  display: inline-block;
+}
+
+.dq-tree-node {
+  flex: 1 1 auto;
+  text-align: left;
+  padding: 3px 6px;
+  border: none;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dq-tree-node:hover {
+  background: #f3f4f6;
+}
+
+.dq-tree-node-selected,
+.dq-tree-node-selected:hover {
+  background: #dbeafe;
+  font-weight: 700;
+}
+
+.dq-tree-empty {
+  font-size: 12px;
+  color: #9ca3af;
+  padding: 2px 8px;
 }
 
 .dq-sidebar-button {
