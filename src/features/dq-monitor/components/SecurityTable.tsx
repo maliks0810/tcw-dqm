@@ -10,9 +10,108 @@ type SecurityTableProps = {
   onAssignToChange: (index: number, value: string) => void;
   blinkingAladdinId?: string | null;
   onVisibleRowsChange?: (rows: SecurityRow[]) => void;
+  onAction?: (
+    action: "runRules" | "loadTdc" | "loadAnalytics" | "notifyTod",
+    assetId: string,
+    idBbGlobal: string
+  ) => void;
+  actionByAsset?: Record<string, ActionValue>;
+  onActionShownChange?: (assetId: string, value: ActionValue) => void;
 };
 
 const UNASSIGNED_LABEL = "— Unassigned —";
+
+export type ActionValue =
+  | ""
+  | "runRules"
+  | "loadTdc"
+  | "loadAnalytics"
+  | "notifyTod";
+
+const ACTION_LABELS: Record<ActionValue, string> = {
+  "": "None",
+  runRules: "Run Rules",
+  loadTdc: "Load TDC",
+  loadAnalytics: "Load Analytics",
+  notifyTod: "Notify TOD",
+};
+
+function ActionSelect({
+  assetId,
+  idBbGlobal,
+  shown,
+  setShown,
+  onAction,
+}: {
+  assetId: string;
+  idBbGlobal: string;
+  shown: ActionValue;
+  setShown: (assetId: string, value: ActionValue) => void;
+  onAction: (
+    action: "runRules" | "loadTdc" | "loadAnalytics" | "notifyTod",
+    assetId: string,
+    idBbGlobal: string
+  ) => void;
+}) {
+  const [open, setOpen] = React.useState<boolean>(false);
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        wrapRef.current &&
+        !wrapRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const pick = (e: React.MouseEvent, action: ActionValue) => {
+    e.stopPropagation();
+    setShown(assetId, action);
+    setOpen(false);
+    if (action !== "") onAction(action, assetId, idBbGlobal);
+  };
+
+  return (
+    <div className="dq-action-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="dq-run-rules-btn dq-action-toggle"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+      >
+        <span className="dq-action-label">{ACTION_LABELS[shown]}</span>
+        <span className="dq-action-arrow" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="dq-action-popover" role="menu">
+          {(["", "runRules", "loadTdc", "loadAnalytics", "notifyTod"] as ActionValue[]).map(
+            (v) => (
+              <button
+                key={v}
+                type="button"
+                role="menuitem"
+                className="dq-action-item"
+                onClick={(e) => pick(e, v)}
+              >
+                {ACTION_LABELS[v]}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SecurityTable({
   data,
@@ -22,6 +121,9 @@ export default function SecurityTable({
   onAssignToChange,
   blinkingAladdinId,
   onVisibleRowsChange,
+  onAction,
+  actionByAsset,
+  onActionShownChange,
 }: SecurityTableProps) {
   const allAssetIds = useMemo(
     () =>
@@ -62,6 +164,7 @@ export default function SecurityTable({
       <table className="dq-table">
         <thead>
           <tr>
+            <th>Actions</th>
             <th>Date/Time</th>
             <th>Priority</th>
             <th>Severity</th>
@@ -122,6 +225,8 @@ export default function SecurityTable({
                     ? "dq-table-row-selected"
                     : row.allComplete
                     ? "dq-table-row-complete"
+                    : row.priority === "High"
+                    ? "dq-table-row-high"
                     : index % 2 === 0
                     ? "dq-table-row-even"
                     : "dq-table-row-odd",
@@ -130,6 +235,19 @@ export default function SecurityTable({
                   .filter(Boolean)
                   .join(" ")}
               >
+                <td>
+                  {row.type === "Security Setup" && onAction && (
+                    <ActionSelect
+                      assetId={row.aladdinId}
+                      idBbGlobal={row.figi ?? ""}
+                      shown={actionByAsset?.[row.aladdinId] ?? ""}
+                      setShown={
+                        onActionShownChange ?? (() => undefined)
+                      }
+                      onAction={onAction}
+                    />
+                  )}
+                </td>
                 <td>{row.dateTime}</td>
                 <td>{row.priority}</td>
                 <td>{row.severity}</td>

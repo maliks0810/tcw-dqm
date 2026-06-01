@@ -46,9 +46,14 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
         <tbody>
           {data.map((row, index) => {
             const isComplete = row.status === "Complete";
+            const isHigh = row.priority === "High";
             const cls = [
               "dq-table-row",
-              isComplete ? "dq-table-row-complete" : "dq-table-row-even",
+              isComplete
+                ? "dq-table-row-complete"
+                : isHigh
+                ? "dq-table-row-high"
+                : "dq-table-row-even",
             ].join(" ");
             return (
               <tr key={`${row.ruleName}-${index}`} className={cls}>

@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
-import SecurityTable from "../components/SecurityTable";
+import SecurityTable, { ActionValue } from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
 import RuleTreeView from "../components/RuleTreeView";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchSecurityExceptions } from "../services/get-security-exceptions";
+import { executeRules } from "../services/execute-rules";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
 import { fetchPriorityTypes } from "../services/get-priority-types";
@@ -16,17 +17,51 @@ import { fetchRuleTypes } from "../services/get-rule-types";
 import { fetchRules } from "../services/get-rules";
 import { subscribeToEvents } from "../services/stream-events";
 import { exportAssetsToExcel } from "../../../utils/export-to-excel";
+import { updateAssignTo } from "../services/update-assign-to";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
   const [visibleAssets, setVisibleAssets] = useState<SecurityRow[]>([]);
+  // Last per-asset action label, lifted up here so it survives the
+  // SecurityTable unmount/remount that happens when loading flips during
+  // SSE-triggered refetches.
+  const [actionByAsset, setActionByAsset] = useState<Record<string, ActionValue>>(
+    {}
+  );
+  const setActionShown = useCallback(
+    (assetId: string, value: ActionValue) => {
+      setActionByAsset((prev) => ({ ...prev, [assetId]: value }));
+    },
+    []
+  );
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(240);
   const sidebarResizingRef = useRef<boolean>(false);
+
+  const [assetsHeight, setAssetsHeight] = useState<number | null>(null);
+  const assetsResizingRef = useRef<boolean>(false);
+  const dqMainRef = useRef<HTMLDivElement | null>(null);
+
+  const [countHeight, setCountHeight] = useState<number | null>(null);
+  const countResizingRef = useRef<boolean>(false);
+
+  const startAssetsResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    assetsResizingRef.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const startCountResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    countResizingRef.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  };
 
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -37,16 +72,45 @@ export default function DqMonitorPage() {
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!sidebarResizingRef.current) return;
-      const min = 180;
-      const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
-      setSidebarWidth(Math.min(max, Math.max(min, e.clientX - 16)));
+      if (sidebarResizingRef.current) {
+        const min = 180;
+        const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
+        setSidebarWidth(Math.min(max, Math.max(min, e.clientX - 16)));
+        return;
+      }
+      if (assetsResizingRef.current && dqMainRef.current) {
+        const rect = dqMainRef.current.getBoundingClientRect();
+        const min = 120;
+        const max = Math.max(min, rect.height - 120);
+        setAssetsHeight(
+          Math.min(max, Math.max(min, e.clientY - rect.top))
+        );
+      }
+      if (countResizingRef.current && dqMainRef.current) {
+        const rect = dqMainRef.current.getBoundingClientRect();
+        const min = 80;
+        const max = Math.max(min, rect.height - 120);
+        setCountHeight(
+          Math.min(max, Math.max(min, e.clientY - rect.top))
+        );
+      }
     };
     const onUp = () => {
-      if (!sidebarResizingRef.current) return;
-      sidebarResizingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      if (sidebarResizingRef.current) {
+        sidebarResizingRef.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+      if (assetsResizingRef.current) {
+        assetsResizingRef.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+      if (countResizingRef.current) {
+        countResizingRef.current = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -70,6 +134,7 @@ export default function DqMonitorPage() {
   const [blinkingAladdinId, setBlinkingAladdinId] = useState<string | null>(
     null
   );
+  const [footerBlinking, setFooterBlinking] = useState<boolean>(false);
 
   const [severity, setSeverity] = useState<string>("All");
   const [severityOptions, setSeverityOptions] = useState<string[]>([]);
@@ -79,7 +144,7 @@ export default function DqMonitorPage() {
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("All");
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
-  const [exceptionStatus, setExceptionStatus] = useState<string>("All");
+  const [exceptionStatus, setExceptionStatus] = useState<string>("Pending");
   const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleType" | "rule"
@@ -87,7 +152,6 @@ export default function DqMonitorPage() {
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
   const [viewByRuleType, setViewByRuleType] = useState<string>("All");
-  const [ruleTypeOptions, setRuleTypeOptions] = useState<string[]>([]);
   const [viewByRule, setViewByRule] = useState<string>("All");
   const [ruleOptions, setRuleOptions] = useState<string[]>([]);
   const [ruleNameSearchApplied, setRuleNameSearchApplied] = useState<string>("");
@@ -149,7 +213,7 @@ export default function DqMonitorPage() {
         );
       })
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
@@ -159,7 +223,7 @@ export default function DqMonitorPage() {
     fetchSeverityTypes(controller.signal)
       .then((codes) => setSeverityOptions(codes))
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
@@ -169,7 +233,7 @@ export default function DqMonitorPage() {
     fetchPriorityTypes(controller.signal)
       .then((codes) => setPriorityOptions(codes))
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
@@ -179,7 +243,7 @@ export default function DqMonitorPage() {
     fetchExceptionStatus(controller.signal)
       .then((codes) => setExceptionStatusOptions(codes))
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
@@ -189,7 +253,7 @@ export default function DqMonitorPage() {
     fetchDMUsers(controller.signal)
       .then((users) => setDmUserOptions(users))
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
@@ -199,30 +263,10 @@ export default function DqMonitorPage() {
     fetchRuleGroups(controller.signal)
       .then((names) => setRuleGroupOptions(names))
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
-
-  useEffect(() => {
-    if (!viewByGroup || viewByGroup === "All") {
-      setRuleTypeOptions([]);
-      setViewByRuleType("All");
-      return;
-    }
-    const controller = new AbortController();
-    fetchRuleTypes(viewByGroup, controller.signal)
-      .then((names) => {
-        setRuleTypeOptions(names);
-        setViewByRuleType((current) =>
-          names.includes(current) ? current : "All"
-        );
-      })
-      .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
-      });
-    return () => controller.abort();
-  }, [viewByGroup]);
 
   const filteredRuleOptions = (() => {
     if (!ruleQuery) return ruleOptions;
@@ -296,14 +340,17 @@ export default function DqMonitorPage() {
         );
       })
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, [viewByRuleType]);
 
   useEffect(() => {
     return subscribeToEvents((event) => {
-      if (event.type === "security_exception.inserted") {
+      if (
+        event.type === "security_exception.inserted" ||
+        event.type === "security_exception.updated"
+      ) {
         const payload = (event.payload ?? {}) as {
           asset_id?: string;
           count?: number;
@@ -315,8 +362,14 @@ export default function DqMonitorPage() {
           count,
           receivedAt: new Date().toLocaleTimeString(),
         });
-        if (aladdinId) setBlinkingAladdinId(aladdinId);
-        if (document.hidden) startTitleBlink();
+        if (
+          event.type === "security_exception.inserted" &&
+          aladdinId
+        ) {
+          setBlinkingAladdinId(aladdinId);
+          if (document.hidden) startTitleBlink();
+        }
+        setFooterBlinking(true);
         setRefreshTick((n) => n + 1);
       }
     });
@@ -345,7 +398,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       })
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
         setError(e instanceof Error ? e.message : String(e));
         setLoading(false);
       });
@@ -353,11 +406,22 @@ export default function DqMonitorPage() {
   }, [refreshTick, dqmType, severity, priority, viewByRuleType, viewByRule, exceptionStatus, assignToFilter]);
 
   const handleAssignToChange = (index: number, value: string) => {
+    const target = assets[index];
+    if (!target) return;
+    const assetId = target.aladdinId;
+    if (!assetId) return;
+    if (target.assignTo === value) return;
     setAssets((prev) => {
-      if (!prev[index] || prev[index].assignTo === value) return prev;
+      if (!prev[index]) return prev;
       const next = prev.slice();
       next[index] = { ...next[index], assignTo: value };
       return next;
+    });
+    // eslint-disable-next-line no-console
+    console.log("updateAssignTo →", { assetId, value });
+    updateAssignTo(assetId, value).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error("updateAssignTo failed", e);
     });
   };
 
@@ -405,7 +469,7 @@ export default function DqMonitorPage() {
         setExceptionsLoading(false);
       })
       .catch((e: unknown) => {
-        if ((e as any)?.name === "AbortError") return;
+        if (e instanceof Error && e.name === "AbortError") return;
         setExceptionsError(e instanceof Error ? e.message : String(e));
         setExceptionsLoading(false);
       });
@@ -423,6 +487,102 @@ export default function DqMonitorPage() {
     exceptionStatus,
     assignToFilter,
     ruleNameSearchApplied,
+  ]);
+
+  // When in group mode, we break the count down by rule type — but the
+  // ExceptionRow only carries ruleName, so we need a ruleName -> ruleType
+  // lookup, built by walking the rule types in the selected group.
+  const [ruleTypeByRuleName, setRuleTypeByRuleName] = useState<
+    Record<string, string>
+  >({});
+  useEffect(() => {
+    if (viewMode !== "group" || !viewByGroup || viewByGroup === "All") {
+      setRuleTypeByRuleName({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const types = await fetchRuleTypes(viewByGroup);
+        const map: Record<string, string> = {};
+        await Promise.all(
+          types.map(async (typeName) => {
+            const rules = await fetchRules(typeName);
+            for (const r of rules) {
+              if (r.rule_name) map[r.rule_name] = typeName;
+            }
+          })
+        );
+        if (!cancelled) setRuleTypeByRuleName(map);
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        // eslint-disable-next-line no-console
+        console.error("rule-type lookup failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, viewByGroup]);
+
+  // Counts shown in the "Number of Exceptions" grid. Row 1 is the current
+  // scope (group / rule type), subsequent rows are the breakdown one level
+  // deeper. Derived from the currently-loaded exceptions so it stays in
+  // sync with the bottom grid.
+  const exceptionCountRows = useMemo<{ name: string; count: number }[]>(() => {
+    if (viewMode === "security") return [];
+
+    if (viewMode === "group") {
+      if (!viewByGroup || viewByGroup === "All") return [];
+      const rows: { name: string; count: number }[] = [
+        { name: viewByGroup, count: exceptions.length },
+      ];
+      const byType = new Map<string, number>();
+      for (const e of exceptions) {
+        const t = ruleTypeByRuleName[e.ruleName] ?? "Unknown";
+        byType.set(t, (byType.get(t) ?? 0) + 1);
+      }
+      for (const [name, count] of Array.from(byType.entries()).sort(
+        (a, b) => b[1] - a[1]
+      )) {
+        rows.push({ name, count });
+      }
+      return rows;
+    }
+
+    if (viewMode === "ruleType") {
+      if (!viewByRuleType || viewByRuleType === "All") return [];
+      const rows: { name: string; count: number }[] = [
+        { name: viewByRuleType, count: exceptions.length },
+      ];
+      const byRule = new Map<string, number>();
+      for (const e of exceptions) {
+        const name = e.ruleName || "(unnamed)";
+        byRule.set(name, (byRule.get(name) ?? 0) + 1);
+      }
+      for (const [name, count] of Array.from(byRule.entries()).sort(
+        (a, b) => b[1] - a[1]
+      )) {
+        rows.push({ name, count });
+      }
+      return rows;
+    }
+
+    // viewMode === "rule" — flat list of rules and their counts.
+    const counts = new Map<string, number>();
+    for (const e of exceptions) {
+      const name = e.ruleName || "(unnamed)";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [
+    viewMode,
+    viewByGroup,
+    viewByRuleType,
+    exceptions,
+    ruleTypeByRuleName,
   ]);
 
   return (
@@ -649,9 +809,16 @@ export default function DqMonitorPage() {
           tabIndex={0}
         />
 
-        <div className="dq-main">
+        <div className="dq-main" ref={dqMainRef}>
           {viewMode === "security" && (
-            <section className="dq-section">
+            <section
+              className="dq-section"
+              style={
+                assetsHeight !== null
+                  ? { flex: `0 0 ${assetsHeight}px` }
+                  : undefined
+              }
+            >
               <h2 className="dq-section-title">Assets</h2>
               {loading && (
                 <div className="dq-section-subtitle">Loading assets…</div>
@@ -673,9 +840,164 @@ export default function DqMonitorPage() {
                   onAssignToChange={handleAssignToChange}
                   blinkingAladdinId={blinkingAladdinId}
                   onVisibleRowsChange={setVisibleAssets}
+                  actionByAsset={actionByAsset}
+                  onActionShownChange={setActionShown}
+                  onAction={(action, assetId, idBbGlobal) => {
+                    if (action === "runRules") {
+                      if (
+                        !window.confirm(
+                          `Are you sure you want to run the rules again for Asset Id = ${assetId}`
+                        )
+                      ) {
+                        return;
+                      }
+                      executeRules("Intraday", assetId, idBbGlobal).catch((e) => {
+                        // eslint-disable-next-line no-console
+                        console.error("executeRules failed", e);
+                      });
+                      return;
+                    }
+                    if (action === "loadTdc") {
+                      window.alert(`Load TDC is not implemented yet`);
+                      return;
+                    }
+                    if (action === "loadAnalytics") {
+                      window.alert(`Load Analytics is not implemented yet`);
+                      return;
+                    }
+                    if (action === "notifyTod") {
+                      window.alert(`Notify TOD is not implemented yet`);
+                      return;
+                    }
+                  }}
                 />
               )}
             </section>
+          )}
+
+          {viewMode === "security" && (
+            <div
+              className="dq-main-resizer"
+              onMouseDown={startAssetsResize}
+              onKeyDown={(e) => {
+                if (!dqMainRef.current) return;
+                const rect = dqMainRef.current.getBoundingClientRect();
+                const min = 120;
+                const max = Math.max(min, rect.height - 120);
+                const step = e.shiftKey ? 40 : 10;
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAssetsHeight((h) =>
+                    Math.max(min, (h ?? rect.height / 2) - step)
+                  );
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAssetsHeight((h) =>
+                    Math.min(max, (h ?? rect.height / 2) + step)
+                  );
+                }
+              }}
+              role="slider"
+              aria-orientation="horizontal"
+              aria-label="Resize assets grid"
+              aria-valuenow={assetsHeight ?? 0}
+              aria-valuemin={120}
+              aria-valuemax={
+                dqMainRef.current
+                  ? Math.max(120, dqMainRef.current.clientHeight - 120)
+                  : 1000
+              }
+              tabIndex={0}
+            />
+          )}
+
+          {viewMode !== "security" && (
+            <section
+              className="dq-section dq-exception-count"
+              style={
+                countHeight !== null
+                  ? { flex: `0 0 ${countHeight}px` }
+                  : undefined
+              }
+            >
+              <h2 className="dq-section-title">Number of Exceptions</h2>
+              <div className="dq-table-container">
+                <table className="dq-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exceptionCountRows.map((row, i) => {
+                      const isHeader =
+                        i === 0 &&
+                        (viewMode === "group" || viewMode === "ruleType");
+                      return (
+                        <tr
+                          key={`${row.name}-${i}`}
+                          className={
+                            "dq-table-row " +
+                            (isHeader
+                              ? "dq-count-row-header"
+                              : i % 2 === 0
+                              ? "dq-table-row-even"
+                              : "dq-table-row-odd")
+                          }
+                        >
+                          <td>{row.name}</td>
+                          <td>{row.count}</td>
+                        </tr>
+                      );
+                    })}
+                    {exceptionCountRows.length === 0 && (
+                      <tr className="dq-table-row dq-table-row-even">
+                        <td colSpan={2}>
+                          <em>(no matching rules)</em>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {viewMode !== "security" && (
+            <div
+              className="dq-main-resizer"
+              onMouseDown={startCountResize}
+              onKeyDown={(e) => {
+                if (!dqMainRef.current) return;
+                const rect = dqMainRef.current.getBoundingClientRect();
+                const min = 80;
+                const max = Math.max(min, rect.height - 120);
+                const step = e.shiftKey ? 40 : 10;
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setCountHeight((h) =>
+                    Math.max(min, (h ?? rect.height / 2) - step)
+                  );
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setCountHeight((h) =>
+                    Math.min(max, (h ?? rect.height / 2) + step)
+                  );
+                }
+              }}
+              role="slider"
+              aria-orientation="horizontal"
+              aria-label="Resize Number of Exceptions"
+              aria-valuenow={countHeight ?? 0}
+              aria-valuemin={80}
+              aria-valuemax={
+                dqMainRef.current
+                  ? Math.max(80, dqMainRef.current.clientHeight - 120)
+                  : 800
+              }
+              tabIndex={0}
+            />
           )}
 
           <section className="dq-section">
@@ -687,7 +1009,7 @@ export default function DqMonitorPage() {
                 {assets[selectedRow].aladdinId}
                 {exceptionsLoading
                   ? " (loading…)"
-                  : ` (${exceptions.length} exceptions)`}
+                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
               </div>
             )}
 
@@ -696,7 +1018,7 @@ export default function DqMonitorPage() {
                 Rule Group: {viewByGroup}
                 {exceptionsLoading
                   ? " (loading…)"
-                  : ` (${exceptions.length} exceptions)`}
+                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
               </div>
             )}
 
@@ -705,7 +1027,7 @@ export default function DqMonitorPage() {
                 Rule Group: {viewByGroup} / Rule Type: {viewByRuleType}
                 {exceptionsLoading
                   ? " (loading…)"
-                  : ` (${exceptions.length} exceptions)`}
+                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
               </div>
             )}
 
@@ -729,7 +1051,20 @@ export default function DqMonitorPage() {
         </div>
       </div>
 
-      <div className="dq-status-bar">
+      <div
+        className={
+          "dq-status-bar" + (footerBlinking ? " dq-status-bar-blinking" : "")
+        }
+        role="button"
+        tabIndex={0}
+        onClick={() => setFooterBlinking(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setFooterBlinking(false);
+          }
+        }}
+      >
         {lastEvent
           ? `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
           : ""}
