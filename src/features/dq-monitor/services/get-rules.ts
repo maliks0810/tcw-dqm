@@ -10,11 +10,11 @@ export type Rule = {
 };
 
 export async function fetchRules(
-  ruleType?: string,
+  ruleCatalog?: string,
   signal?: AbortSignal
 ): Promise<Rule[]> {
   const params = new URLSearchParams();
-  if (ruleType && ruleType !== "All") params.set("rule_type", ruleType);
+  if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
   const qs = params.toString();
   const url = qs ? `${RULES_ENDPOINT}?${qs}` : RULES_ENDPOINT;
   const res = await fetch(url, { signal });

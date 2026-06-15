@@ -2,32 +2,32 @@ import type { ExceptionRow } from "../components/types";
 
 const DATA_QUALITY_SERVICE_URL =
   process.env.REACT_APP_DATA_QUALITY_SERVICE_URL ?? "http://127.0.0.1:8100";
-const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getSecurityExceptions`;
+const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getExceptions`;
 
 type ApiException = {
-  security_exception_id?: number;
+  exception_id?: number;
   rule_id?: number;
   rule_name?: string;
-  priority?: string;
   asset_id?: string;
-  run_date?: string;
-  run_start?: string;
-  result_type_id?: number;
-  exception_source_id?: number;
-  exception_status_id?: number;
-  severity_type_id?: number;
-  process_type_id?: number;
-  category_type_id?: number;
-  assign_to?: string;
-  assign_to_date?: string;
-  assigned_by?: string;
-  resolve_date?: string;
+  exception_date?: string;
+  exception_time?: string;
+  id_bb_global?: string;
+  status_id?: number;
+  exception_status?: string;
+  comment_id?: number;
   issue_description?: string;
+  result_data?: string;
+  suppress_date?: string;
+  assign_to_id?: number;
+  assign_to?: string;
+  result_type_id?: number;
+  priority?: string;
+  severity?: string;
+  exception_type?: string;
   created_date?: string;
   created_by?: string;
   modified_date?: string;
   modified_by?: string;
-  exception_status?: string;
 };
 
 function formatDateTime(iso?: string): string {
@@ -52,7 +52,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
       ? String(e.rule_id)
       : "";
   return {
-    dateTime: formatDateTime(e.run_date),
+    dateTime: formatDateTime(e.exception_time),
     priority: e.priority ?? "",
     ruleName: ruleLabel,
     issue: e.issue_description ?? "",
@@ -64,7 +64,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
   };
 }
 
-export async function fetchSecurityExceptions(
+export async function fetchExceptions(
   assetId: string,
   signal?: AbortSignal,
   exceptionType?: string,
@@ -100,17 +100,15 @@ export async function fetchSecurityExceptions(
   const url = qs ? `${EXCEPTIONS_ENDPOINT}?${qs}` : EXCEPTIONS_ENDPOINT;
   const res = await fetch(url, { signal });
   if (!res.ok) {
-    throw new Error(
-      `getSecurityExceptions failed: ${res.status} ${res.statusText}`
-    );
+    throw new Error(`getExceptions failed: ${res.status} ${res.statusText}`);
   }
   const raw = (await res.json()) as ApiException[];
   if (!Array.isArray(raw)) {
-    throw new Error("getSecurityExceptions: expected array response");
+    throw new Error("getExceptions: expected array response");
   }
   const sorted = raw.slice().sort((a, b) => {
-    const ta = a.run_date ? new Date(a.run_date).getTime() : 0;
-    const tb = b.run_date ? new Date(b.run_date).getTime() : 0;
+    const ta = a.exception_time ? new Date(a.exception_time).getTime() : 0;
+    const tb = b.exception_time ? new Date(b.exception_time).getTime() : 0;
     return tb - ta;
   });
   return sorted.map(toExceptionRow);

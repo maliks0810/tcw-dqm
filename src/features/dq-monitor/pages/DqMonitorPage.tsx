@@ -5,7 +5,7 @@ import ExceptionsTable from "../components/ExceptionsTable";
 import RuleTreeView from "../components/RuleTreeView";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
-import { fetchSecurityExceptions } from "../services/get-security-exceptions";
+import { fetchExceptions } from "../services/get-exceptions";
 import { executeRules } from "../services/execute-rules";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
@@ -13,7 +13,7 @@ import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
-import { fetchRuleTypes } from "../services/get-rule-types";
+import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRules } from "../services/get-rules";
 import { subscribeToEvents } from "../services/stream-events";
 import { exportAssetsToExcel } from "../../../utils/export-to-excel";
@@ -147,11 +147,11 @@ export default function DqMonitorPage() {
   const [exceptionStatus, setExceptionStatus] = useState<string>("Pending");
   const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
-    "security" | "group" | "ruleType" | "rule"
+    "security" | "group" | "ruleCatalog" | "rule"
   >("security");
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
-  const [viewByRuleType, setViewByRuleType] = useState<string>("All");
+  const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
   const [viewByRule, setViewByRule] = useState<string>("All");
   const [ruleOptions, setRuleOptions] = useState<string[]>([]);
   const [ruleNameSearchApplied, setRuleNameSearchApplied] = useState<string>("");
@@ -192,6 +192,17 @@ export default function DqMonitorPage() {
       window.removeEventListener("focus", stopTitleBlink);
       stopTitleBlink();
     };
+  }, []);
+
+  // Ask once for OS-level notification permission so SSE events can also
+  // surface in the Windows Action Center, not just the footer.
+  useEffect(() => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {
+        /* user dismissed prompt — fall back to footer-only */
+      });
+    }
   }, []);
 
   const selectedAladdinId =
@@ -321,7 +332,7 @@ export default function DqMonitorPage() {
   }, [ruleComboOpen, commitRuleQuery]);
 
   useEffect(() => {
-    if (!viewByRuleType || viewByRuleType === "All") {
+    if (!viewByRuleCatalog || viewByRuleCatalog === "All") {
       setRuleOptions([]);
       setViewByRule("All");
       setRuleQuery("");
@@ -329,7 +340,7 @@ export default function DqMonitorPage() {
       return;
     }
     const controller = new AbortController();
-    fetchRules(viewByRuleType, controller.signal)
+    fetchRules(viewByRuleCatalog, controller.signal)
       .then((rules) => {
         const names = rules
           .map((r) => r.rule_name)
@@ -343,7 +354,7 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, [viewByRuleType]);
+  }, [viewByRuleCatalog]);
 
   useEffect(() => {
     return subscribeToEvents((event) => {
@@ -357,10 +368,11 @@ export default function DqMonitorPage() {
         };
         const aladdinId = payload.asset_id ?? "";
         const count = typeof payload.count === "number" ? payload.count : 0;
+        const receivedAt = new Date().toLocaleTimeString();
         setLastEvent({
           aladdinId,
           count,
-          receivedAt: new Date().toLocaleTimeString(),
+          receivedAt,
         });
         if (
           event.type === "security_exception.inserted" &&
@@ -370,6 +382,19 @@ export default function DqMonitorPage() {
           if (document.hidden) startTitleBlink();
         }
         setFooterBlinking(true);
+        if (
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            new Notification("TCW-DQM", {
+              body: `Asset Id = ${aladdinId}, No of Exceptions = ${count}, Received at ${receivedAt}`,
+              tag: "tcw-dqm-exception",
+            });
+          } catch {
+            /* some browsers throw when window is unfocused — ignore */
+          }
+        }
         setRefreshTick((n) => n + 1);
       }
     });
@@ -387,7 +412,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleType, viewByRule, exceptionStatus, assignToFilter)
+    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter)
       .then((rows) => {
         setAssets(rows);
         const wantedAladdin = selectedAladdinRef.current;
@@ -403,7 +428,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick, dqmType, severity, priority, viewByRuleType, viewByRule, exceptionStatus, assignToFilter]);
+  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter]);
 
   const handleAssignToChange = (index: number, value: string) => {
     const target = assets[index];
@@ -427,7 +452,7 @@ export default function DqMonitorPage() {
 
   useEffect(() => {
     const inGroupMode = viewMode === "group";
-    const inRuleTypeMode = viewMode === "ruleType";
+    const inRuleCatalogMode = viewMode === "ruleCatalog";
     const inRuleMode = viewMode === "rule";
     const usesAsset = viewMode === "security";
     if (usesAsset && !selectedAladdinId) {
@@ -443,15 +468,15 @@ export default function DqMonitorPage() {
     setExceptionsLimitExceeded(false);
     const assetArg = usesAsset ? selectedAladdinId : "";
     const ruleGroupArg =
-      inGroupMode || inRuleTypeMode || inRuleMode ? viewByGroup : undefined;
-    const ruleTypeArg = inGroupMode ? undefined : viewByRuleType;
-    fetchSecurityExceptions(
+      inGroupMode || inRuleCatalogMode || inRuleMode ? viewByGroup : undefined;
+    const ruleCatalogArg = inGroupMode ? undefined : viewByRuleCatalog;
+    fetchExceptions(
       assetArg,
       controller.signal,
       dqmType,
       severity,
       priority,
-      ruleTypeArg,
+      ruleCatalogArg,
       viewByRule,
       ruleGroupArg,
       exceptionStatus,
@@ -480,7 +505,7 @@ export default function DqMonitorPage() {
     dqmType,
     severity,
     priority,
-    viewByRuleType,
+    viewByRuleCatalog,
     viewByRule,
     viewMode,
     viewByGroup,
@@ -490,20 +515,20 @@ export default function DqMonitorPage() {
   ]);
 
   // When in group mode, we break the count down by rule type — but the
-  // ExceptionRow only carries ruleName, so we need a ruleName -> ruleType
+  // ExceptionRow only carries ruleName, so we need a ruleName -> ruleCatalog
   // lookup, built by walking the rule types in the selected group.
-  const [ruleTypeByRuleName, setRuleTypeByRuleName] = useState<
+  const [ruleCatalogByRuleName, setRuleCatalogByRuleName] = useState<
     Record<string, string>
   >({});
   useEffect(() => {
     if (viewMode !== "group" || !viewByGroup || viewByGroup === "All") {
-      setRuleTypeByRuleName({});
+      setRuleCatalogByRuleName({});
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const types = await fetchRuleTypes(viewByGroup);
+        const types = await fetchRuleCatalogs(viewByGroup);
         const map: Record<string, string> = {};
         await Promise.all(
           types.map(async (typeName) => {
@@ -513,7 +538,7 @@ export default function DqMonitorPage() {
             }
           })
         );
-        if (!cancelled) setRuleTypeByRuleName(map);
+        if (!cancelled) setRuleCatalogByRuleName(map);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
         // eslint-disable-next-line no-console
@@ -539,7 +564,7 @@ export default function DqMonitorPage() {
       ];
       const byType = new Map<string, number>();
       for (const e of exceptions) {
-        const t = ruleTypeByRuleName[e.ruleName] ?? "Unknown";
+        const t = ruleCatalogByRuleName[e.ruleName] ?? "Unknown";
         byType.set(t, (byType.get(t) ?? 0) + 1);
       }
       for (const [name, count] of Array.from(byType.entries()).sort(
@@ -550,10 +575,10 @@ export default function DqMonitorPage() {
       return rows;
     }
 
-    if (viewMode === "ruleType") {
-      if (!viewByRuleType || viewByRuleType === "All") return [];
+    if (viewMode === "ruleCatalog") {
+      if (!viewByRuleCatalog || viewByRuleCatalog === "All") return [];
       const rows: { name: string; count: number }[] = [
-        { name: viewByRuleType, count: exceptions.length },
+        { name: viewByRuleCatalog, count: exceptions.length },
       ];
       const byRule = new Map<string, number>();
       for (const e of exceptions) {
@@ -580,9 +605,9 @@ export default function DqMonitorPage() {
   }, [
     viewMode,
     viewByGroup,
-    viewByRuleType,
+    viewByRuleCatalog,
     exceptions,
-    ruleTypeByRuleName,
+    ruleCatalogByRuleName,
   ]);
 
   return (
@@ -667,7 +692,7 @@ export default function DqMonitorPage() {
           <h3 className="dq-sidebar-title">View Exceptions</h3>
           <RuleTreeView
             groups={ruleGroupOptions}
-            getTypes={(group) => fetchRuleTypes(group)}
+            getTypes={(group) => fetchRuleCatalogs(group)}
             getRules={async (type) => {
               const rules = await fetchRules(type);
               return rules
@@ -676,34 +701,34 @@ export default function DqMonitorPage() {
             }}
             selection={{
               group: viewByGroup,
-              type: viewByRuleType,
+              type: viewByRuleCatalog,
               rule: viewByRule,
             }}
             onSelectAll={() => {
               setViewMode("rule");
               setViewByGroup("All");
-              setViewByRuleType("All");
+              setViewByRuleCatalog("All");
               setViewByRule("All");
               setRuleNameSearchApplied("");
             }}
             onSelectGroup={(g) => {
               setViewMode("group");
               setViewByGroup(g);
-              setViewByRuleType("All");
+              setViewByRuleCatalog("All");
               setViewByRule("All");
               setRuleNameSearchApplied("");
             }}
             onSelectType={(g, t) => {
-              setViewMode("ruleType");
+              setViewMode("ruleCatalog");
               setViewByGroup(g);
-              setViewByRuleType(t);
+              setViewByRuleCatalog(t);
               setViewByRule("All");
               setRuleNameSearchApplied("");
             }}
             onSelectRule={(g, t, r) => {
               setViewMode("rule");
               setViewByGroup(g);
-              setViewByRuleType(t);
+              setViewByRuleCatalog(t);
               setViewByRule(r);
               setRuleNameSearchApplied("");
             }}
@@ -933,7 +958,7 @@ export default function DqMonitorPage() {
                     {exceptionCountRows.map((row, i) => {
                       const isHeader =
                         i === 0 &&
-                        (viewMode === "group" || viewMode === "ruleType");
+                        (viewMode === "group" || viewMode === "ruleCatalog");
                       return (
                         <tr
                           key={`${row.name}-${i}`}
@@ -1022,9 +1047,9 @@ export default function DqMonitorPage() {
               </div>
             )}
 
-            {viewMode === "ruleType" && (
+            {viewMode === "ruleCatalog" && (
               <div className="dq-section-subtitle dq-asset-title">
-                Rule Group: {viewByGroup} / Rule Type: {viewByRuleType}
+                Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
                 {exceptionsLoading
                   ? " (loading…)"
                   : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}

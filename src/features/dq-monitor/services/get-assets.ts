@@ -59,7 +59,7 @@ export async function fetchAssets(
   exceptionType?: string,
   severity?: string,
   priority?: string,
-  ruleType?: string,
+  ruleCatalog?: string,
   ruleName?: string,
   exceptionStatus?: string,
   assignTo?: string
@@ -68,7 +68,7 @@ export async function fetchAssets(
   if (exceptionType) params.set("exception_type", exceptionType);
   if (severity && severity !== "All") params.set("severity", severity);
   if (priority && priority !== "All") params.set("priority", priority);
-  if (ruleType && ruleType !== "All") params.set("rule_type", ruleType);
+  if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
   if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
   if (exceptionStatus && exceptionStatus !== "All")
     params.set("exception_status", exceptionStatus);
