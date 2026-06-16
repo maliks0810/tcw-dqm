@@ -358,9 +358,9 @@
 }
 
 .dq-table th {
-  background: #f3f4f6;
+  background: #003e7e;
   font-weight: 700;
-  color: #111827;
+  color: #ffffff;
   white-space: nowrap;
   position: sticky;
   top: 0;
@@ -506,6 +506,17 @@
   top: 22px;
   left: 0;
   z-index: 50;
+}
+
+/* When rendered via portal under document.body, anchor in screen
+   coordinates so the popover escapes the grid's overflow:auto clip
+   and overlays the Exceptions grid below. The inline style sets the
+   computed top/left. */
+.dq-col-filter-popover-portal {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 1000;
   background: #ffffff;
   border: 1px solid #d1d5db;
   border-radius: 6px;

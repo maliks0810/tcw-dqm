@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 function pruneFilter(
   current: Set<string> | null,
@@ -44,19 +45,47 @@ export default function ColumnFilterHeader({
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Set<string>>(new Set());
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
+    null
+  );
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setCoords(null);
+      return;
+    }
+    // Pin the portaled popover under the trigger button using its
+    // screen-space rect, so it escapes any overflow:auto ancestors
+    // (e.g. the assets grid scroll container) and overlays the
+    // Exceptions grid when its content runs long.
+    const place = () => {
+      if (!buttonRef.current) return;
+      const r = buttonRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 2, left: r.left });
+    };
+    place();
     const onMouseDown = (e: MouseEvent) => {
       if (
         popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node)
+        !popoverRef.current.contains(e.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target as Node)
       ) {
         onToggle(false);
       }
     };
+    const onScrollOrResize = () => onToggle(false);
     document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    window.addEventListener("resize", onScrollOrResize);
+    // Capture phase so scrolls inside nested containers (table grids)
+    // are caught and we close the popover rather than leaving it stranded.
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
   }, [isOpen, onToggle]);
 
   const open = () => {
@@ -116,6 +145,7 @@ export default function ColumnFilterHeader({
       <span>{label}</span>
       <button
         type="button"
+        ref={buttonRef}
         className={
           "dq-col-filter-btn" + (active ? " dq-col-filter-btn-active" : "")
         }
@@ -128,11 +158,12 @@ export default function ColumnFilterHeader({
       >
         ▾
       </button>
-      {isOpen && (
+      {isOpen && coords && createPortal(
         <div
           ref={popoverRef}
-          className="dq-col-filter-popover"
+          className="dq-col-filter-popover dq-col-filter-popover-portal"
           role="presentation"
+          style={{ top: coords.top, left: coords.left }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
@@ -180,7 +211,8 @@ export default function ColumnFilterHeader({
               OK
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
