@@ -1,3 +1,15 @@
+@font-face {
+  font-family: 'ABC-MonumentGrotesk-Regular';
+  src: url('./fonts/ABCMonumentGrotesk-Regular.TTF') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'ABC-MonumentGrotesk-Bold';
+  src: url('./fonts/ABCMonumentGrotesk-Bold.TTF') format('truetype');
+  font-display: swap;
+}
+
 .dq-page {
   /* Fill the host container (own viewport when standalone, the iframe's
      box when embedded) rather than the global viewport, so it adapts to
@@ -359,6 +371,7 @@
 
 .dq-table th {
   background: #003e7e;
+  font-family: 'ABC-MonumentGrotesk-Bold', Arial, Helvetica, sans-serif;
   font-weight: 700;
   color: #ffffff;
   white-space: nowrap;
