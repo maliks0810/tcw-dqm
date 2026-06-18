@@ -442,10 +442,10 @@ export default function DqMonitorPage() {
       next[index] = { ...next[index], assignTo: value };
       return next;
     });
-    // eslint-disable-next-line no-console
+
     console.log("updateAssignTo →", { assetId, value });
     updateAssignTo(assetId, value).catch((e) => {
-      // eslint-disable-next-line no-console
+   
       console.error("updateAssignTo failed", e);
     });
   };
@@ -541,7 +541,7 @@ export default function DqMonitorPage() {
         if (!cancelled) setRuleCatalogByRuleName(map);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
-        // eslint-disable-next-line no-console
+        
         console.error("rule-type lookup failed", e);
       }
     })();
@@ -877,7 +877,7 @@ export default function DqMonitorPage() {
                         return;
                       }
                       executeRules("Intraday", assetId, idBbGlobal).catch((e) => {
-                        // eslint-disable-next-line no-console
+               
                         console.error("executeRules failed", e);
                       });
                       return;
