@@ -1,9 +1,19 @@
-import React from "react";
+import { useMemo } from "react";
 import type { ExceptionRow } from "./types";
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
 };
+
+// RESULT_DATA keys whose values are already shown via the core columns above
+// (Asset Id, Rule Name, Issue). Matched case-insensitively after uppercasing.
+// Anything else in RESULT_DATA becomes a dynamic trailing column.
+const COVERED_BY_CORE_COLUMNS = new Set<string>([
+  "ASSET_ID",
+  "ALADDIN_ID",
+  "RULE_NAME",
+  "ISSUE_DESCRIPTION",
+]);
 
 function getActionClass(action: string): string {
   switch (action.toLowerCase()) {
@@ -18,7 +28,34 @@ function getActionClass(action: string): string {
   }
 }
 
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return "";
+  }
+}
+
 export default function ExceptionsTable({ data }: ExceptionsTableProps) {
+  // Union of all keys across every row's parsed RESULT_DATA, minus the ones
+  // already shown via core columns. Stable alphabetical order so the column
+  // layout doesn't shuffle as rows come and go.
+  const extraKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of data) {
+      if (!row.resultData) continue;
+      for (const k of Object.keys(row.resultData)) {
+        if (!COVERED_BY_CORE_COLUMNS.has(k.toUpperCase())) {
+          set.add(k);
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }, [data]);
+
   if (data.length === 0) {
     return (
       <div className="dq-empty-state">
@@ -40,6 +77,9 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
             <th>Vendor</th>
             <th>Action</th>
             <th>Comments</th>
+            {extraKeys.map((k) => (
+              <th key={k}>{k}</th>
+            ))}
           </tr>
         </thead>
 
@@ -67,6 +107,9 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
                   <span className={getActionClass(row.action)}>{row.action}</span>
                 </td>
                 <td>{row.comments}</td>
+                {extraKeys.map((k) => (
+                  <td key={k}>{formatCell(row.resultData?.[k])}</td>
+                ))}
               </tr>
             );
           })}

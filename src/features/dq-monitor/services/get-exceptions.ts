@@ -44,6 +44,19 @@ function formatDateTime(iso?: string): string {
   });
 }
 
+function parseResultData(s?: string): Record<string, unknown> | undefined {
+  if (!s) return undefined;
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* malformed JSON — fall through and treat as absent */
+  }
+  return undefined;
+}
+
 function toExceptionRow(e: ApiException): ExceptionRow {
   const ruleLabel =
     e.rule_name && e.rule_name.length > 0
@@ -61,6 +74,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     action: "",
     comments: "",
     status: e.exception_status ?? "",
+    resultData: parseResultData(e.result_data),
   };
 }
 
