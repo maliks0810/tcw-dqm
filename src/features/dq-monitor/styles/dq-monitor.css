@@ -311,6 +311,8 @@
 
 .dq-exception-count {
   flex: 0 1 auto;
+  max-width: 30%;
+  align-self: flex-start;
 }
 
 .dq-exception-count .dq-table {

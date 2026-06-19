@@ -90,8 +90,11 @@ export default function DqMonitorPage() {
         const rect = dqMainRef.current.getBoundingClientRect();
         const min = 80;
         const max = Math.max(min, rect.height - 120);
+        // Number of Exceptions sits at the bottom now; countHeight is the
+        // bottom section's height, so it grows as the divider moves up
+        // (mouseY closer to rect.top → larger bottom section).
         setCountHeight(
-          Math.min(max, Math.max(min, e.clientY - rect.top))
+          Math.min(max, Math.max(min, rect.bottom - e.clientY))
         );
       }
     };
@@ -957,95 +960,6 @@ export default function DqMonitorPage() {
             />
           )}
 
-          {viewMode !== "security" && treeSelected && (
-            <section
-              className="dq-section dq-exception-count"
-              style={
-                countHeight !== null
-                  ? { flex: `0 0 ${countHeight}px` }
-                  : undefined
-              }
-            >
-              <h2 className="dq-section-title dq-section-title-bold">Number of Exceptions</h2>
-              <div className="dq-table-container">
-                <table className="dq-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {exceptionCountRows.map((row, i) => {
-                      const isHeader =
-                        i === 0 &&
-                        (viewMode === "group" || viewMode === "ruleCatalog");
-                      return (
-                        <tr
-                          key={`${row.name}-${i}`}
-                          className={
-                            "dq-table-row " +
-                            (isHeader
-                              ? "dq-count-row-header"
-                              : i % 2 === 0
-                              ? "dq-table-row-even"
-                              : "dq-table-row-odd")
-                          }
-                        >
-                          <td>{row.name}</td>
-                          <td>{row.count}</td>
-                        </tr>
-                      );
-                    })}
-                    {exceptionCountRows.length === 0 && (
-                      <tr className="dq-table-row dq-table-row-even">
-                        <td colSpan={2}>
-                          <em>(no matching rules)</em>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {viewMode !== "security" && treeSelected && (
-            <div
-              className="dq-main-resizer"
-              onMouseDown={startCountResize}
-              onKeyDown={(e) => {
-                if (!dqMainRef.current) return;
-                const rect = dqMainRef.current.getBoundingClientRect();
-                const min = 80;
-                const max = Math.max(min, rect.height - 120);
-                const step = e.shiftKey ? 40 : 10;
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setCountHeight((h) =>
-                    Math.max(min, (h ?? rect.height / 2) - step)
-                  );
-                } else if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setCountHeight((h) =>
-                    Math.min(max, (h ?? rect.height / 2) + step)
-                  );
-                }
-              }}
-              role="slider"
-              aria-orientation="horizontal"
-              aria-label="Resize Number of Exceptions"
-              aria-valuenow={countHeight ?? 0}
-              aria-valuemin={80}
-              aria-valuemax={
-                dqMainRef.current
-                  ? Math.max(80, dqMainRef.current.clientHeight - 120)
-                  : 800
-              }
-              tabIndex={0}
-            />
-          )}
-
           {(viewMode === "security" || treeSelected) && (
           <section className="dq-section">
             <h2 className="dq-section-title dq-section-title-bold">Exceptions</h2>
@@ -1098,6 +1012,97 @@ export default function DqMonitorPage() {
               showResultDataColumns={viewMode !== "security"}
             />
           </section>
+          )}
+
+          {viewMode !== "security" && treeSelected && (
+            <div
+              className="dq-main-resizer"
+              onMouseDown={startCountResize}
+              onKeyDown={(e) => {
+                if (!dqMainRef.current) return;
+                const rect = dqMainRef.current.getBoundingClientRect();
+                const min = 80;
+                const max = Math.max(min, rect.height - 120);
+                const step = e.shiftKey ? 40 : 10;
+                // Number of Exceptions sits at the bottom; ArrowUp grows it
+                // (divider moves up), ArrowDown shrinks it.
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setCountHeight((h) =>
+                    Math.min(max, (h ?? rect.height / 4) + step)
+                  );
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setCountHeight((h) =>
+                    Math.max(min, (h ?? rect.height / 4) - step)
+                  );
+                }
+              }}
+              role="slider"
+              aria-orientation="horizontal"
+              aria-label="Resize Number of Exceptions"
+              aria-valuenow={countHeight ?? 0}
+              aria-valuemin={80}
+              aria-valuemax={
+                dqMainRef.current
+                  ? Math.max(80, dqMainRef.current.clientHeight - 120)
+                  : 800
+              }
+              tabIndex={0}
+            />
+          )}
+
+          {viewMode !== "security" && treeSelected && (
+            <section
+              className="dq-section dq-exception-count"
+              style={
+                countHeight !== null
+                  ? { flex: `0 0 ${countHeight}px` }
+                  : undefined
+              }
+            >
+              <h2 className="dq-section-title dq-section-title-bold">Number of Exceptions</h2>
+              <div className="dq-table-container">
+                <table className="dq-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exceptionCountRows.map((row, i) => {
+                      const isHeader =
+                        i === 0 &&
+                        (viewMode === "group" || viewMode === "ruleCatalog");
+                      return (
+                        <tr
+                          key={`${row.name}-${i}`}
+                          className={
+                            "dq-table-row " +
+                            (isHeader
+                              ? "dq-count-row-header"
+                              : i % 2 === 0
+                              ? "dq-table-row-even"
+                              : "dq-table-row-odd")
+                          }
+                        >
+                          <td>{row.name}</td>
+                          <td>{row.count}</td>
+                        </tr>
+                      );
+                    })}
+                    {exceptionCountRows.length === 0 && (
+                      <tr className="dq-table-row dq-table-row-even">
+                        <td colSpan={2}>
+                          <em>(no matching rules)</em>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
         </div>
       </div>
