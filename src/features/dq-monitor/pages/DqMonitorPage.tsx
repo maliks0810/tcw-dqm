@@ -865,7 +865,7 @@ export default function DqMonitorPage() {
                   : undefined
               }
             >
-              <h2 className="dq-section-title">Assets</h2>
+              <h2 className="dq-section-title dq-section-title-bold">Assets</h2>
               {loading && (
                 <div className="dq-section-subtitle">Loading assets…</div>
               )}
