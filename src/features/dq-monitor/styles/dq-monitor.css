@@ -167,7 +167,7 @@
 
 .dq-sidebar-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   color: #111827;
 }
@@ -184,7 +184,11 @@
 
 .dq-sidebar-row .dq-sidebar-title {
   flex: 0 0 auto;
-  width: 110px;
+  width: 80px;
+}
+
+.dq-sidebar-row .dq-sidebar-title::after {
+  content: ":";
 }
 
 .dq-sidebar-row .dq-sidebar-select {
