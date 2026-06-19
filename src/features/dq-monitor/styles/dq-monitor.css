@@ -325,7 +325,7 @@
 .dq-section-title {
   margin: 0 0 8px 0;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   color: #111827;
   flex: none;
 }
@@ -371,7 +371,7 @@
 
 .dq-table th {
   background: #003e7e;
-  font-weight: 700;
+  font-weight: 600;
   color: #ffffff;
   white-space: nowrap;
   position: sticky;
