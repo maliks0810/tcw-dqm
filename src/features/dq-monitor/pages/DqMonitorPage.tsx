@@ -148,7 +148,11 @@ export default function DqMonitorPage() {
   const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleCatalog" | "rule"
-  >("security");
+  >("rule");
+  // Tracks whether the user has picked anything in the rule tree yet. When
+  // false, we render an empty right side instead of firing a broad exceptions
+  // fetch — i.e. the initial blank state.
+  const [treeSelected, setTreeSelected] = useState<boolean>(false);
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
   const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
@@ -303,6 +307,7 @@ export default function DqMonitorPage() {
       setRuleNameSearchApplied(`%${trimmed}%`);
     }
     setRuleComboOpen(false);
+    setTreeSelected(true);
   }, [ruleQuery, ruleOptions]);
 
   const pickRuleFromCombo = (name: string) => {
@@ -315,6 +320,7 @@ export default function DqMonitorPage() {
     }
     setRuleNameSearchApplied("");
     setRuleComboOpen(false);
+    setTreeSelected(true);
   };
 
   useEffect(() => {
@@ -462,6 +468,15 @@ export default function DqMonitorPage() {
       setExceptionsLimitExceeded(false);
       return;
     }
+    if (!usesAsset && !treeSelected) {
+      // Initial blank state — user hasn't picked anything in the rule tree
+      // or typed a pattern. Skip the broad fetch.
+      setExceptions([]);
+      setExceptionsError(null);
+      setExceptionsLoading(false);
+      setExceptionsLimitExceeded(false);
+      return;
+    }
     const controller = new AbortController();
     setExceptionsLoading(true);
     setExceptionsError(null);
@@ -512,6 +527,7 @@ export default function DqMonitorPage() {
     exceptionStatus,
     assignToFilter,
     ruleNameSearchApplied,
+    treeSelected,
   ]);
 
   // When in group mode, we break the count down by rule type — but the
@@ -704,12 +720,14 @@ export default function DqMonitorPage() {
               type: viewByRuleCatalog,
               rule: viewByRule,
             }}
+            hasSelection={treeSelected}
             onSelectAll={() => {
               setViewMode("rule");
               setViewByGroup("All");
               setViewByRuleCatalog("All");
               setViewByRule("All");
               setRuleNameSearchApplied("");
+              setTreeSelected(true);
             }}
             onSelectGroup={(g) => {
               setViewMode("group");
@@ -717,6 +735,7 @@ export default function DqMonitorPage() {
               setViewByRuleCatalog("All");
               setViewByRule("All");
               setRuleNameSearchApplied("");
+              setTreeSelected(true);
             }}
             onSelectType={(g, t) => {
               setViewMode("ruleCatalog");
@@ -724,6 +743,7 @@ export default function DqMonitorPage() {
               setViewByRuleCatalog(t);
               setViewByRule("All");
               setRuleNameSearchApplied("");
+              setTreeSelected(true);
             }}
             onSelectRule={(g, t, r) => {
               setViewMode("rule");
@@ -731,6 +751,7 @@ export default function DqMonitorPage() {
               setViewByRuleCatalog(t);
               setViewByRule(r);
               setRuleNameSearchApplied("");
+              setTreeSelected(true);
             }}
           />
 
@@ -936,7 +957,7 @@ export default function DqMonitorPage() {
             />
           )}
 
-          {viewMode !== "security" && (
+          {viewMode !== "security" && treeSelected && (
             <section
               className="dq-section dq-exception-count"
               style={
@@ -989,7 +1010,7 @@ export default function DqMonitorPage() {
             </section>
           )}
 
-          {viewMode !== "security" && (
+          {viewMode !== "security" && treeSelected && (
             <div
               className="dq-main-resizer"
               onMouseDown={startCountResize}
@@ -1025,6 +1046,7 @@ export default function DqMonitorPage() {
             />
           )}
 
+          {(viewMode === "security" || treeSelected) && (
           <section className="dq-section">
             <h2 className="dq-section-title">Exceptions</h2>
 
@@ -1071,8 +1093,12 @@ export default function DqMonitorPage() {
               </div>
             )}
 
-            <ExceptionsTable data={exceptions} />
+            <ExceptionsTable
+              data={exceptions}
+              showResultDataColumns={viewMode !== "security"}
+            />
           </section>
+          )}
         </div>
       </div>
 

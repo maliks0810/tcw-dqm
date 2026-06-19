@@ -330,6 +330,10 @@
   flex: none;
 }
 
+.dq-section-title-bold {
+  font-weight: 700;
+}
+
 .dq-section-subtitle {
   margin: 0 0 8px 0;
   font-size: 13px;
