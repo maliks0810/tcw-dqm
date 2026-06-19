@@ -966,7 +966,7 @@ export default function DqMonitorPage() {
                   : undefined
               }
             >
-              <h2 className="dq-section-title">Number of Exceptions</h2>
+              <h2 className="dq-section-title dq-section-title-bold">Number of Exceptions</h2>
               <div className="dq-table-container">
                 <table className="dq-table">
                   <thead>
@@ -1048,7 +1048,7 @@ export default function DqMonitorPage() {
 
           {(viewMode === "security" || treeSelected) && (
           <section className="dq-section">
-            <h2 className="dq-section-title">Exceptions</h2>
+            <h2 className="dq-section-title dq-section-title-bold">Exceptions</h2>
 
             {viewMode === "security" && selectedRow !== null && assets[selectedRow] && (
               <div className="dq-section-subtitle dq-asset-title">
