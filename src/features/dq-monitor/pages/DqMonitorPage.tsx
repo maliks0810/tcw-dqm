@@ -638,75 +638,85 @@ export default function DqMonitorPage() {
           className="dq-sidebar"
           style={{ flex: `0 0 ${sidebarWidth}px` }}
         >
-          <h3 className="dq-sidebar-title">Type</h3>
-          <select
-            className="dq-sidebar-select"
-            value={dqmType}
-            onChange={(e) => setDqmType(e.target.value)}
-          >
-            <option value="">All</option>
-            {exceptionTypes.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+          <div className="dq-sidebar-row">
+            <h3 className="dq-sidebar-title">Type</h3>
+            <select
+              className="dq-sidebar-select"
+              value={dqmType}
+              onChange={(e) => setDqmType(e.target.value)}
+            >
+              <option value="">All</option>
+              {exceptionTypes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <h3 className="dq-sidebar-title">Severity</h3>
-          <select
-            className="dq-sidebar-select"
-            value={severity}
-            onChange={(e) => setSeverity(e.target.value)}
-          >
-            <option value="All">All</option>
-            {severityOptions.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+          <div className="dq-sidebar-row">
+            <h3 className="dq-sidebar-title">Severity</h3>
+            <select
+              className="dq-sidebar-select"
+              value={severity}
+              onChange={(e) => setSeverity(e.target.value)}
+            >
+              <option value="All">All</option>
+              {severityOptions.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <h3 className="dq-sidebar-title">Priority</h3>
-          <select
-            className="dq-sidebar-select"
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            <option value="All">All</option>
-            {priorityOptions.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+          <div className="dq-sidebar-row">
+            <h3 className="dq-sidebar-title">Priority</h3>
+            <select
+              className="dq-sidebar-select"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+            >
+              <option value="All">All</option>
+              {priorityOptions.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <h3 className="dq-sidebar-title">Assign To</h3>
-          <select
-            className="dq-sidebar-select"
-            value={assignToFilter}
-            onChange={(e) => setAssignToFilter(e.target.value)}
-          >
-            <option value="All">All</option>
-            {dmUserOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <div className="dq-sidebar-row">
+            <h3 className="dq-sidebar-title">Assign To</h3>
+            <select
+              className="dq-sidebar-select"
+              value={assignToFilter}
+              onChange={(e) => setAssignToFilter(e.target.value)}
+            >
+              <option value="All">All</option>
+              {dmUserOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <h3 className="dq-sidebar-title">Exception Status</h3>
-          <select
-            className="dq-sidebar-select"
-            value={exceptionStatus}
-            onChange={(e) => setExceptionStatus(e.target.value)}
-          >
-            <option value="All">All</option>
-            {exceptionStatusOptions.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+          <div className="dq-sidebar-row">
+            <h3 className="dq-sidebar-title">Exception Status</h3>
+            <select
+              className="dq-sidebar-select"
+              value={exceptionStatus}
+              onChange={(e) => setExceptionStatus(e.target.value)}
+            >
+              <option value="All">All</option>
+              {exceptionStatusOptions.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <h3 className="dq-sidebar-title">View Exceptions</h3>
           <RuleTreeView

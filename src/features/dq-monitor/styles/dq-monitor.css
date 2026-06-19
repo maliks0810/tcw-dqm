@@ -176,6 +176,22 @@
   margin-top: 10px;
 }
 
+.dq-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dq-sidebar-row .dq-sidebar-title {
+  flex: 0 0 auto;
+  width: 110px;
+}
+
+.dq-sidebar-row .dq-sidebar-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .dq-sidebar-select {
   width: 100%;
   padding: 6px 10px;
