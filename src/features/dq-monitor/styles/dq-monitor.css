@@ -180,11 +180,14 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 4px;
 }
 
 .dq-sidebar-row .dq-sidebar-title {
-  flex: 0 0 auto;
+  flex: 0 0 70px;
+  width: 70px;
+  line-height: 1.15;
+  white-space: normal;
 }
 
 .dq-sidebar-row .dq-sidebar-title::after {
