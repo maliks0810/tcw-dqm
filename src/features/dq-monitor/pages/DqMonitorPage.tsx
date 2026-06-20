@@ -719,62 +719,6 @@ export default function DqMonitorPage() {
           </div>
 
           <h3 className="dq-sidebar-title">View Exceptions</h3>
-          <RuleTreeView
-            groups={ruleGroupOptions}
-            getTypes={(group) => fetchRuleCatalogs(group)}
-            getRules={async (type) => {
-              const rules = await fetchRules(type);
-              return rules
-                .map((r) => r.rule_name)
-                .filter((n): n is string => !!n);
-            }}
-            selection={{
-              group: viewByGroup,
-              type: viewByRuleCatalog,
-              rule: viewByRule,
-            }}
-            hasSelection={treeSelected}
-            onSelectAll={() => {
-              setViewMode("rule");
-              setViewByGroup("All");
-              setViewByRuleCatalog("All");
-              setViewByRule("All");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectGroup={(g) => {
-              setViewMode("group");
-              setViewByGroup(g);
-              setViewByRuleCatalog("All");
-              setViewByRule("All");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectType={(g, t) => {
-              setViewMode("ruleCatalog");
-              setViewByGroup(g);
-              setViewByRuleCatalog(t);
-              setViewByRule("All");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectRule={(g, t, r) => {
-              setViewMode("rule");
-              setViewByGroup(g);
-              setViewByRuleCatalog(t);
-              setViewByRule(r);
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-          />
-
-          <button
-            className="dq-sidebar-button"
-            type="button"
-            onClick={() => setViewMode("rule")}
-          >
-            View by Rule Pattern
-          </button>
 
           <div className="dq-combo" ref={ruleComboRef}>
             <input
@@ -832,6 +776,55 @@ export default function DqMonitorPage() {
               </div>
             )}
           </div>
+
+          <RuleTreeView
+            groups={ruleGroupOptions}
+            getTypes={(group) => fetchRuleCatalogs(group)}
+            getRules={async (type) => {
+              const rules = await fetchRules(type);
+              return rules
+                .map((r) => r.rule_name)
+                .filter((n): n is string => !!n);
+            }}
+            selection={{
+              group: viewByGroup,
+              type: viewByRuleCatalog,
+              rule: viewByRule,
+            }}
+            hasSelection={treeSelected}
+            onSelectAll={() => {
+              setViewMode("rule");
+              setViewByGroup("All");
+              setViewByRuleCatalog("All");
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+              setTreeSelected(true);
+            }}
+            onSelectGroup={(g) => {
+              setViewMode("group");
+              setViewByGroup(g);
+              setViewByRuleCatalog("All");
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+              setTreeSelected(true);
+            }}
+            onSelectType={(g, t) => {
+              setViewMode("ruleCatalog");
+              setViewByGroup(g);
+              setViewByRuleCatalog(t);
+              setViewByRule("All");
+              setRuleNameSearchApplied("");
+              setTreeSelected(true);
+            }}
+            onSelectRule={(g, t, r) => {
+              setViewMode("rule");
+              setViewByGroup(g);
+              setViewByRuleCatalog(t);
+              setViewByRule(r);
+              setRuleNameSearchApplied("");
+              setTreeSelected(true);
+            }}
+          />
 
           <button
             className="dq-sidebar-button"
