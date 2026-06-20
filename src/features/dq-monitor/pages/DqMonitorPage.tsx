@@ -631,7 +631,11 @@ export default function DqMonitorPage() {
 
   return (
     <div className="dq-page">
-      <Header onExportClick={() => exportAssetsToExcel(visibleAssets)} />
+      <Header
+        onExportClick={() => exportAssetsToExcel(visibleAssets)}
+        showViewBySecurity={viewByGroup === "Security Master"}
+        onViewBySecurityClick={() => setViewMode("security")}
+      />
 
       <div className="dq-body">
         <aside
@@ -826,13 +830,6 @@ export default function DqMonitorPage() {
             }}
           />
 
-          <button
-            className="dq-sidebar-button"
-            type="button"
-            onClick={() => setViewMode("security")}
-          >
-            View by Security
-          </button>
         </aside>
 
         <div

@@ -4,9 +4,15 @@ import { USE_OKTA } from "../../../services/auth-mode";
 
 type HeaderProps = {
   onExportClick?: () => void;
+  onViewBySecurityClick?: () => void;
+  showViewBySecurity?: boolean;
 };
 
-export default function Header({ onExportClick }: HeaderProps = {}) {
+export default function Header({
+  onExportClick,
+  onViewBySecurityClick,
+  showViewBySecurity = false,
+}: HeaderProps = {}) {
   const oktaCtx = useOktaAuth();
   const oktaAuth = oktaCtx?.oktaAuth;
   const authState = oktaCtx?.authState;
@@ -44,6 +50,15 @@ export default function Header({ onExportClick }: HeaderProps = {}) {
       </div>
 
       <div className="dq-header-right">
+        {showViewBySecurity && onViewBySecurityClick && (
+          <button
+            className="dq-export-btn"
+            type="button"
+            onClick={onViewBySecurityClick}
+          >
+            View by Security
+          </button>
+        )}
         {onExportClick && (
           <button
             className="dq-export-btn"
