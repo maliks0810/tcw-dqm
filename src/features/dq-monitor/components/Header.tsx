@@ -4,14 +4,14 @@ import { USE_OKTA } from "../../../services/auth-mode";
 
 type HeaderProps = {
   onExportClick?: () => void;
-  onViewBySecurityClick?: () => void;
-  showViewBySecurity?: boolean;
+  modeToggleLabel?: string;
+  onModeToggleClick?: () => void;
 };
 
 export default function Header({
   onExportClick,
-  onViewBySecurityClick,
-  showViewBySecurity = false,
+  modeToggleLabel,
+  onModeToggleClick,
 }: HeaderProps = {}) {
   const oktaCtx = useOktaAuth();
   const oktaAuth = oktaCtx?.oktaAuth;
@@ -50,13 +50,13 @@ export default function Header({
       </div>
 
       <div className="dq-header-right">
-        {showViewBySecurity && onViewBySecurityClick && (
+        {modeToggleLabel && onModeToggleClick && (
           <button
             className="dq-export-btn"
             type="button"
-            onClick={onViewBySecurityClick}
+            onClick={onModeToggleClick}
           >
-            View by Security
+            {modeToggleLabel}
           </button>
         )}
         {onExportClick && (

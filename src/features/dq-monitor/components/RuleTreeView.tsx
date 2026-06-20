@@ -11,6 +11,7 @@ type Props = {
   getTypes: (group: string) => Promise<string[]>;
   getRules: (type: string) => Promise<string[]>;
   selection: RuleTreeSelection;
+  hasSelection?: boolean;
   onSelectAll: () => void;
   onSelectGroup: (group: string) => void;
   onSelectType: (group: string, type: string) => void;
@@ -22,6 +23,7 @@ export default function RuleTreeView({
   getTypes,
   getRules,
   selection,
+  hasSelection = true,
   onSelectAll,
   onSelectGroup,
   onSelectType,
@@ -75,21 +77,25 @@ export default function RuleTreeView({
   };
 
   const isAllSelected =
+    hasSelection &&
     (!selection.group || selection.group === "All") &&
     (!selection.type || selection.type === "All") &&
     (!selection.rule || selection.rule === "All");
 
   const isGroupSelected = (g: string) =>
+    hasSelection &&
     selection.group === g &&
     (!selection.type || selection.type === "All") &&
     (!selection.rule || selection.rule === "All");
 
   const isTypeSelected = (g: string, t: string) =>
+    hasSelection &&
     selection.group === g &&
     selection.type === t &&
     (!selection.rule || selection.rule === "All");
 
   const isRuleSelected = (g: string, t: string, r: string) =>
+    hasSelection &&
     selection.group === g && selection.type === t && selection.rule === r;
 
   return (

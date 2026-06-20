@@ -62,7 +62,8 @@ export async function fetchAssets(
   ruleCatalog?: string,
   ruleName?: string,
   exceptionStatus?: string,
-  assignTo?: string
+  assignTo?: string,
+  ruleGroup?: string
 ): Promise<SecurityRow[]> {
   const params = new URLSearchParams();
   if (exceptionType) params.set("exception_type", exceptionType);
@@ -73,6 +74,7 @@ export async function fetchAssets(
   if (exceptionStatus && exceptionStatus !== "All")
     params.set("exception_status", exceptionStatus);
   if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
+  if (ruleGroup && ruleGroup !== "All") params.set("rule_group", ruleGroup);
   const qs = params.toString();
   const url = qs ? `${ASSETS_ENDPOINT}?${qs}` : ASSETS_ENDPOINT;
   const res = await fetch(url, { signal });

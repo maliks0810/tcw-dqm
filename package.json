@@ -84,6 +84,6 @@
     "eslint-plugin-react": "^7.26.1",
     "eslint-plugin-react-hooks": "^4.2.0",
     "eslint-plugin-testing-library": "^5.0.0",
-    "sass": "^1.55.0"
+    "sass": "~1.77.8"
   }
 }

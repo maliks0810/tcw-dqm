@@ -46,6 +46,10 @@ export default function ColumnFilterHeader({
   const [draft, setDraft] = useState<Set<string>>(new Set());
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isOpen) searchInputRef.current?.focus();
+  }, [isOpen]);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(
     null
   );
@@ -168,13 +172,12 @@ export default function ColumnFilterHeader({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <input
+            ref={searchInputRef}
             className="dq-col-filter-search"
             type="text"
             placeholder="Search…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-         
-            autoFocus
           />
           <label className="dq-col-filter-row dq-col-filter-row-all">
             <input

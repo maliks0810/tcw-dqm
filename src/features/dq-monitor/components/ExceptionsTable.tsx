@@ -3,6 +3,7 @@ import type { ExceptionRow } from "./types";
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
+  showResultDataColumns?: boolean;
 };
 
 // RESULT_DATA keys whose values are already shown via the core columns above
@@ -39,11 +40,15 @@ function formatCell(v: unknown): string {
   }
 }
 
-export default function ExceptionsTable({ data }: ExceptionsTableProps) {
+export default function ExceptionsTable({
+  data,
+  showResultDataColumns = true,
+}: ExceptionsTableProps) {
   // Union of all keys across every row's parsed RESULT_DATA, minus the ones
   // already shown via core columns. Stable alphabetical order so the column
   // layout doesn't shuffle as rows come and go.
   const extraKeys = useMemo(() => {
+    if (!showResultDataColumns) return [];
     const set = new Set<string>();
     for (const row of data) {
       if (!row.resultData) continue;
@@ -54,7 +59,7 @@ export default function ExceptionsTable({ data }: ExceptionsTableProps) {
       }
     }
     return Array.from(set).sort();
-  }, [data]);
+  }, [data, showResultDataColumns]);
 
   if (data.length === 0) {
     return (
