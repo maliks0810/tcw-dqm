@@ -212,6 +212,16 @@ export default function DqMonitorPage() {
     }
   }, []);
 
+  // View by Security is only meaningful inside the Security Master rule
+  // group. If the user navigates away (picks a different group / catalog
+  // / rule), force the RHS back to the exceptions view so the header
+  // toggle can disappear cleanly.
+  useEffect(() => {
+    if (viewByGroup !== "Security Master" && viewMode === "security") {
+      setViewMode("rule");
+    }
+  }, [viewByGroup, viewMode]);
+
   const selectedAladdinId =
     selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
 
@@ -421,7 +431,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter)
+    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter, viewByGroup)
       .then((rows) => {
         setAssets(rows);
         const wantedAladdin = selectedAladdinRef.current;
@@ -437,7 +447,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter]);
+  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter, viewByGroup]);
 
   const handleAssignToChange = (index: number, value: string) => {
     const target = assets[index];
@@ -633,8 +643,17 @@ export default function DqMonitorPage() {
     <div className="dq-page">
       <Header
         onExportClick={() => exportAssetsToExcel(visibleAssets)}
-        showViewBySecurity={viewByGroup === "Security Master"}
-        onViewBySecurityClick={() => setViewMode("security")}
+        modeToggleLabel={
+          viewByGroup === "Security Master"
+            ? viewMode === "security"
+              ? "View Exceptions"
+              : "View by Security"
+            : undefined
+        }
+        onModeToggleClick={() => {
+          setViewMode((m) => (m === "security" ? "rule" : "security"));
+          setTreeSelected(true);
+        }}
       />
 
       <div className="dq-body">
@@ -797,7 +816,7 @@ export default function DqMonitorPage() {
             }}
             hasSelection={treeSelected}
             onSelectAll={() => {
-              setViewMode("rule");
+              setViewMode((m) => (m === "security" ? m : "rule"));
               setViewByGroup("All");
               setViewByRuleCatalog("All");
               setViewByRule("All");
@@ -805,7 +824,7 @@ export default function DqMonitorPage() {
               setTreeSelected(true);
             }}
             onSelectGroup={(g) => {
-              setViewMode("group");
+              setViewMode((m) => (m === "security" ? m : "group"));
               setViewByGroup(g);
               setViewByRuleCatalog("All");
               setViewByRule("All");
@@ -813,7 +832,7 @@ export default function DqMonitorPage() {
               setTreeSelected(true);
             }}
             onSelectType={(g, t) => {
-              setViewMode("ruleCatalog");
+              setViewMode((m) => (m === "security" ? m : "ruleCatalog"));
               setViewByGroup(g);
               setViewByRuleCatalog(t);
               setViewByRule("All");
@@ -821,7 +840,7 @@ export default function DqMonitorPage() {
               setTreeSelected(true);
             }}
             onSelectRule={(g, t, r) => {
-              setViewMode("rule");
+              setViewMode((m) => (m === "security" ? m : "rule"));
               setViewByGroup(g);
               setViewByRuleCatalog(t);
               setViewByRule(r);
