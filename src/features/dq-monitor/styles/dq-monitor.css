@@ -176,6 +176,10 @@
   margin-top: 10px;
 }
 
+.dq-sidebar-row + .dq-sidebar-title {
+  margin-top: 16px;
+}
+
 .dq-sidebar-row {
   display: flex;
   align-items: center;
