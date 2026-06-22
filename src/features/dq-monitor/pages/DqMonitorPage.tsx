@@ -362,7 +362,7 @@ export default function DqMonitorPage() {
     fetchRules(viewByRuleCatalog, controller.signal)
       .then((rules) => {
         const names = rules
-          .map((r) => r.rule_name)
+          .map((r) => r.rule_catalog_name)
           .filter((n): n is string => !!n);
         setRuleOptions(names);
         setViewByRule((current) =>
@@ -563,7 +563,7 @@ export default function DqMonitorPage() {
           types.map(async (typeName) => {
             const rules = await fetchRules(typeName);
             for (const r of rules) {
-              if (r.rule_name) map[r.rule_name] = typeName;
+              if (r.rule_catalog_name) map[r.rule_catalog_name] = typeName;
             }
           })
         );
@@ -806,7 +806,7 @@ export default function DqMonitorPage() {
             getRules={async (type) => {
               const rules = await fetchRules(type);
               return rules
-                .map((r) => r.rule_name)
+                .map((r) => r.rule_catalog_name)
                 .filter((n): n is string => !!n);
             }}
             selection={{

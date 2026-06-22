@@ -3,8 +3,8 @@ const DATA_QUALITY_SERVICE_URL =
 const RULES_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getRules`;
 
 export type Rule = {
-  rule_id: number;
-  rule_name: string;
+  rule_catalog_id: number;
+  rule_catalog_name: string;
   rule_command: string;
   environment: string;
 };
