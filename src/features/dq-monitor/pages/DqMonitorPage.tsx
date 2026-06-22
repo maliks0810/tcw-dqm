@@ -14,7 +14,7 @@ import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
-import { fetchRules } from "../services/get-rules";
+import { fetchRuleNames } from "../services/get-rule-names";
 import { subscribeToEvents } from "../services/stream-events";
 import { exportAssetsToExcel } from "../../../utils/export-to-excel";
 import { updateAssignTo } from "../services/update-assign-to";
@@ -359,11 +359,8 @@ export default function DqMonitorPage() {
       return;
     }
     const controller = new AbortController();
-    fetchRules(viewByRuleCatalog, controller.signal)
-      .then((rules) => {
-        const names = rules
-          .map((r) => r.rule_catalog_name)
-          .filter((n): n is string => !!n);
+    fetchRuleNames(viewByRuleCatalog, controller.signal)
+      .then((names) => {
         setRuleOptions(names);
         setViewByRule((current) =>
           names.includes(current) ? current : "All"
@@ -561,9 +558,9 @@ export default function DqMonitorPage() {
         const map: Record<string, string> = {};
         await Promise.all(
           types.map(async (typeName) => {
-            const rules = await fetchRules(typeName);
-            for (const r of rules) {
-              if (r.rule_catalog_name) map[r.rule_catalog_name] = typeName;
+            const names = await fetchRuleNames(typeName);
+            for (const n of names) {
+              if (n) map[n] = typeName;
             }
           })
         );
@@ -804,10 +801,7 @@ export default function DqMonitorPage() {
             groups={ruleGroupOptions}
             getTypes={(group) => fetchRuleCatalogs(group)}
             getRules={async (type) => {
-              const rules = await fetchRules(type);
-              return rules
-                .map((r) => r.rule_catalog_name)
-                .filter((n): n is string => !!n);
+              return await fetchRuleNames(type);
             }}
             selection={{
               group: viewByGroup,
