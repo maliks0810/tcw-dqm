@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
   showResultDataColumns?: boolean;
+  // Fires whenever the in-memory column filters change the visible row set,
+  // so the parent page can re-export only the rows the user actually sees.
+  onVisibleRowsChange?: (rows: ExceptionRow[]) => void;
 };
 
 // RESULT_DATA keys whose values are already shown via the core columns above
@@ -45,6 +48,7 @@ function formatCell(v: unknown): string {
 export default function ExceptionsTable({
   data,
   showResultDataColumns = true,
+  onVisibleRowsChange,
 }: ExceptionsTableProps) {
   // Union of all keys across every row's parsed RESULT_DATA, minus the ones
   // already shown via core columns. Stable alphabetical order so the column
@@ -93,6 +97,10 @@ export default function ExceptionsTable({
       }),
     [data, assetIdFilter, idBbGlobalFilter]
   );
+
+  useEffect(() => {
+    onVisibleRowsChange?.(visibleRows);
+  }, [visibleRows, onVisibleRowsChange]);
 
   if (data.length === 0) {
     return (

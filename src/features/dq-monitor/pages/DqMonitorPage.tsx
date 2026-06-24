@@ -16,7 +16,10 @@ import { fetchRuleGroups } from "../services/get-rule-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRuleNames } from "../services/get-rule-names";
 import { subscribeToEvents } from "../services/stream-events";
-import { exportAssetsToExcel } from "../../../utils/export-to-excel";
+import {
+  exportAssetsToExcel,
+  exportExceptionsToExcel,
+} from "../../../utils/export-to-excel";
 import { updateAssignTo } from "../services/update-assign-to";
 import "../styles/dq-monitor.css";
 
@@ -124,6 +127,11 @@ export default function DqMonitorPage() {
   }, []);
 
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
+  // Exceptions grid post-column-filter rows, mirrored up so the header's
+  // Export to Excel can hand them to exportExceptionsToExcel.
+  const [visibleExceptions, setVisibleExceptions] = useState<ExceptionRow[]>(
+    []
+  );
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
   const [exceptionsLimitExceeded, setExceptionsLimitExceeded] = useState(false);
@@ -639,7 +647,11 @@ export default function DqMonitorPage() {
   return (
     <div className="dq-page">
       <Header
-        onExportClick={() => exportAssetsToExcel(visibleAssets)}
+        onExportClick={() =>
+          viewMode === "security"
+            ? exportAssetsToExcel(visibleAssets)
+            : exportExceptionsToExcel(visibleExceptions)
+        }
         modeToggleLabel={
           viewByGroup === "Security Master"
             ? viewMode === "security"
@@ -1027,6 +1039,7 @@ export default function DqMonitorPage() {
             <ExceptionsTable
               data={exceptions}
               showResultDataColumns={viewMode !== "security"}
+              onVisibleRowsChange={setVisibleExceptions}
             />
           </section>
           )}
