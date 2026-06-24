@@ -70,6 +70,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     ruleName: ruleLabel,
     issue: e.issue_description ?? "",
     aladdin: e.asset_id ?? "",
+    idBbGlobal: e.id_bb_global ?? "",
     vendor: "",
     action: "",
     comments: "",

@@ -4,6 +4,7 @@ export type ExceptionRow = {
   ruleName: string;
   issue: string;
   aladdin: string;
+  idBbGlobal: string;
   vendor: string;
   action: string;
   comments: string;

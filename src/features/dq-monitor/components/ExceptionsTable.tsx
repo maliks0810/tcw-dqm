@@ -7,11 +7,12 @@ type ExceptionsTableProps = {
 };
 
 // RESULT_DATA keys whose values are already shown via the core columns above
-// (Asset Id, Rule Name, Issue). Matched case-insensitively after uppercasing.
-// Anything else in RESULT_DATA becomes a dynamic trailing column.
+// (Asset Id, ID BB Global, Rule Name, Issue). Matched case-insensitively after
+// uppercasing. Anything else in RESULT_DATA becomes a dynamic trailing column.
 const COVERED_BY_CORE_COLUMNS = new Set<string>([
   "ASSET_ID",
   "ALADDIN_ID",
+  "ID_BB_GLOBAL",
   "RULE_NAME",
   "ISSUE_DESCRIPTION",
 ]);
@@ -79,6 +80,7 @@ export default function ExceptionsTable({
             <th>Rule Name</th>
             <th>Issue</th>
             <th>Asset Id</th>
+            <th>ID BB Global</th>
             <th>Vendor</th>
             <th>Action</th>
             <th>Comments</th>
@@ -107,6 +109,7 @@ export default function ExceptionsTable({
                 <td>{row.ruleName}</td>
                 <td>{row.issue}</td>
                 <td>{row.aladdin}</td>
+                <td>{row.idBbGlobal}</td>
                 <td>{row.vendor}</td>
                 <td>
                   <span className={getActionClass(row.action)}>{row.action}</span>
