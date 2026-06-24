@@ -3,13 +3,11 @@ const DATA_QUALITY_SERVICE_URL =
 const EXECUTE_RULES_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/executeRules`;
 
 export async function executeRules(
-  processType: string,
   assetId: string,
   idBbGlobal?: string,
   signal?: AbortSignal
 ): Promise<void> {
   const params = new URLSearchParams();
-  params.set("process_type", processType);
   params.set("asset_id", assetId);
   if (idBbGlobal) params.set("id_bb_global", idBbGlobal);
 

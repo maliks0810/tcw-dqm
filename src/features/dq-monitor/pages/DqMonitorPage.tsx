@@ -913,7 +913,7 @@ export default function DqMonitorPage() {
                       ) {
                         return;
                       }
-                      executeRules("Intraday", assetId, idBbGlobal).catch((e) => {
+                      executeRules(assetId, idBbGlobal).catch((e) => {
                
                         console.error("executeRules failed", e);
                       });
