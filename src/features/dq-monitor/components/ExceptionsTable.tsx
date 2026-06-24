@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ExceptionRow } from "./types";
+import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
@@ -62,6 +63,37 @@ export default function ExceptionsTable({
     return Array.from(set).sort();
   }, [data, showResultDataColumns]);
 
+  // Asset Id + ID BB Global column filters mirror the SecurityTable shape:
+  // dropdown of distinct values, multi-select with search, applies in-memory.
+  const allAssetIds = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.aladdin).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+  const allIdBbGlobals = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.idBbGlobal).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+  const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
+  const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
+  const [openFilterId, setOpenFilterId] = useState<string | null>(null);
+
+  const visibleRows = useMemo(
+    () =>
+      data.filter((row) => {
+        if (assetIdFilter && !assetIdFilter.has(row.aladdin)) return false;
+        if (idBbGlobalFilter && !idBbGlobalFilter.has(row.idBbGlobal ?? ""))
+          return false;
+        return true;
+      }),
+    [data, assetIdFilter, idBbGlobalFilter]
+  );
+
   if (data.length === 0) {
     return (
       <div className="dq-empty-state">
@@ -79,8 +111,30 @@ export default function ExceptionsTable({
             <th>Priority</th>
             <th>Rule Name</th>
             <th>Issue</th>
-            <th>Asset Id</th>
-            <th>ID BB Global</th>
+            <th>
+              <ColumnFilterHeader
+                label="Asset Id"
+                allValues={allAssetIds}
+                filter={assetIdFilter}
+                onChange={setAssetIdFilter}
+                isOpen={openFilterId === "assetId"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "assetId" : null)
+                }
+              />
+            </th>
+            <th>
+              <ColumnFilterHeader
+                label="ID BB Global"
+                allValues={allIdBbGlobals}
+                filter={idBbGlobalFilter}
+                onChange={setIdBbGlobalFilter}
+                isOpen={openFilterId === "idBbGlobal"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "idBbGlobal" : null)
+                }
+              />
+            </th>
             <th>Vendor</th>
             <th>Action</th>
             <th>Comments</th>
@@ -91,7 +145,7 @@ export default function ExceptionsTable({
         </thead>
 
         <tbody>
-          {data.map((row, index) => {
+          {visibleRows.map((row, index) => {
             const isComplete = row.status === "Complete";
             const isHigh = row.priority === "High";
             const cls = [
