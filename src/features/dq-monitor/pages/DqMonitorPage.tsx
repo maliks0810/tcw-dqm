@@ -913,8 +913,12 @@ export default function DqMonitorPage() {
                       ) {
                         return;
                       }
-                      executeRules(assetId, idBbGlobal).catch((e) => {
-               
+                      executeRules(
+                        assetId,
+                        idBbGlobal,
+                        "Security Master",
+                        "GROUP"
+                      ).catch((e) => {
                         console.error("executeRules failed", e);
                       });
                       return;
