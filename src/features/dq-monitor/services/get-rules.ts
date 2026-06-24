@@ -9,12 +9,23 @@ export type Rule = {
   environment: string;
 };
 
+// rule_type controls how rule_name is interpreted on the server:
+//   "CATALOG" / "RULE" → rule_name matches RULE_CATALOG.NAME
+//   "GROUP"            → rule_name matches RULE_GROUP.NAME (returns all
+//                        catalogs belonging to that group)
+// Omitting both ruleName and ruleType returns every catalog.
+export type RuleFilterType = "CATALOG" | "GROUP" | "RULE";
+
 export async function fetchRules(
-  ruleCatalog?: string,
+  ruleName?: string,
+  ruleType?: RuleFilterType,
   signal?: AbortSignal
 ): Promise<Rule[]> {
   const params = new URLSearchParams();
-  if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
+  if (ruleName && ruleName !== "All") {
+    params.set("rule_name", ruleName);
+    if (ruleType) params.set("rule_type", ruleType);
+  }
   const qs = params.toString();
   const url = qs ? `${RULES_ENDPOINT}?${qs}` : RULES_ENDPOINT;
   const res = await fetch(url, { signal });
