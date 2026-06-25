@@ -17,6 +17,7 @@ const COVERED_BY_CORE_COLUMNS = new Set<string>([
   "ASSET_ID",
   "ALADDIN_ID",
   "ID_BB_GLOBAL",
+  "RULE_ID",
   "RULE_NAME",
   "ISSUE_DESCRIPTION",
 ]);
