@@ -141,8 +141,26 @@ export default function SecurityTable({
     [data]
   );
 
+  const allPriorities = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.priority).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+
+  const allSeverities = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.severity).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [figiFilter, setFigiFilter] = useColumnFilter(allFigis);
+  const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
+  const [severityFilter, setSeverityFilter] = useColumnFilter(allSeverities);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   const visibleRows = useMemo(
@@ -150,9 +168,11 @@ export default function SecurityTable({
       data.filter((row) => {
         if (assetIdFilter && !assetIdFilter.has(row.aladdinId)) return false;
         if (figiFilter && !figiFilter.has(row.figi ?? "")) return false;
+        if (priorityFilter && !priorityFilter.has(row.priority)) return false;
+        if (severityFilter && !severityFilter.has(row.severity)) return false;
         return true;
       }),
-    [data, assetIdFilter, figiFilter]
+    [data, assetIdFilter, figiFilter, priorityFilter, severityFilter]
   );
 
   useEffect(() => {
@@ -166,8 +186,30 @@ export default function SecurityTable({
           <tr>
             <th>Actions</th>
             <th>Date/Time</th>
-            <th>Priority</th>
-            <th>Severity</th>
+            <th>
+              <ColumnFilterHeader
+                label="Priority"
+                allValues={allPriorities}
+                filter={priorityFilter}
+                onChange={setPriorityFilter}
+                isOpen={openFilterId === "priority"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "priority" : null)
+                }
+              />
+            </th>
+            <th>
+              <ColumnFilterHeader
+                label="Severity"
+                allValues={allSeverities}
+                filter={severityFilter}
+                onChange={setSeverityFilter}
+                isOpen={openFilterId === "severity"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "severity" : null)
+                }
+              />
+            </th>
             <th>Type</th>
             <th>Assign To</th>
             <th>
@@ -205,6 +247,8 @@ export default function SecurityTable({
           {data.map((row, index) => {
             if (assetIdFilter && !assetIdFilter.has(row.aladdinId)) return null;
             if (figiFilter && !figiFilter.has(row.figi ?? "")) return null;
+            if (priorityFilter && !priorityFilter.has(row.priority)) return null;
+            if (severityFilter && !severityFilter.has(row.severity)) return null;
 
             const currentAssignee = row.assignTo ?? "";
             const optionSet = new Set(assigneeOptions);
