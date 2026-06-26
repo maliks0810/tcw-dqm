@@ -42,15 +42,19 @@ export default function DqMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sidebarWidth, setSidebarWidth] = useState<number>(240);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(288);
   const sidebarResizingRef = useRef<boolean>(false);
 
   const [assetsHeight, setAssetsHeight] = useState<number | null>(null);
   const assetsResizingRef = useRef<boolean>(false);
   const dqMainRef = useRef<HTMLDivElement | null>(null);
 
+  // Sidebar 30/70 split between "Number of Exceptions" (top) and the View
+  // Exceptions tree section (bottom). countHeight is the pixel height of
+  // the top panel; null = use the CSS-default 3:7 flex ratio.
   const [countHeight, setCountHeight] = useState<number | null>(null);
   const countResizingRef = useRef<boolean>(false);
+  const sidebarSplitRef = useRef<HTMLDivElement | null>(null);
 
   const startAssetsResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -59,17 +63,17 @@ export default function DqMonitorPage() {
     document.body.style.userSelect = "none";
   };
 
-  const startCountResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    countResizingRef.current = true;
-    document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
-  };
-
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
     sidebarResizingRef.current = true;
     document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const startCountResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    countResizingRef.current = true;
+    document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
   };
 
@@ -89,15 +93,12 @@ export default function DqMonitorPage() {
           Math.min(max, Math.max(min, e.clientY - rect.top))
         );
       }
-      if (countResizingRef.current && dqMainRef.current) {
-        const rect = dqMainRef.current.getBoundingClientRect();
+      if (countResizingRef.current && sidebarSplitRef.current) {
+        const rect = sidebarSplitRef.current.getBoundingClientRect();
         const min = 80;
-        const max = Math.max(min, rect.height - 120);
-        // Number of Exceptions sits at the bottom now; countHeight is the
-        // bottom section's height, so it grows as the divider moves up
-        // (mouseY closer to rect.top → larger bottom section).
+        const max = Math.max(min, rect.height - 80);
         setCountHeight(
-          Math.min(max, Math.max(min, rect.bottom - e.clientY))
+          Math.min(max, Math.max(min, e.clientY - rect.top))
         );
       }
     };
@@ -670,87 +671,182 @@ export default function DqMonitorPage() {
           className="dq-sidebar"
           style={{ flex: `0 0 ${sidebarWidth}px` }}
         >
-          <div className="dq-sidebar-row">
-            <h3 className="dq-sidebar-title">Type</h3>
-            <select
-              className="dq-sidebar-select"
-              value={dqmType}
-              onChange={(e) => setDqmType(e.target.value)}
-            >
-              <option value="">All</option>
-              {exceptionTypes.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </div>
+          {viewMode === "security" && (
+            <>
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Type</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={dqmType}
+                  onChange={(e) => setDqmType(e.target.value)}
+                >
+                  <option value="">All</option>
+                  {exceptionTypes.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="dq-sidebar-row">
-            <h3 className="dq-sidebar-title">Severity</h3>
-            <select
-              className="dq-sidebar-select"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
-            >
-              <option value="All">All</option>
-              {severityOptions.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Severity</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={severity}
+                  onChange={(e) => setSeverity(e.target.value)}
+                >
+                  <option value="All">All</option>
+                  {severityOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="dq-sidebar-row">
-            <h3 className="dq-sidebar-title">Priority</h3>
-            <select
-              className="dq-sidebar-select"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-            >
-              <option value="All">All</option>
-              {priorityOptions.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Priority</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                >
+                  <option value="All">All</option>
+                  {priorityOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="dq-sidebar-row">
-            <h3 className="dq-sidebar-title">Assign To</h3>
-            <select
-              className="dq-sidebar-select"
-              value={assignToFilter}
-              onChange={(e) => setAssignToFilter(e.target.value)}
-            >
-              <option value="All">All</option>
-              {dmUserOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Assign To</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={assignToFilter}
+                  onChange={(e) => setAssignToFilter(e.target.value)}
+                >
+                  <option value="All">All</option>
+                  {dmUserOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="dq-sidebar-row">
-            <h3 className="dq-sidebar-title">Exception Status</h3>
-            <select
-              className="dq-sidebar-select"
-              value={exceptionStatus}
-              onChange={(e) => setExceptionStatus(e.target.value)}
-            >
-              <option value="All">All</option>
-              {exceptionStatusOptions.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Exception Status</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={exceptionStatus}
+                  onChange={(e) => setExceptionStatus(e.target.value)}
+                >
+                  <option value="All">All</option>
+                  {exceptionStatusOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
-          <h3 className="dq-sidebar-title">View Exceptions</h3>
+          <div className="dq-sidebar-split" ref={sidebarSplitRef}>
+            {viewMode !== "security" && treeSelected && (
+              <div
+                className="dq-sidebar-count"
+                style={
+                  countHeight !== null
+                    ? { flex: `0 0 ${countHeight}px` }
+                    : undefined
+                }
+              >
+                <h3 className="dq-sidebar-title">Number of Exceptions</h3>
+                <div className="dq-sidebar-count-scroll">
+                  <table className="dq-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exceptionCountRows.map((row, i) => {
+                        const isHeader =
+                          i === 0 &&
+                          (viewMode === "group" || viewMode === "ruleCatalog");
+                        return (
+                          <tr
+                            key={`${row.name}-${i}`}
+                            className={
+                              "dq-table-row " +
+                              (isHeader
+                                ? "dq-count-row-header"
+                                : i % 2 === 0
+                                ? "dq-table-row-even"
+                                : "dq-table-row-odd")
+                            }
+                          >
+                            <td>{row.name}</td>
+                            <td>{row.count}</td>
+                          </tr>
+                        );
+                      })}
+                      {exceptionCountRows.length === 0 && (
+                        <tr className="dq-table-row dq-table-row-even">
+                          <td colSpan={2}>
+                            <em>(no matching rules)</em>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {viewMode !== "security" && treeSelected && (
+              <div
+                className="dq-sidebar-vresizer"
+                onMouseDown={startCountResize}
+                onKeyDown={(e) => {
+                  if (!sidebarSplitRef.current) return;
+                  const rect = sidebarSplitRef.current.getBoundingClientRect();
+                  const min = 80;
+                  const max = Math.max(min, rect.height - 80);
+                  const step = e.shiftKey ? 40 : 10;
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setCountHeight((h) =>
+                      Math.max(min, (h ?? rect.height * 0.3) - step)
+                    );
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setCountHeight((h) =>
+                      Math.min(max, (h ?? rect.height * 0.3) + step)
+                    );
+                  }
+                }}
+                role="slider"
+                aria-orientation="horizontal"
+                aria-label="Resize Number of Exceptions"
+                aria-valuenow={countHeight ?? 0}
+                aria-valuemin={80}
+                aria-valuemax={
+                  sidebarSplitRef.current
+                    ? Math.max(80, sidebarSplitRef.current.clientHeight - 80)
+                    : 600
+                }
+                tabIndex={0}
+              />
+            )}
+
+            <div className="dq-sidebar-tree-wrap">
+              <h3 className="dq-sidebar-title">View Exceptions</h3>
 
           <div className="dq-combo" ref={ruleComboRef}>
             <input
@@ -854,6 +950,8 @@ export default function DqMonitorPage() {
               setTreeSelected(true);
             }}
           />
+            </div>
+          </div>
 
         </aside>
 
@@ -1044,96 +1142,6 @@ export default function DqMonitorPage() {
           </section>
           )}
 
-          {viewMode !== "security" && treeSelected && (
-            <div
-              className="dq-main-resizer"
-              onMouseDown={startCountResize}
-              onKeyDown={(e) => {
-                if (!dqMainRef.current) return;
-                const rect = dqMainRef.current.getBoundingClientRect();
-                const min = 80;
-                const max = Math.max(min, rect.height - 120);
-                const step = e.shiftKey ? 40 : 10;
-                // Number of Exceptions sits at the bottom; ArrowUp grows it
-                // (divider moves up), ArrowDown shrinks it.
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setCountHeight((h) =>
-                    Math.min(max, (h ?? rect.height / 4) + step)
-                  );
-                } else if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setCountHeight((h) =>
-                    Math.max(min, (h ?? rect.height / 4) - step)
-                  );
-                }
-              }}
-              role="slider"
-              aria-orientation="horizontal"
-              aria-label="Resize Number of Exceptions"
-              aria-valuenow={countHeight ?? 0}
-              aria-valuemin={80}
-              aria-valuemax={
-                dqMainRef.current
-                  ? Math.max(80, dqMainRef.current.clientHeight - 120)
-                  : 800
-              }
-              tabIndex={0}
-            />
-          )}
-
-          {viewMode !== "security" && treeSelected && (
-            <section
-              className="dq-section dq-exception-count"
-              style={
-                countHeight !== null
-                  ? { flex: `0 0 ${countHeight}px` }
-                  : undefined
-              }
-            >
-              <h2 className="dq-section-title dq-section-title-bold">Number of Exceptions</h2>
-              <div className="dq-table-container">
-                <table className="dq-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {exceptionCountRows.map((row, i) => {
-                      const isHeader =
-                        i === 0 &&
-                        (viewMode === "group" || viewMode === "ruleCatalog");
-                      return (
-                        <tr
-                          key={`${row.name}-${i}`}
-                          className={
-                            "dq-table-row " +
-                            (isHeader
-                              ? "dq-count-row-header"
-                              : i % 2 === 0
-                              ? "dq-table-row-even"
-                              : "dq-table-row-odd")
-                          }
-                        >
-                          <td>{row.name}</td>
-                          <td>{row.count}</td>
-                        </tr>
-                      );
-                    })}
-                    {exceptionCountRows.length === 0 && (
-                      <tr className="dq-table-row dq-table-row-even">
-                        <td colSpan={2}>
-                          <em>(no matching rules)</em>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
         </div>
       </div>
 

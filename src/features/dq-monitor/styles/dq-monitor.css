@@ -162,7 +162,40 @@
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* Sidebar bottom region: vertical split between Number of Exceptions
+   (top, default 30%) and the View Exceptions tree section (bottom,
+   default 70%), with a user-draggable horizontal resizer between them. */
+.dq-sidebar-split {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+}
+
+.dq-sidebar-tree-wrap {
+  flex: 7 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
   overflow: auto;
+}
+
+.dq-sidebar-vresizer {
+  flex: 0 0 6px;
+  cursor: row-resize;
+  background: transparent;
+  border-radius: 3px;
+  transition: background-color 0.15s ease;
+}
+
+.dq-sidebar-vresizer:hover,
+.dq-sidebar-vresizer:active {
+  background: #d1d5db;
 }
 
 .dq-sidebar-title {
@@ -213,6 +246,30 @@
   background: #ffffff;
   color: #111827;
   cursor: pointer;
+}
+
+/* In-sidebar Number of Exceptions panel. Lives inside .dq-sidebar-split
+   as the top child of the 30/70 vertical split. flex: 3 1 0 yields the
+   default 30% share; the parent flips to a pixel basis when the user
+   drags the .dq-sidebar-vresizer below. */
+.dq-sidebar-count {
+  display: flex;
+  flex-direction: column;
+  flex: 3 1 0;
+  min-height: 0;
+}
+
+.dq-sidebar-count-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.dq-sidebar-count-scroll .dq-table {
+  min-width: 0;
 }
 
 .dq-tree {
