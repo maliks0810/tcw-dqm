@@ -68,8 +68,22 @@ export default function ExceptionsTable({
     return Array.from(set).sort();
   }, [data, showResultDataColumns]);
 
-  // Asset Id + ID BB Global column filters mirror the SecurityTable shape:
-  // dropdown of distinct values, multi-select with search, applies in-memory.
+  // Column filters mirror the SecurityTable shape: dropdown of distinct
+  // values, multi-select with search, applies in-memory.
+  const allRuleNames = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.ruleName).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+  const allPriorities = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => r.priority).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
   const allAssetIds = useMemo(
     () =>
       Array.from(new Set(data.map((r) => r.aladdin).filter(Boolean))).sort(
@@ -84,6 +98,8 @@ export default function ExceptionsTable({
       ),
     [data]
   );
+  const [ruleNameFilter, setRuleNameFilter] = useColumnFilter(allRuleNames);
+  const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
@@ -91,12 +107,14 @@ export default function ExceptionsTable({
   const visibleRows = useMemo(
     () =>
       data.filter((row) => {
+        if (ruleNameFilter && !ruleNameFilter.has(row.ruleName)) return false;
+        if (priorityFilter && !priorityFilter.has(row.priority)) return false;
         if (assetIdFilter && !assetIdFilter.has(row.aladdin)) return false;
         if (idBbGlobalFilter && !idBbGlobalFilter.has(row.idBbGlobal ?? ""))
           return false;
         return true;
       }),
-    [data, assetIdFilter, idBbGlobalFilter]
+    [data, ruleNameFilter, priorityFilter, assetIdFilter, idBbGlobalFilter]
   );
 
   useEffect(() => {
@@ -117,8 +135,30 @@ export default function ExceptionsTable({
         <thead>
           <tr>
             <th>Date/Time</th>
-            <th>Priority</th>
-            <th>Rule Name</th>
+            <th>
+              <ColumnFilterHeader
+                label="Priority"
+                allValues={allPriorities}
+                filter={priorityFilter}
+                onChange={setPriorityFilter}
+                isOpen={openFilterId === "priority"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "priority" : null)
+                }
+              />
+            </th>
+            <th>
+              <ColumnFilterHeader
+                label="Rule Name"
+                allValues={allRuleNames}
+                filter={ruleNameFilter}
+                onChange={setRuleNameFilter}
+                isOpen={openFilterId === "ruleName"}
+                onToggle={(open) =>
+                  setOpenFilterId(open ? "ruleName" : null)
+                }
+              />
+            </th>
             <th>Issue</th>
             <th>
               <ColumnFilterHeader
