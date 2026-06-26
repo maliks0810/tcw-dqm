@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 import SecurityTable, { ActionValue } from "../components/SecurityTable";
 import ExceptionsTable from "../components/ExceptionsTable";
@@ -42,8 +42,22 @@ export default function DqMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sidebarWidth, setSidebarWidth] = useState<number>(288);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(331);
   const sidebarResizingRef = useRef<boolean>(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  // Captured once on mount: the sidebar's content-area width at startup.
+  // Used as the Number-of-Exceptions panel's maxWidth so the panel fills
+  // the sidebar on initial load but never grows when the user widens it.
+  const [initialSidebarContentWidth, setInitialSidebarContentWidth] = useState<
+    number | null
+  >(null);
+  useLayoutEffect(() => {
+    if (!sidebarRef.current || initialSidebarContentWidth !== null) return;
+    const cs = window.getComputedStyle(sidebarRef.current);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padR = parseFloat(cs.paddingRight) || 0;
+    setInitialSidebarContentWidth(sidebarRef.current.clientWidth - padL - padR);
+  }, [initialSidebarContentWidth]);
 
   const [assetsHeight, setAssetsHeight] = useState<number | null>(null);
   const assetsResizingRef = useRef<boolean>(false);
@@ -496,6 +510,22 @@ export default function DqMonitorPage() {
       setExceptionsLimitExceeded(false);
       return;
     }
+    if (
+      !usesAsset &&
+      viewByGroup === "All" &&
+      viewByRuleCatalog === "All" &&
+      viewByRule === "All" &&
+      !ruleNameSearchApplied
+    ) {
+      // Tree 'All' selected — RHS exceptions grid stays empty; the LHS
+      // Number of Exceptions panel populates from per-group counts in a
+      // separate effect.
+      setExceptions([]);
+      setExceptionsError(null);
+      setExceptionsLoading(false);
+      setExceptionsLimitExceeded(false);
+      return;
+    }
     const controller = new AbortController();
     setExceptionsLoading(true);
     setExceptionsError(null);
@@ -547,6 +577,77 @@ export default function DqMonitorPage() {
     assignToFilter,
     ruleNameSearchApplied,
     treeSelected,
+  ]);
+
+  // When 'All' is selected on the tree, the Number of Exceptions panel
+  // shows one row per rule group. ExceptionRow does not carry rule_group,
+  // so we hit GET_EXCEPTIONS once per group (rule_group=<name>) and just
+  // count the rows. Refresh on the same triggers as the main exceptions
+  // fetch so SSE-driven refreshes and filter changes flow through.
+  const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const inAllMode =
+      viewMode !== "security" &&
+      treeSelected &&
+      viewByGroup === "All" &&
+      viewByRuleCatalog === "All" &&
+      viewByRule === "All" &&
+      !ruleNameSearchApplied;
+    if (!inAllMode || ruleGroupOptions.length === 0) {
+      setGroupCounts({});
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          ruleGroupOptions.map(async (g) => {
+            const rows = await fetchExceptions(
+              "",
+              controller.signal,
+              dqmType,
+              severity,
+              priority,
+              undefined,
+              "All",
+              g,
+              exceptionStatus,
+              assignToFilter,
+              ""
+            );
+            return [g, rows.length] as const;
+          })
+        );
+        if (!cancelled) {
+          const next: Record<string, number> = {};
+          for (const [g, n] of entries) next[g] = n;
+          setGroupCounts(next);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+
+        console.error("groupCounts fetch failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    viewMode,
+    treeSelected,
+    viewByGroup,
+    viewByRuleCatalog,
+    viewByRule,
+    ruleNameSearchApplied,
+    ruleGroupOptions,
+    refreshTick,
+    dqmType,
+    severity,
+    priority,
+    exceptionStatus,
+    assignToFilter,
   ]);
 
   // When in group mode, we break the count down by rule type — but the
@@ -628,6 +729,19 @@ export default function DqMonitorPage() {
       return rows;
     }
 
+    // 'All' selected on the tree (nothing scoped yet) — one row per rule
+    // group, populated from the per-group fetch in the groupCounts effect.
+    if (
+      viewByGroup === "All" &&
+      viewByRuleCatalog === "All" &&
+      viewByRule === "All" &&
+      !ruleNameSearchApplied
+    ) {
+      return ruleGroupOptions
+        .map((g) => ({ name: g, count: groupCounts[g] ?? 0 }))
+        .sort((a, b) => b.count - a.count);
+    }
+
     // viewMode === "rule" — flat list of rules and their counts.
     const counts = new Map<string, number>();
     for (const e of exceptions) {
@@ -641,8 +755,12 @@ export default function DqMonitorPage() {
     viewMode,
     viewByGroup,
     viewByRuleCatalog,
+    viewByRule,
+    ruleNameSearchApplied,
     exceptions,
     ruleCatalogByRuleName,
+    ruleGroupOptions,
+    groupCounts,
   ]);
 
   return (
@@ -668,6 +786,7 @@ export default function DqMonitorPage() {
 
       <div className="dq-body">
         <aside
+          ref={sidebarRef}
           className="dq-sidebar"
           style={{ flex: `0 0 ${sidebarWidth}px` }}
         >
@@ -766,7 +885,14 @@ export default function DqMonitorPage() {
                 }
               >
                 <h3 className="dq-sidebar-title">Number of Exceptions</h3>
-                <div className="dq-sidebar-count-scroll">
+                <div
+                  className="dq-sidebar-count-scroll"
+                  style={
+                    initialSidebarContentWidth !== null
+                      ? { maxWidth: initialSidebarContentWidth }
+                      : undefined
+                  }
+                >
                   <table className="dq-table">
                     <thead>
                       <tr>
@@ -1089,35 +1215,36 @@ export default function DqMonitorPage() {
 
           {(viewMode === "security" || treeSelected) && (
           <section className="dq-section">
-            <h2 className="dq-section-title dq-section-title-bold">Exceptions</h2>
+            <div className="dq-section-header">
+              <h2 className="dq-section-title dq-section-title-bold">Exceptions</h2>
 
-            {viewMode === "security" && selectedRow !== null && assets[selectedRow] && (
-              <div className="dq-section-subtitle dq-asset-title">
-                {assets[selectedRow].securityDescription} —{" "}
-                {assets[selectedRow].aladdinId}
-                {exceptionsLoading
-                  ? " (loading…)"
-                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
-              </div>
-            )}
+              {viewMode === "security" && selectedRow !== null && assets[selectedRow] && (
+                <span className="dq-section-header-subtitle">
+                  — {assets[selectedRow].securityDescription} — {assets[selectedRow].aladdinId}
+                  {exceptionsLoading
+                    ? " (loading…)"
+                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                </span>
+              )}
 
-            {viewMode === "group" && (
-              <div className="dq-section-subtitle dq-asset-title">
-                Rule Group: {viewByGroup}
-                {exceptionsLoading
-                  ? " (loading…)"
-                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
-              </div>
-            )}
+              {viewMode === "group" && (
+                <span className="dq-section-header-subtitle">
+                  — Rule Group: {viewByGroup}
+                  {exceptionsLoading
+                    ? " (loading…)"
+                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                </span>
+              )}
 
-            {viewMode === "ruleCatalog" && (
-              <div className="dq-section-subtitle dq-asset-title">
-                Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
-                {exceptionsLoading
-                  ? " (loading…)"
-                  : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
-              </div>
-            )}
+              {viewMode === "ruleCatalog" && (
+                <span className="dq-section-header-subtitle">
+                  — Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
+                  {exceptionsLoading
+                    ? " (loading…)"
+                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                </span>
+              )}
+            </div>
 
             {exceptionsError && (
               <div className="dq-section-subtitle" style={{ color: "crimson" }}>

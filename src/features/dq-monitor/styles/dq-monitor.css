@@ -185,6 +185,44 @@
   overflow: auto;
 }
 
+/* Exceptions section title row: keeps the h2 ("Exceptions") and its
+   contextual subtitle ("— Rule Group: ...") on a single line so the
+   grid below sits as high as possible. The subtitle inherits the h2's
+   font-size so the line height matches the LHS "Number of Exceptions"
+   heading. */
+.dq-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 8px 0;
+  flex: none;
+  min-width: 0;
+}
+
+.dq-section-header .dq-section-title {
+  margin: 0;
+  flex: none;
+}
+
+.dq-section-header-subtitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: normal;
+  color: #4b5563;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Both the LHS Number-of-Exceptions panel and the RHS Exceptions
+   section pin their content to the top of their flex column so the
+   two headers visually align across the page. */
+.dq-section,
+.dq-sidebar-count {
+  justify-content: flex-start;
+}
+
 .dq-sidebar-vresizer {
   flex: 0 0 6px;
   cursor: row-resize;
@@ -259,17 +297,37 @@
   min-height: 0;
 }
 
+/* Panel fills the sidebar on initial load (width: 100%), then the React
+   side pins maxWidth via inline style to the sidebar's measured startup
+   content width — so dragging the sidebar wider leaves blank space to
+   the right of the panel instead of stretching it. */
 .dq-sidebar-count-scroll {
   flex: 1 1 auto;
   overflow: auto;
   min-height: 0;
+  width: 100%;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   background: #ffffff;
 }
 
 .dq-sidebar-count-scroll .dq-table {
+  table-layout: fixed;
+  width: 100%;
   min-width: 0;
+}
+
+.dq-sidebar-count-scroll .dq-table th:nth-child(1),
+.dq-sidebar-count-scroll .dq-table td:nth-child(1) {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dq-sidebar-count-scroll .dq-table th:nth-child(2),
+.dq-sidebar-count-scroll .dq-table td:nth-child(2) {
+  width: 60px;
+  text-align: right;
 }
 
 .dq-tree {
@@ -411,7 +469,7 @@
 
 .dq-section-title {
   margin: 0 0 8px 0;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: normal;
   color: #111827;
   flex: none;
