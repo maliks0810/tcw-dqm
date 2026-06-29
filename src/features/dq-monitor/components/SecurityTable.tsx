@@ -269,8 +269,6 @@ export default function SecurityTable({
                     ? "dq-table-row-selected"
                     : row.allComplete
                     ? "dq-table-row-complete"
-                    : row.priority === "High"
-                    ? "dq-table-row-high"
                     : index % 2 === 0
                     ? "dq-table-row-even"
                     : "dq-table-row-odd",
