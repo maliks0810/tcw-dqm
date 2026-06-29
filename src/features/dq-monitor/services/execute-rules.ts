@@ -24,18 +24,23 @@ function buildParams(
   return params;
 }
 
+// /executeRules now wipes today's EXCEPTION rows for the scoped catalogs
+// (via DELETE_EXCEPTIONS) and re-inserts whatever the catalog sources
+// return — no asset_id / id_bb_global scoping. Use executeSecurityRules
+// for the per-asset incremental flow.
 export async function executeRules(
-  assetId: string,
-  idBbGlobal?: string,
   ruleName?: string,
   ruleType?: RuleFilterType,
   signal?: AbortSignal
 ): Promise<void> {
-  const params = buildParams(assetId, idBbGlobal, ruleName, ruleType);
-  const res = await fetch(`${EXECUTE_RULES_ENDPOINT}?${params.toString()}`, {
-    method: "GET",
-    signal,
-  });
+  const params = new URLSearchParams();
+  if (ruleName && ruleName !== "All") {
+    params.set("rule_name", ruleName);
+    if (ruleType) params.set("rule_type", ruleType);
+  }
+  const qs = params.toString();
+  const url = qs ? `${EXECUTE_RULES_ENDPOINT}?${qs}` : EXECUTE_RULES_ENDPOINT;
+  const res = await fetch(url, { method: "GET", signal });
   if (!res.ok) {
     throw new Error(`executeRules failed: ${res.status} ${res.statusText}`);
   }
