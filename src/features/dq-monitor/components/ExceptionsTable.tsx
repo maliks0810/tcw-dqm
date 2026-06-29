@@ -10,18 +10,6 @@ type ExceptionsTableProps = {
   onVisibleRowsChange?: (rows: ExceptionRow[]) => void;
 };
 
-// RESULT_DATA keys whose values are already shown via the core columns above
-// (Asset Id, ID BB Global, Rule Name, Issue). Matched case-insensitively after
-// uppercasing. Anything else in RESULT_DATA becomes a dynamic trailing column.
-const COVERED_BY_CORE_COLUMNS = new Set<string>([
-  "ASSET_ID",
-  "ALADDIN_ID",
-  "ID_BB_GLOBAL",
-  "RULE_ID",
-  "RULE_NAME",
-  "ISSUE_DESCRIPTION",
-]);
-
 function getActionClass(action: string): string {
   switch (action.toLowerCase()) {
     case "update aladdin":
@@ -56,16 +44,18 @@ export default function ExceptionsTable({
   // layout doesn't shuffle as rows come and go.
   const extraKeys = useMemo(() => {
     if (!showResultDataColumns) return [];
+    // Render the full union of keys from every row's RESULT_DATA. Order
+    // mirrors the JSON: Set preserves insertion order, so each key lands
+    // wherever it first appears in any row's RESULT_DATA — which matches
+    // the original key order from the SQL row when rows share a shape.
     const set = new Set<string>();
     for (const row of data) {
       if (!row.resultData) continue;
       for (const k of Object.keys(row.resultData)) {
-        if (!COVERED_BY_CORE_COLUMNS.has(k.toUpperCase())) {
-          set.add(k);
-        }
+        set.add(k);
       }
     }
-    return Array.from(set).sort();
+    return Array.from(set);
   }, [data, showResultDataColumns]);
 
   // Column filters mirror the SecurityTable shape: dropdown of distinct
@@ -104,6 +94,74 @@ export default function ExceptionsTable({
   const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
+  // Per-RESULT_DATA-key filters for view-exception mode. One Set<string> per
+  // key; null/missing means no filter on that column. Stored in a single
+  // Record keyed by the JSON key so we can support an arbitrary, dynamic
+  // column list without breaking hooks rules.
+  const [resultDataFilters, setResultDataFilters] = useState<
+    Record<string, Set<string> | null>
+  >({});
+
+  // Distinct values per RESULT_DATA key, formatted through the same cell
+  // formatter the table uses so the filter strings match the rendered ones
+  // (objects → JSON, null → "", numbers → String(n), etc.).
+  const valuesByKey = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const k of extraKeys) {
+      const set = new Set<string>();
+      for (const row of data) {
+        const v = formatCell(row.resultData?.[k]);
+        if (v === "") continue;
+        set.add(v);
+      }
+      m[k] = Array.from(set).sort((a, b) => a.localeCompare(b));
+    }
+    return m;
+  }, [data, extraKeys]);
+
+  // Prune any RESULT_DATA filters whose remembered values no longer appear
+  // in the data (or whose column disappeared entirely) — same pattern as
+  // useColumnFilter does for the static columns.
+  useEffect(() => {
+    setResultDataFilters((prev) => {
+      let changed = false;
+      const next: Record<string, Set<string> | null> = {};
+      for (const [k, cur] of Object.entries(prev)) {
+        if (!cur || !valuesByKey[k]) {
+          changed = true;
+          continue;
+        }
+        const cleaned = new Set<string>();
+        cur.forEach((v) => {
+          if (valuesByKey[k].includes(v)) cleaned.add(v);
+        });
+        if (cleaned.size === 0) {
+          changed = true;
+          continue;
+        }
+        if (cleaned.size === cur.size) {
+          next[k] = cur;
+        } else {
+          next[k] = cleaned;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [valuesByKey]);
+
+  const setKeyFilter = (key: string, filter: Set<string> | null) => {
+    setResultDataFilters((prev) => {
+      if (filter === null || filter.size === 0) {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: filter };
+    });
+  };
+
   const visibleRows = useMemo(
     () =>
       data.filter((row) => {
@@ -112,9 +170,20 @@ export default function ExceptionsTable({
         if (assetIdFilter && !assetIdFilter.has(row.aladdin)) return false;
         if (idBbGlobalFilter && !idBbGlobalFilter.has(row.idBbGlobal ?? ""))
           return false;
+        for (const [k, f] of Object.entries(resultDataFilters)) {
+          if (!f) continue;
+          if (!f.has(formatCell(row.resultData?.[k]))) return false;
+        }
         return true;
       }),
-    [data, ruleNameFilter, priorityFilter, assetIdFilter, idBbGlobalFilter]
+    [
+      data,
+      ruleNameFilter,
+      priorityFilter,
+      assetIdFilter,
+      idBbGlobalFilter,
+      resultDataFilters,
+    ]
   );
 
   useEffect(() => {
@@ -134,62 +203,78 @@ export default function ExceptionsTable({
       <table className="dq-table">
         <thead>
           <tr>
-            <th>Date/Time</th>
-            <th>
-              <ColumnFilterHeader
-                label="Priority"
-                allValues={allPriorities}
-                filter={priorityFilter}
-                onChange={setPriorityFilter}
-                isOpen={openFilterId === "priority"}
-                onToggle={(open) =>
-                  setOpenFilterId(open ? "priority" : null)
-                }
-              />
-            </th>
-            <th>
-              <ColumnFilterHeader
-                label="Rule Name"
-                allValues={allRuleNames}
-                filter={ruleNameFilter}
-                onChange={setRuleNameFilter}
-                isOpen={openFilterId === "ruleName"}
-                onToggle={(open) =>
-                  setOpenFilterId(open ? "ruleName" : null)
-                }
-              />
-            </th>
-            <th>Issue</th>
-            <th>
-              <ColumnFilterHeader
-                label="Asset Id"
-                allValues={allAssetIds}
-                filter={assetIdFilter}
-                onChange={setAssetIdFilter}
-                isOpen={openFilterId === "assetId"}
-                onToggle={(open) =>
-                  setOpenFilterId(open ? "assetId" : null)
-                }
-              />
-            </th>
-            <th>
-              <ColumnFilterHeader
-                label="ID BB Global"
-                allValues={allIdBbGlobals}
-                filter={idBbGlobalFilter}
-                onChange={setIdBbGlobalFilter}
-                isOpen={openFilterId === "idBbGlobal"}
-                onToggle={(open) =>
-                  setOpenFilterId(open ? "idBbGlobal" : null)
-                }
-              />
-            </th>
-            <th>Vendor</th>
-            <th>Action</th>
-            <th>Comments</th>
-            {extraKeys.map((k) => (
-              <th key={k}>{k}</th>
-            ))}
+            {showResultDataColumns ? (
+              extraKeys.map((k) => (
+                <th key={k}>
+                  <ColumnFilterHeader
+                    label={k}
+                    allValues={valuesByKey[k] ?? []}
+                    filter={resultDataFilters[k] ?? null}
+                    onChange={(next) => setKeyFilter(k, next)}
+                    isOpen={openFilterId === `rd:${k}`}
+                    onToggle={(open) =>
+                      setOpenFilterId(open ? `rd:${k}` : null)
+                    }
+                  />
+                </th>
+              ))
+            ) : (
+              <>
+                <th>Date/Time</th>
+                <th>
+                  <ColumnFilterHeader
+                    label="Priority"
+                    allValues={allPriorities}
+                    filter={priorityFilter}
+                    onChange={setPriorityFilter}
+                    isOpen={openFilterId === "priority"}
+                    onToggle={(open) =>
+                      setOpenFilterId(open ? "priority" : null)
+                    }
+                  />
+                </th>
+                <th>
+                  <ColumnFilterHeader
+                    label="Rule Name"
+                    allValues={allRuleNames}
+                    filter={ruleNameFilter}
+                    onChange={setRuleNameFilter}
+                    isOpen={openFilterId === "ruleName"}
+                    onToggle={(open) =>
+                      setOpenFilterId(open ? "ruleName" : null)
+                    }
+                  />
+                </th>
+                <th>Issue</th>
+                <th>
+                  <ColumnFilterHeader
+                    label="Asset Id"
+                    allValues={allAssetIds}
+                    filter={assetIdFilter}
+                    onChange={setAssetIdFilter}
+                    isOpen={openFilterId === "assetId"}
+                    onToggle={(open) =>
+                      setOpenFilterId(open ? "assetId" : null)
+                    }
+                  />
+                </th>
+                <th>
+                  <ColumnFilterHeader
+                    label="ID BB Global"
+                    allValues={allIdBbGlobals}
+                    filter={idBbGlobalFilter}
+                    onChange={setIdBbGlobalFilter}
+                    isOpen={openFilterId === "idBbGlobal"}
+                    onToggle={(open) =>
+                      setOpenFilterId(open ? "idBbGlobal" : null)
+                    }
+                  />
+                </th>
+                <th>Vendor</th>
+                <th>Action</th>
+                <th>Comments</th>
+              </>
+            )}
           </tr>
         </thead>
 
@@ -202,20 +287,27 @@ export default function ExceptionsTable({
             ].join(" ");
             return (
               <tr key={`${row.ruleName}-${index}`} className={cls}>
-                <td>{row.dateTime}</td>
-                <td>{row.priority}</td>
-                <td>{row.ruleName}</td>
-                <td>{row.issue}</td>
-                <td>{row.aladdin}</td>
-                <td>{row.idBbGlobal}</td>
-                <td>{row.vendor}</td>
-                <td>
-                  <span className={getActionClass(row.action)}>{row.action}</span>
-                </td>
-                <td>{row.comments}</td>
-                {extraKeys.map((k) => (
-                  <td key={k}>{formatCell(row.resultData?.[k])}</td>
-                ))}
+                {showResultDataColumns ? (
+                  extraKeys.map((k) => (
+                    <td key={k}>{formatCell(row.resultData?.[k])}</td>
+                  ))
+                ) : (
+                  <>
+                    <td>{row.dateTime}</td>
+                    <td>{row.priority}</td>
+                    <td>{row.ruleName}</td>
+                    <td>{row.issue}</td>
+                    <td>{row.aladdin}</td>
+                    <td>{row.idBbGlobal}</td>
+                    <td>{row.vendor}</td>
+                    <td>
+                      <span className={getActionClass(row.action)}>
+                        {row.action}
+                      </span>
+                    </td>
+                    <td>{row.comments}</td>
+                  </>
+                )}
               </tr>
             );
           })}
