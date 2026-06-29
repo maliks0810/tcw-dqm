@@ -6,7 +6,7 @@ import RuleTreeView from "../components/RuleTreeView";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchExceptions } from "../services/get-exceptions";
-import { executeRules } from "../services/execute-rules";
+import { executeSecurityRules } from "../services/execute-rules";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
 import { fetchPriorityTypes } from "../services/get-priority-types";
@@ -1149,13 +1149,13 @@ export default function DqMonitorPage() {
                       ) {
                         return;
                       }
-                      executeRules(
+                      executeSecurityRules(
                         assetId,
                         idBbGlobal,
                         "Security Master",
                         "GROUP"
                       ).catch((e) => {
-                        console.error("executeRules failed", e);
+                        console.error("executeSecurityRules failed", e);
                       });
                       return;
                     }
