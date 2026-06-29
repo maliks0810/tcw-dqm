@@ -40,7 +40,7 @@
     "web-vitals": "^2.1.2"
   },
   "scripts": {
-    "start": "env-cmd -f .env.local react-scripts --openssl-legacy-provider start",
+    "start": "env-cmd -f .env.local cross-env NODE_OPTIONS=--no-deprecation react-scripts --openssl-legacy-provider start",
     "start:sandbox": "env-cmd .env.sandbox react-scripts --openssl-legacy-provider start",
     "start:dev": "env-cmd -f .env.development react-scripts --openssl-legacy-provider start",
     "start:qa": "env-cmd -f .env.qa react-scripts start",
