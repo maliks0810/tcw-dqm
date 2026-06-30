@@ -31,9 +31,13 @@ export async function fetchRuleNames(
 
 // Picks the friendlier label for a rule — description when non-empty,
 // otherwise the rule name. Shared by the tree leaf renderer and the
-// Exceptions header subtitle.
+// Exceptions header subtitle. Defensive: if both are missing / blank
+// (shouldn't happen if the backend response is well-formed) returns
+// the literal "(unnamed rule)" so leaves never render as empty buttons.
 export function ruleDisplayLabel(r: RuleName): string {
-  return r.rule_description && r.rule_description.trim() !== ""
-    ? r.rule_description
-    : r.rule_name;
+  const desc = (r.rule_description ?? "").trim();
+  if (desc !== "") return desc;
+  const name = (r.rule_name ?? "").trim();
+  if (name !== "") return name;
+  return "(unnamed rule)";
 }

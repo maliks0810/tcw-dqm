@@ -79,9 +79,15 @@ export default function RuleTreeView({
             .then((rules) =>
               setRulesByType((p) => ({ ...p, [type]: rules }))
             )
-            .catch(() =>
-              setRulesByType((p) => ({ ...p, [type]: [] }))
-            );
+            .catch((e: unknown) => {
+              // Surface the cause to the console so a 500 from the
+              // backend doesn't look like "the catalog has no rules"
+              // — the tree still drops to the empty "(no rules)"
+              // placeholder, but at least the failure is visible.
+              // eslint-disable-next-line no-console
+              console.error(`RuleTreeView: getRules("${type}") failed`, e);
+              setRulesByType((p) => ({ ...p, [type]: [] }));
+            });
         }
       }
       return next;
