@@ -6,16 +6,28 @@ export type RuleTreeSelection = {
   rule: string;
 };
 
+// Rule leaf shape: `name` is the identifier the tree passes back to the
+// parent (and the backend uses for queries / filters); `label` is what
+// the tree renders. label typically resolves to RULE_DESCRIPTION when
+// present, RULE_NAME otherwise — but that policy lives in the caller.
+export type RuleTreeRule = {
+  name: string;
+  label: string;
+};
+
 type Props = {
   groups: string[];
   getTypes: (group: string) => Promise<string[]>;
-  getRules: (type: string) => Promise<string[]>;
+  getRules: (type: string) => Promise<RuleTreeRule[]>;
   selection: RuleTreeSelection;
   hasSelection?: boolean;
   onSelectAll: () => void;
   onSelectGroup: (group: string) => void;
   onSelectType: (group: string, type: string) => void;
-  onSelectRule: (group: string, type: string, rule: string) => void;
+  // ruleLabel mirrors what the tree rendered for the leaf (description-or-
+  // name); the parent uses it to label headers / breadcrumbs without
+  // having to repeat the description lookup.
+  onSelectRule: (group: string, type: string, rule: string, ruleLabel: string) => void;
 };
 
 export default function RuleTreeView({
@@ -32,7 +44,7 @@ export default function RuleTreeView({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
   const [typesByGroup, setTypesByGroup] = useState<Record<string, string[]>>({});
-  const [rulesByType, setRulesByType] = useState<Record<string, string[]>>({});
+  const [rulesByType, setRulesByType] = useState<Record<string, RuleTreeRule[]>>({});
 
   const toggleGroup = (group: string) => {
     setExpandedGroups((prev) => {
@@ -171,7 +183,7 @@ export default function RuleTreeView({
 
                   {typeExpanded && (rules ?? []).map((rule) => (
                     <div
-                      key={`${group}::${type}::${rule}`}
+                      key={`${group}::${type}::${rule.name}`}
                       className="dq-tree-row dq-tree-row-l2"
                     >
                       <span className="dq-tree-toggle dq-tree-toggle-empty" />
@@ -179,14 +191,16 @@ export default function RuleTreeView({
                         type="button"
                         className={
                           "dq-tree-node" +
-                          (isRuleSelected(group, type, rule)
+                          (isRuleSelected(group, type, rule.name)
                             ? " dq-tree-node-selected"
                             : "")
                         }
-                        title={rule}
-                        onClick={() => onSelectRule(group, type, rule)}
+                        title={rule.label}
+                        onClick={() =>
+                          onSelectRule(group, type, rule.name, rule.label)
+                        }
                       >
-                        {rule}
+                        {rule.label}
                       </button>
                     </div>
                   ))}

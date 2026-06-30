@@ -14,7 +14,7 @@ import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
-import { fetchRuleNames } from "../services/get-rule-names";
+import { fetchRuleNames, ruleDisplayLabel } from "../services/get-rule-names";
 import { subscribeToEvents } from "../services/stream-events";
 import {
   exportAssetsToExcel,
@@ -183,6 +183,11 @@ export default function DqMonitorPage() {
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
   const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
   const [viewByRule, setViewByRule] = useState<string>("All");
+  // Display label for the currently-selected rule (RULE_DESCRIPTION when
+  // present, RULE_NAME otherwise) — surfaced in the Exceptions header
+  // subtitle when viewMode === "rule". Empty when no specific rule is in
+  // scope; the subtitle then omits the "Rule: ..." segment.
+  const [viewByRuleLabel, setViewByRuleLabel] = useState<string>("");
   const [ruleOptions, setRuleOptions] = useState<string[]>([]);
   const [ruleNameSearchApplied, setRuleNameSearchApplied] = useState<string>("");
   const [ruleQuery, setRuleQuery] = useState<string>("");
@@ -383,7 +388,8 @@ export default function DqMonitorPage() {
     }
     const controller = new AbortController();
     fetchRuleNames(viewByRuleCatalog, controller.signal)
-      .then((names) => {
+      .then((rules) => {
+        const names = rules.map((r) => r.rule_name);
         setRuleOptions(names);
         setViewByRule((current) =>
           names.includes(current) ? current : "All"
@@ -668,9 +674,9 @@ export default function DqMonitorPage() {
         const map: Record<string, string> = {};
         await Promise.all(
           types.map(async (typeName) => {
-            const names = await fetchRuleNames(typeName);
-            for (const n of names) {
-              if (n) map[n] = typeName;
+            const rules = await fetchRuleNames(typeName);
+            for (const r of rules) {
+              if (r.rule_name) map[r.rule_name] = typeName;
             }
           })
         );
@@ -1035,7 +1041,11 @@ export default function DqMonitorPage() {
             groups={ruleGroupOptions}
             getTypes={(group) => fetchRuleCatalogs(group)}
             getRules={async (type) => {
-              return await fetchRuleNames(type);
+              const rules = await fetchRuleNames(type);
+              return rules.map((r) => ({
+                name: r.rule_name,
+                label: ruleDisplayLabel(r),
+              }));
             }}
             selection={{
               group: viewByGroup,
@@ -1048,6 +1058,7 @@ export default function DqMonitorPage() {
               setViewByGroup("All");
               setViewByRuleCatalog("All");
               setViewByRule("All");
+              setViewByRuleLabel("");
               setRuleNameSearchApplied("");
               setTreeSelected(true);
             }}
@@ -1056,6 +1067,7 @@ export default function DqMonitorPage() {
               setViewByGroup(g);
               setViewByRuleCatalog("All");
               setViewByRule("All");
+              setViewByRuleLabel("");
               setRuleNameSearchApplied("");
               setTreeSelected(true);
             }}
@@ -1064,14 +1076,16 @@ export default function DqMonitorPage() {
               setViewByGroup(g);
               setViewByRuleCatalog(t);
               setViewByRule("All");
+              setViewByRuleLabel("");
               setRuleNameSearchApplied("");
               setTreeSelected(true);
             }}
-            onSelectRule={(g, t, r) => {
+            onSelectRule={(g, t, r, label) => {
               setViewMode((m) => (m === "security" ? m : "rule"));
               setViewByGroup(g);
               setViewByRuleCatalog(t);
               setViewByRule(r);
+              setViewByRuleLabel(label);
               setRuleNameSearchApplied("");
               setTreeSelected(true);
             }}
@@ -1239,6 +1253,20 @@ export default function DqMonitorPage() {
               {viewMode === "ruleCatalog" && (
                 <span className="dq-section-header-subtitle">
                   — Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
+                  {exceptionsLoading
+                    ? " (loading…)"
+                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                </span>
+              )}
+
+              {viewMode === "rule" && viewByRule && viewByRule !== "All" && (
+                <span className="dq-section-header-subtitle">
+                  — Rule: {viewByRuleLabel || viewByRule}
+                  {viewByRuleCatalog && viewByRuleCatalog !== "All"
+                    ? ` / Rule Group: ${viewByGroup} / Rule Catalog: ${viewByRuleCatalog}`
+                    : viewByGroup && viewByGroup !== "All"
+                    ? ` / Rule Group: ${viewByGroup}`
+                    : ""}
                   {exceptionsLoading
                     ? " (loading…)"
                     : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}

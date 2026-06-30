@@ -2,14 +2,19 @@ const DATA_QUALITY_SERVICE_URL =
   process.env.REACT_APP_DATA_QUALITY_SERVICE_URL ?? "http://127.0.0.1:8100";
 const RULE_NAMES_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getRuleNames`;
 
-// fetchRuleNames returns the individual RULE_NAMEs (from the RULE table)
-// that belong to the given catalog. GET_RULES now returns one row per
-// catalog, so the tree-view leaf level uses this endpoint to enumerate
-// the rules underneath each catalog.
+export type RuleName = {
+  rule_name: string;
+  rule_description: string;
+};
+
+// fetchRuleNames returns RULE.RULE_NAME + RULE_DESCRIPTION pairs for the
+// given catalog. The tree view renders rule_description when non-empty
+// (falls back to rule_name) and the Exceptions header subtitle uses the
+// same label when a specific rule is selected.
 export async function fetchRuleNames(
   ruleCatalog: string,
   signal?: AbortSignal
-): Promise<string[]> {
+): Promise<RuleName[]> {
   const params = new URLSearchParams();
   params.set("rule_catalog", ruleCatalog);
   const url = `${RULE_NAMES_ENDPOINT}?${params.toString()}`;
@@ -21,5 +26,14 @@ export async function fetchRuleNames(
   if (!Array.isArray(raw)) {
     throw new Error("getRuleNames: expected array response");
   }
-  return raw as string[];
+  return raw as RuleName[];
+}
+
+// Picks the friendlier label for a rule — description when non-empty,
+// otherwise the rule name. Shared by the tree leaf renderer and the
+// Exceptions header subtitle.
+export function ruleDisplayLabel(r: RuleName): string {
+  return r.rule_description && r.rule_description.trim() !== ""
+    ? r.rule_description
+    : r.rule_name;
 }
