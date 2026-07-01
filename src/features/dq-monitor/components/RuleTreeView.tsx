@@ -46,52 +46,55 @@ export default function RuleTreeView({
   const [typesByGroup, setTypesByGroup] = useState<Record<string, string[]>>({});
   const [rulesByType, setRulesByType] = useState<Record<string, RuleTreeRule[]>>({});
 
+  // Toggle handlers keep setState updaters PURE — no fetches inside the
+  // reducer — and fire the lazy-load side effect deterministically once,
+  // after the decision to expand has been made. React 18 strict mode calls
+  // the updater twice in dev; keeping it pure avoids duplicate fetches and
+  // makes the expand/collapse behavior consistent.
   const toggleGroup = (group: string) => {
+    const willExpand = !expandedGroups.has(group);
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(group)) {
-        next.delete(group);
-      } else {
-        next.add(group);
-        if (typesByGroup[group] === undefined) {
-          getTypes(group)
-            .then((types) =>
-              setTypesByGroup((p) => ({ ...p, [group]: types }))
-            )
-            .catch(() =>
-              setTypesByGroup((p) => ({ ...p, [group]: [] }))
-            );
-        }
-      }
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
       return next;
     });
+    if (willExpand && typesByGroup[group] === undefined) {
+      getTypes(group)
+        .then((types) =>
+          setTypesByGroup((p) => ({ ...p, [group]: types }))
+        )
+        .catch((e: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error(`RuleTreeView: getTypes("${group}") failed`, e);
+          setTypesByGroup((p) => ({ ...p, [group]: [] }));
+        });
+    }
   };
 
   const toggleType = (type: string) => {
+    const willExpand = !expandedTypes.has(type);
     setExpandedTypes((prev) => {
       const next = new Set(prev);
-      if (next.has(type)) {
-        next.delete(type);
-      } else {
-        next.add(type);
-        if (rulesByType[type] === undefined) {
-          getRules(type)
-            .then((rules) =>
-              setRulesByType((p) => ({ ...p, [type]: rules }))
-            )
-            .catch((e: unknown) => {
-              // Surface the cause to the console so a 500 from the
-              // backend doesn't look like "the catalog has no rules"
-              // — the tree still drops to the empty "(no rules)"
-              // placeholder, but at least the failure is visible.
-              // eslint-disable-next-line no-console
-              console.error(`RuleTreeView: getRules("${type}") failed`, e);
-              setRulesByType((p) => ({ ...p, [type]: [] }));
-            });
-        }
-      }
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
       return next;
     });
+    if (willExpand && rulesByType[type] === undefined) {
+      getRules(type)
+        .then((rules) =>
+          setRulesByType((p) => ({ ...p, [type]: rules }))
+        )
+        .catch((e: unknown) => {
+          // Surface the cause to the console so a 500 from the backend
+          // doesn't look like "the catalog has no rules" — the tree
+          // still drops to the "(no rules)" placeholder, but at least
+          // the failure is visible.
+          // eslint-disable-next-line no-console
+          console.error(`RuleTreeView: getRules("${type}") failed`, e);
+          setRulesByType((p) => ({ ...p, [type]: [] }));
+        });
+    }
   };
 
   const isAllSelected =
