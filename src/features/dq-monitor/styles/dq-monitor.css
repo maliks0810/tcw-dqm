@@ -530,6 +530,46 @@
   z-index: 1;
 }
 
+/* Sort + resize affordances on Exceptions-grid headers. Cursor and hover
+   feedback signal that the header is clickable to sort; the resize handle
+   is a slim column-resize strip pinned to the right edge and only reveals
+   itself on hover so it doesn't visually clutter the header row. */
+.dq-th-sortable {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dq-th-sortable:hover {
+  background: #002d5e;
+}
+
+.dq-th-inner {
+  display: inline-block;
+}
+
+.dq-th-arrow {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.dq-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 2;
+  user-select: none;
+}
+
+.dq-col-resize-handle:hover,
+.dq-col-resize-handle:active {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 .dq-table-row {
   cursor: pointer;
   transition: background-color 0.15s ease;

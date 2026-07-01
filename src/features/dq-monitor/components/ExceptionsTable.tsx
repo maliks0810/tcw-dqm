@@ -1,6 +1,105 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
+
+type SortState = { key: string; dir: "asc" | "desc" } | null;
+
+// Pulls the value used for sorting a column from a row. Static keys map
+// to the corresponding ExceptionRow field; dynamic RESULT_DATA columns
+// use the "rd:<jsonKey>" convention.
+function getSortValue(row: ExceptionRow, key: string): string {
+  if (key.startsWith("rd:")) {
+    return formatCell(row.resultData?.[key.slice(3)]);
+  }
+  switch (key) {
+    case "dateTime":
+      return row.dateTime;
+    case "priority":
+      return row.priority;
+    case "ruleName":
+      return row.ruleName;
+    case "issue":
+      return row.issue;
+    case "aladdin":
+      return row.aladdin;
+    case "idBbGlobal":
+      return row.idBbGlobal ?? "";
+    case "vendor":
+      return row.vendor;
+    case "action":
+      return row.action;
+    case "comments":
+      return row.comments;
+    default:
+      return "";
+  }
+}
+
+// Ordering helper: empties sink to the bottom, both-numeric compares
+// numerically, otherwise localeCompare for stable, locale-aware
+// alphabetic order.
+function compareValues(a: string, b: string): number {
+  if (a === "" && b === "") return 0;
+  if (a === "") return 1;
+  if (b === "") return -1;
+  const an = Number(a);
+  const bn = Number(b);
+  if (
+    Number.isFinite(an) &&
+    Number.isFinite(bn) &&
+    a.trim() !== "" &&
+    b.trim() !== ""
+  ) {
+    if (an !== bn) return an - bn;
+  }
+  return a.localeCompare(b);
+}
+
+type SortableThProps = {
+  colKey: string;
+  sort: SortState;
+  onSort: (key: string) => void;
+  width?: number;
+  onStartResize: (key: string, e: React.MouseEvent) => void;
+  children: React.ReactNode;
+};
+
+// Wraps a <th> with click-to-sort (three-way cycle: asc → desc → off),
+// a compact ▲/▼ indicator when the column is the sort key, and a thin
+// right-edge drag handle that resizes the column width. Any interactive
+// child (e.g. ColumnFilterHeader's ▾ button) already stopPropagates its
+// clicks so the sort handler doesn't fire on filter interactions.
+function SortableTh({
+  colKey,
+  sort,
+  onSort,
+  width,
+  onStartResize,
+  children,
+}: SortableThProps) {
+  const active = sort?.key === colKey;
+  const arrow = !active ? "" : sort!.dir === "asc" ? " ▲" : " ▼";
+  const style = width
+    ? { width, minWidth: width, maxWidth: width }
+    : undefined;
+  return (
+    <th
+      style={style}
+      className={"dq-th-sortable" + (active ? " dq-th-sorted" : "")}
+      onClick={() => onSort(colKey)}
+    >
+      <span className="dq-th-inner">
+        {children}
+        {arrow && <span className="dq-th-arrow">{arrow}</span>}
+      </span>
+      <span
+        className="dq-col-resize-handle"
+        onMouseDown={(e) => onStartResize(colKey, e)}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </th>
+  );
+}
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
@@ -186,9 +285,71 @@ export default function ExceptionsTable({
     ]
   );
 
+  // Click-to-sort state and three-way toggle (asc → desc → off).
+  const [sort, setSort] = useState<SortState>(null);
+  const toggleSort = useCallback((key: string) => {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: "asc" };
+      if (prev.dir === "asc") return { key, dir: "desc" };
+      return null;
+    });
+  }, []);
+
+  // Per-column width overrides driven by the right-edge drag handle.
+  // Missing key ⇒ natural width; the value is applied as inline width,
+  // minWidth, and maxWidth so the browser can't grow/shrink around it.
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{
+    key: string;
+    startX: number;
+    startW: number;
+  } | null>(null);
+  const startResize = useCallback(
+    (key: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const th = (e.currentTarget as HTMLElement).closest("th");
+      const startW = th ? th.getBoundingClientRect().width : 100;
+      resizingRef.current = { key, startX: e.clientX, startW };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    []
+  );
   useEffect(() => {
-    onVisibleRowsChange?.(visibleRows);
-  }, [visibleRows, onVisibleRowsChange]);
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const { key, startX, startW } = resizingRef.current;
+      const dx = e.clientX - startX;
+      const next = Math.max(40, startW + dx);
+      setColWidths((prev) => ({ ...prev, [key]: next }));
+    };
+    const onUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return visibleRows;
+    const { key, dir } = sort;
+    const factor = dir === "asc" ? 1 : -1;
+    return [...visibleRows].sort((a, b) => {
+      return compareValues(getSortValue(a, key), getSortValue(b, key)) * factor;
+    });
+  }, [visibleRows, sort]);
+
+  useEffect(() => {
+    onVisibleRowsChange?.(sortedRows);
+  }, [sortedRows, onVisibleRowsChange]);
 
   if (data.length === 0) {
     return (
@@ -204,24 +365,48 @@ export default function ExceptionsTable({
         <thead>
           <tr>
             {showResultDataColumns ? (
-              extraKeys.map((k) => (
-                <th key={k}>
-                  <ColumnFilterHeader
-                    label={k}
-                    allValues={valuesByKey[k] ?? []}
-                    filter={resultDataFilters[k] ?? null}
-                    onChange={(next) => setKeyFilter(k, next)}
-                    isOpen={openFilterId === `rd:${k}`}
-                    onToggle={(open) =>
-                      setOpenFilterId(open ? `rd:${k}` : null)
-                    }
-                  />
-                </th>
-              ))
+              extraKeys.map((k) => {
+                const colKey = `rd:${k}`;
+                return (
+                  <SortableTh
+                    key={k}
+                    colKey={colKey}
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths[colKey]}
+                    onStartResize={startResize}
+                  >
+                    <ColumnFilterHeader
+                      label={k}
+                      allValues={valuesByKey[k] ?? []}
+                      filter={resultDataFilters[k] ?? null}
+                      onChange={(next) => setKeyFilter(k, next)}
+                      isOpen={openFilterId === `rd:${k}`}
+                      onToggle={(open) =>
+                        setOpenFilterId(open ? `rd:${k}` : null)
+                      }
+                    />
+                  </SortableTh>
+                );
+              })
             ) : (
               <>
-                <th>Date/Time</th>
-                <th>
+                <SortableTh
+                  colKey="dateTime"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.dateTime}
+                  onStartResize={startResize}
+                >
+                  Date/Time
+                </SortableTh>
+                <SortableTh
+                  colKey="priority"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.priority}
+                  onStartResize={startResize}
+                >
                   <ColumnFilterHeader
                     label="Priority"
                     allValues={allPriorities}
@@ -232,8 +417,14 @@ export default function ExceptionsTable({
                       setOpenFilterId(open ? "priority" : null)
                     }
                   />
-                </th>
-                <th>
+                </SortableTh>
+                <SortableTh
+                  colKey="ruleName"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.ruleName}
+                  onStartResize={startResize}
+                >
                   <ColumnFilterHeader
                     label="Rule Name"
                     allValues={allRuleNames}
@@ -244,9 +435,23 @@ export default function ExceptionsTable({
                       setOpenFilterId(open ? "ruleName" : null)
                     }
                   />
-                </th>
-                <th>Issue</th>
-                <th>
+                </SortableTh>
+                <SortableTh
+                  colKey="issue"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.issue}
+                  onStartResize={startResize}
+                >
+                  Issue
+                </SortableTh>
+                <SortableTh
+                  colKey="aladdin"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.aladdin}
+                  onStartResize={startResize}
+                >
                   <ColumnFilterHeader
                     label="Asset Id"
                     allValues={allAssetIds}
@@ -257,8 +462,14 @@ export default function ExceptionsTable({
                       setOpenFilterId(open ? "assetId" : null)
                     }
                   />
-                </th>
-                <th>
+                </SortableTh>
+                <SortableTh
+                  colKey="idBbGlobal"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.idBbGlobal}
+                  onStartResize={startResize}
+                >
                   <ColumnFilterHeader
                     label="ID BB Global"
                     allValues={allIdBbGlobals}
@@ -269,17 +480,41 @@ export default function ExceptionsTable({
                       setOpenFilterId(open ? "idBbGlobal" : null)
                     }
                   />
-                </th>
-                <th>Vendor</th>
-                <th>Action</th>
-                <th>Comments</th>
+                </SortableTh>
+                <SortableTh
+                  colKey="vendor"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.vendor}
+                  onStartResize={startResize}
+                >
+                  Vendor
+                </SortableTh>
+                <SortableTh
+                  colKey="action"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.action}
+                  onStartResize={startResize}
+                >
+                  Action
+                </SortableTh>
+                <SortableTh
+                  colKey="comments"
+                  sort={sort}
+                  onSort={toggleSort}
+                  width={colWidths.comments}
+                  onStartResize={startResize}
+                >
+                  Comments
+                </SortableTh>
               </>
             )}
           </tr>
         </thead>
 
         <tbody>
-          {visibleRows.map((row, index) => {
+          {sortedRows.map((row, index) => {
             const isComplete = row.status === "Complete";
             const cls = [
               "dq-table-row",
