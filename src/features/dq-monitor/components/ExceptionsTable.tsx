@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
-
-type SortState = { key: string; dir: "asc" | "desc" } | null;
+import SortableTh, {
+  compareValues,
+  type SortState,
+} from "./SortableTh";
 
 // Pulls the value used for sorting a column from a row. Static keys map
 // to the corresponding ExceptionRow field; dynamic RESULT_DATA columns
@@ -33,72 +35,6 @@ function getSortValue(row: ExceptionRow, key: string): string {
     default:
       return "";
   }
-}
-
-// Ordering helper: empties sink to the bottom, both-numeric compares
-// numerically, otherwise localeCompare for stable, locale-aware
-// alphabetic order.
-function compareValues(a: string, b: string): number {
-  if (a === "" && b === "") return 0;
-  if (a === "") return 1;
-  if (b === "") return -1;
-  const an = Number(a);
-  const bn = Number(b);
-  if (
-    Number.isFinite(an) &&
-    Number.isFinite(bn) &&
-    a.trim() !== "" &&
-    b.trim() !== ""
-  ) {
-    if (an !== bn) return an - bn;
-  }
-  return a.localeCompare(b);
-}
-
-type SortableThProps = {
-  colKey: string;
-  sort: SortState;
-  onSort: (key: string) => void;
-  width?: number;
-  onStartResize: (key: string, e: React.MouseEvent) => void;
-  children: React.ReactNode;
-};
-
-// Wraps a <th> with click-to-sort (three-way cycle: asc → desc → off),
-// a compact ▲/▼ indicator when the column is the sort key, and a thin
-// right-edge drag handle that resizes the column width. Any interactive
-// child (e.g. ColumnFilterHeader's ▾ button) already stopPropagates its
-// clicks so the sort handler doesn't fire on filter interactions.
-function SortableTh({
-  colKey,
-  sort,
-  onSort,
-  width,
-  onStartResize,
-  children,
-}: SortableThProps) {
-  const active = sort?.key === colKey;
-  const arrow = !active ? "" : sort!.dir === "asc" ? " ▲" : " ▼";
-  const style = width
-    ? { width, minWidth: width, maxWidth: width }
-    : undefined;
-  return (
-    <th
-      style={style}
-      className={"dq-th-sortable" + (active ? " dq-th-sorted" : "")}
-      onClick={() => onSort(colKey)}
-    >
-      <span className="dq-th-inner">
-        {children}
-        {arrow && <span className="dq-th-arrow">{arrow}</span>}
-      </span>
-      <span
-        className="dq-col-resize-handle"
-        onMouseDown={(e) => onStartResize(colKey, e)}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </th>
-  );
 }
 
 type ExceptionsTableProps = {
@@ -294,6 +230,37 @@ export default function ExceptionsTable({
       return null;
     });
   }, []);
+  const setSortDir = useCallback((key: string, dir: "asc" | "desc") => {
+    setSort({ key, dir });
+  }, []);
+
+  // Column ⋮ overflow menus: only one open at a time. Also hidden-cols
+  // state so users can hide individual columns and restore them via the
+  // small chip that appears at the top of the grid when count > 0. Only
+  // one column can be pinned at a time; pinning sticks it to the left
+  // edge as the grid scrolls horizontally.
+  const [openMenuColKey, setOpenMenuColKey] = useState<string | null>(null);
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [pinnedCol, setPinnedCol] = useState<string | null>(null);
+  const isHidden = useCallback(
+    (key: string) => hiddenCols.has(key),
+    [hiddenCols]
+  );
+  const isPinned = useCallback(
+    (key: string) => pinnedCol === key,
+    [pinnedCol]
+  );
+  const hideCol = useCallback((key: string) => {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, []);
+  const togglePinCol = useCallback((key: string) => {
+    setPinnedCol((prev) => (prev === key ? null : key));
+  }, []);
+  const showAllCols = useCallback(() => setHiddenCols(new Set()), []);
 
   // Per-column width overrides driven by the right-edge drag handle.
   // Missing key ⇒ natural width; the value is applied as inline width,
@@ -359,14 +326,41 @@ export default function ExceptionsTable({
     );
   }
 
+  // Bundle the ⋮ menu wiring for every SortableTh so the JSX stays flat.
+  const thMenuProps = (key: string) => ({
+    menuOpen: openMenuColKey === key,
+    onMenuToggle: (open: boolean) => setOpenMenuColKey(open ? key : null),
+    onSortDir: (dir: "asc" | "desc") => setSortDir(key, dir),
+    onHide: () => hideCol(key),
+    pinned: isPinned(key),
+    onTogglePin: () => togglePinCol(key),
+  });
+  const tdPinnedClass = (key: string) => (isPinned(key) ? " dq-td-pinned" : "");
+
   return (
-    <div className="dq-table-container">
+    <div className="dq-exceptions-wrap">
+      {hiddenCols.size > 0 && (
+        <div className="dq-hidden-cols-bar">
+          <span>
+            {hiddenCols.size} column{hiddenCols.size === 1 ? "" : "s"} hidden
+          </span>
+          <button
+            type="button"
+            className="dq-hidden-cols-restore"
+            onClick={showAllCols}
+          >
+            Show all
+          </button>
+        </div>
+      )}
+      <div className="dq-table-container">
       <table className="dq-table">
         <thead>
           <tr>
             {showResultDataColumns ? (
               extraKeys.map((k) => {
                 const colKey = `rd:${k}`;
+                if (isHidden(colKey)) return null;
                 return (
                   <SortableTh
                     key={k}
@@ -375,6 +369,7 @@ export default function ExceptionsTable({
                     onSort={toggleSort}
                     width={colWidths[colKey]}
                     onStartResize={startResize}
+                    {...thMenuProps(colKey)}
                   >
                     <ColumnFilterHeader
                       label={k}
@@ -391,123 +386,150 @@ export default function ExceptionsTable({
               })
             ) : (
               <>
-                <SortableTh
-                  colKey="dateTime"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.dateTime}
-                  onStartResize={startResize}
-                >
-                  Date/Time
-                </SortableTh>
-                <SortableTh
-                  colKey="priority"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.priority}
-                  onStartResize={startResize}
-                >
-                  <ColumnFilterHeader
-                    label="Priority"
-                    allValues={allPriorities}
-                    filter={priorityFilter}
-                    onChange={setPriorityFilter}
-                    isOpen={openFilterId === "priority"}
-                    onToggle={(open) =>
-                      setOpenFilterId(open ? "priority" : null)
-                    }
-                  />
-                </SortableTh>
-                <SortableTh
-                  colKey="ruleName"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.ruleName}
-                  onStartResize={startResize}
-                >
-                  <ColumnFilterHeader
-                    label="Rule Name"
-                    allValues={allRuleNames}
-                    filter={ruleNameFilter}
-                    onChange={setRuleNameFilter}
-                    isOpen={openFilterId === "ruleName"}
-                    onToggle={(open) =>
-                      setOpenFilterId(open ? "ruleName" : null)
-                    }
-                  />
-                </SortableTh>
-                <SortableTh
-                  colKey="issue"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.issue}
-                  onStartResize={startResize}
-                >
-                  Issue
-                </SortableTh>
-                <SortableTh
-                  colKey="aladdin"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.aladdin}
-                  onStartResize={startResize}
-                >
-                  <ColumnFilterHeader
-                    label="Asset Id"
-                    allValues={allAssetIds}
-                    filter={assetIdFilter}
-                    onChange={setAssetIdFilter}
-                    isOpen={openFilterId === "assetId"}
-                    onToggle={(open) =>
-                      setOpenFilterId(open ? "assetId" : null)
-                    }
-                  />
-                </SortableTh>
-                <SortableTh
-                  colKey="idBbGlobal"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.idBbGlobal}
-                  onStartResize={startResize}
-                >
-                  <ColumnFilterHeader
-                    label="ID BB Global"
-                    allValues={allIdBbGlobals}
-                    filter={idBbGlobalFilter}
-                    onChange={setIdBbGlobalFilter}
-                    isOpen={openFilterId === "idBbGlobal"}
-                    onToggle={(open) =>
-                      setOpenFilterId(open ? "idBbGlobal" : null)
-                    }
-                  />
-                </SortableTh>
-                <SortableTh
-                  colKey="vendor"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.vendor}
-                  onStartResize={startResize}
-                >
-                  Vendor
-                </SortableTh>
-                <SortableTh
-                  colKey="action"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.action}
-                  onStartResize={startResize}
-                >
-                  Action
-                </SortableTh>
-                <SortableTh
-                  colKey="comments"
-                  sort={sort}
-                  onSort={toggleSort}
-                  width={colWidths.comments}
-                  onStartResize={startResize}
-                >
-                  Comments
-                </SortableTh>
+                {!isHidden("dateTime") && (
+                  <SortableTh
+                    colKey="dateTime"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.dateTime}
+                    onStartResize={startResize}
+                    {...thMenuProps("dateTime")}
+                  >
+                    Date/Time
+                  </SortableTh>
+                )}
+                {!isHidden("priority") && (
+                  <SortableTh
+                    colKey="priority"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.priority}
+                    onStartResize={startResize}
+                    {...thMenuProps("priority")}
+                  >
+                    <ColumnFilterHeader
+                      label="Priority"
+                      allValues={allPriorities}
+                      filter={priorityFilter}
+                      onChange={setPriorityFilter}
+                      isOpen={openFilterId === "priority"}
+                      onToggle={(open) =>
+                        setOpenFilterId(open ? "priority" : null)
+                      }
+                    />
+                  </SortableTh>
+                )}
+                {!isHidden("ruleName") && (
+                  <SortableTh
+                    colKey="ruleName"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.ruleName}
+                    onStartResize={startResize}
+                    {...thMenuProps("ruleName")}
+                  >
+                    <ColumnFilterHeader
+                      label="Rule Name"
+                      allValues={allRuleNames}
+                      filter={ruleNameFilter}
+                      onChange={setRuleNameFilter}
+                      isOpen={openFilterId === "ruleName"}
+                      onToggle={(open) =>
+                        setOpenFilterId(open ? "ruleName" : null)
+                      }
+                    />
+                  </SortableTh>
+                )}
+                {!isHidden("issue") && (
+                  <SortableTh
+                    colKey="issue"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.issue}
+                    onStartResize={startResize}
+                    {...thMenuProps("issue")}
+                  >
+                    Issue
+                  </SortableTh>
+                )}
+                {!isHidden("aladdin") && (
+                  <SortableTh
+                    colKey="aladdin"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.aladdin}
+                    onStartResize={startResize}
+                    {...thMenuProps("aladdin")}
+                  >
+                    <ColumnFilterHeader
+                      label="Asset Id"
+                      allValues={allAssetIds}
+                      filter={assetIdFilter}
+                      onChange={setAssetIdFilter}
+                      isOpen={openFilterId === "assetId"}
+                      onToggle={(open) =>
+                        setOpenFilterId(open ? "assetId" : null)
+                      }
+                    />
+                  </SortableTh>
+                )}
+                {!isHidden("idBbGlobal") && (
+                  <SortableTh
+                    colKey="idBbGlobal"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.idBbGlobal}
+                    onStartResize={startResize}
+                    {...thMenuProps("idBbGlobal")}
+                  >
+                    <ColumnFilterHeader
+                      label="ID BB Global"
+                      allValues={allIdBbGlobals}
+                      filter={idBbGlobalFilter}
+                      onChange={setIdBbGlobalFilter}
+                      isOpen={openFilterId === "idBbGlobal"}
+                      onToggle={(open) =>
+                        setOpenFilterId(open ? "idBbGlobal" : null)
+                      }
+                    />
+                  </SortableTh>
+                )}
+                {!isHidden("vendor") && (
+                  <SortableTh
+                    colKey="vendor"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.vendor}
+                    onStartResize={startResize}
+                    {...thMenuProps("vendor")}
+                  >
+                    Vendor
+                  </SortableTh>
+                )}
+                {!isHidden("action") && (
+                  <SortableTh
+                    colKey="action"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.action}
+                    onStartResize={startResize}
+                    {...thMenuProps("action")}
+                  >
+                    Action
+                  </SortableTh>
+                )}
+                {!isHidden("comments") && (
+                  <SortableTh
+                    colKey="comments"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.comments}
+                    onStartResize={startResize}
+                    {...thMenuProps("comments")}
+                  >
+                    Comments
+                  </SortableTh>
+                )}
               </>
             )}
           </tr>
@@ -522,32 +544,73 @@ export default function ExceptionsTable({
             ].join(" ");
             return (
               <tr key={`${row.ruleName}-${index}`} className={cls}>
-                {showResultDataColumns ? (
-                  extraKeys.map((k) => (
-                    <td key={k}>{formatCell(row.resultData?.[k])}</td>
-                  ))
-                ) : (
-                  <>
-                    <td>{row.dateTime}</td>
-                    <td>{row.priority}</td>
-                    <td>{row.ruleName}</td>
-                    <td>{row.issue}</td>
-                    <td>{row.aladdin}</td>
-                    <td>{row.idBbGlobal}</td>
-                    <td>{row.vendor}</td>
-                    <td>
-                      <span className={getActionClass(row.action)}>
-                        {row.action}
-                      </span>
-                    </td>
-                    <td>{row.comments}</td>
-                  </>
-                )}
+                {showResultDataColumns
+                  ? extraKeys.map((k) => {
+                      const colKey = `rd:${k}`;
+                      if (isHidden(colKey)) return null;
+                      return (
+                        <td key={k} className={tdPinnedClass(colKey).trim()}>
+                          {formatCell(row.resultData?.[k])}
+                        </td>
+                      );
+                    })
+                  : (
+                    <>
+                      {!isHidden("dateTime") && (
+                        <td className={tdPinnedClass("dateTime").trim()}>
+                          {row.dateTime}
+                        </td>
+                      )}
+                      {!isHidden("priority") && (
+                        <td className={tdPinnedClass("priority").trim()}>
+                          {row.priority}
+                        </td>
+                      )}
+                      {!isHidden("ruleName") && (
+                        <td className={tdPinnedClass("ruleName").trim()}>
+                          {row.ruleName}
+                        </td>
+                      )}
+                      {!isHidden("issue") && (
+                        <td className={tdPinnedClass("issue").trim()}>
+                          {row.issue}
+                        </td>
+                      )}
+                      {!isHidden("aladdin") && (
+                        <td className={tdPinnedClass("aladdin").trim()}>
+                          {row.aladdin}
+                        </td>
+                      )}
+                      {!isHidden("idBbGlobal") && (
+                        <td className={tdPinnedClass("idBbGlobal").trim()}>
+                          {row.idBbGlobal}
+                        </td>
+                      )}
+                      {!isHidden("vendor") && (
+                        <td className={tdPinnedClass("vendor").trim()}>
+                          {row.vendor}
+                        </td>
+                      )}
+                      {!isHidden("action") && (
+                        <td className={tdPinnedClass("action").trim()}>
+                          <span className={getActionClass(row.action)}>
+                            {row.action}
+                          </span>
+                        </td>
+                      )}
+                      {!isHidden("comments") && (
+                        <td className={tdPinnedClass("comments").trim()}>
+                          {row.comments}
+                        </td>
+                      )}
+                    </>
+                  )}
               </tr>
             );
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

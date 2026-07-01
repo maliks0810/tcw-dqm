@@ -534,13 +534,18 @@
    feedback signal that the header is clickable to sort; the resize handle
    is a slim column-resize strip pinned to the right edge and only reveals
    itself on hover so it doesn't visually clutter the header row. */
-.dq-th-sortable {
+/* Beats the base ".dq-table th { position: sticky }" rule so the resize
+   handle inside the header anchors to the header cell instead of the
+   nearest ancestor. The 34px right padding reserves room for the
+   RHS-pinned ⋮ menu button + the 8px resize strip beyond it. */
+.dq-table th.dq-th-sortable {
   position: relative;
   cursor: pointer;
   user-select: none;
+  padding-right: 34px;
 }
 
-.dq-th-sortable:hover {
+.dq-table th.dq-th-sortable:hover {
   background: #002d5e;
 }
 
@@ -554,20 +559,162 @@
   opacity: 0.85;
 }
 
+/* Wider grabbable strip with a faint default tint so users can see where
+   to click; hover/active brighten it further. z-index over the th keeps
+   the click landing on the handle, not the header sort area. */
 .dq-col-resize-handle {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 5px;
+  width: 8px;
   cursor: col-resize;
-  z-index: 2;
+  z-index: 3;
   user-select: none;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .dq-col-resize-handle:hover,
 .dq-col-resize-handle:active {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Column ⋮ overflow menu: pinned to the RHS of each header cell, just
+   inside the 8px resize handle. Absolute positioning so it doesn't push
+   the header label around and stays flush right regardless of the label
+   length. The popover mirrors the ColumnFilterHeader popover chrome. */
+.dq-th-menu-wrap {
+  position: absolute;
+  right: 12px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  z-index: 4;
+}
+
+.dq-th-menu-btn {
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  opacity: 0.75;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.dq-th-menu-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dq-th-menu-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 10;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dq-th-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dq-th-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.dq-th-menu-icon {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  color: #4b5563;
+  font-size: 11px;
+}
+
+/* Pinned columns stay glued to the left edge as the table scrolls
+   horizontally. The base ".dq-table th { position: sticky }" already
+   handles top-sticky; pinning adds left:0 with a higher z-index so
+   pinned headers sit above their unpinned peers when both stack. */
+.dq-table th.dq-th-pinned {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+
+.dq-table td.dq-td-pinned {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #ffffff;
+}
+
+.dq-table-row-complete td.dq-td-pinned {
+  background: #dcfce7;
+}
+
+.dq-table-row-even td.dq-td-pinned {
+  background: #ffffff;
+}
+
+.dq-table-row-odd td.dq-td-pinned {
+  background: #f9fafb;
+}
+
+/* Restore-hidden-columns bar shown above the grid when hiddenCols > 0. */
+.dq-exceptions-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dq-hidden-cols-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #4b5563;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  flex: none;
+}
+
+.dq-hidden-cols-restore {
+  border: none;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.dq-hidden-cols-restore:hover {
+  color: #1e3a8a;
 }
 
 .dq-table-row {
