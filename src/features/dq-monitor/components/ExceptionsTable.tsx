@@ -537,7 +537,7 @@ export default function ExceptionsTable({
 
         <tbody>
           {sortedRows.map((row, index) => {
-            const isComplete = row.status === "Complete";
+            const isComplete = row.state === "Complete";
             const cls = [
               "dq-table-row",
               isComplete ? "dq-table-row-complete" : "dq-table-row-even",

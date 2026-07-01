@@ -61,7 +61,7 @@ export async function fetchAssets(
   priority?: string,
   ruleCatalog?: string,
   ruleName?: string,
-  exceptionStatus?: string,
+  exceptionState?: string,
   assignTo?: string,
   ruleGroup?: string
 ): Promise<SecurityRow[]> {
@@ -71,8 +71,8 @@ export async function fetchAssets(
   if (priority && priority !== "All") params.set("priority", priority);
   if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
   if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
-  if (exceptionStatus && exceptionStatus !== "All")
-    params.set("exception_status", exceptionStatus);
+  if (exceptionState && exceptionState !== "All")
+    params.set("exception_state", exceptionState);
   if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
   if (ruleGroup && ruleGroup !== "All") params.set("rule_group", ruleGroup);
   const qs = params.toString();

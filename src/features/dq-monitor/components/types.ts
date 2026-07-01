@@ -8,7 +8,7 @@ export type ExceptionRow = {
   vendor: string;
   action: string;
   comments: string;
-  status: string;
+  state: string;
   // Parsed RESULT_DATA: every column from the rule's RULE_CATALOG_SOURCE row.
   // Keyed by column name as the rule SELECT emitted it. Undefined when the
   // exception's RESULT_DATA was null or didn't parse as a JSON object.

@@ -12,8 +12,8 @@ type ApiException = {
   exception_date?: string;
   exception_time?: string;
   id_bb_global?: string;
-  status_id?: number;
-  exception_status?: string;
+  state_id?: number;
+  exception_state?: string;
   comment_id?: number;
   issue_description?: string;
   result_data?: string;
@@ -74,7 +74,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     vendor: "",
     action: "",
     comments: "",
-    status: e.exception_status ?? "",
+    state: e.exception_state ?? "",
     resultData: parseResultData(e.result_data),
   };
 }
@@ -88,7 +88,7 @@ export async function fetchExceptions(
   ruleCatalog?: string,
   ruleName?: string,
   ruleGroup?: string,
-  exceptionStatus?: string,
+  exceptionState?: string,
   assignTo?: string,
   ruleNamePattern?: string
 ): Promise<ExceptionRow[]> {
@@ -100,8 +100,8 @@ export async function fetchExceptions(
   if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
   if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
   if (ruleGroup && ruleGroup !== "All") params.set("rule_group", ruleGroup);
-  if (exceptionStatus && exceptionStatus !== "All")
-    params.set("exception_status", exceptionStatus);
+  if (exceptionState && exceptionState !== "All")
+    params.set("exception_state", exceptionState);
   if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
   if (ruleNamePattern && ruleNamePattern.trim() !== "") {
     const trimmed = ruleNamePattern.trim();

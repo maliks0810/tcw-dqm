@@ -10,7 +10,7 @@ import { executeSecurityRules } from "../services/execute-rules";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
 import { fetchPriorityTypes } from "../services/get-priority-types";
-import { fetchExceptionStatus } from "../services/get-exception-status";
+import { fetchExceptionState } from "../services/get-exception-state";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
@@ -170,8 +170,8 @@ export default function DqMonitorPage() {
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("All");
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
-  const [exceptionStatus, setExceptionStatus] = useState<string>("Pending");
-  const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
+  const [exceptionState, setExceptionState] = useState<string>("Pending");
+  const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleCatalog" | "rule"
   >("rule");
@@ -296,8 +296,8 @@ export default function DqMonitorPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchExceptionStatus(controller.signal)
-      .then((codes) => setExceptionStatusOptions(codes))
+    fetchExceptionState(controller.signal)
+      .then((codes) => setExceptionStateOptions(codes))
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
       });
@@ -457,7 +457,7 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter, viewByGroup)
+    fetchAssets(controller.signal, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionState, assignToFilter, viewByGroup)
       .then((rows) => {
         setAssets(rows);
         const wantedAladdin = selectedAladdinRef.current;
@@ -473,7 +473,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionStatus, assignToFilter, viewByGroup]);
+  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionState, assignToFilter, viewByGroup]);
 
   const handleAssignToChange = (index: number, value: string) => {
     const target = assets[index];
@@ -549,7 +549,7 @@ export default function DqMonitorPage() {
       ruleCatalogArg,
       viewByRule,
       ruleGroupArg,
-      exceptionStatus,
+      exceptionState,
       assignToFilter,
       ruleNameSearchApplied
     )
@@ -579,7 +579,7 @@ export default function DqMonitorPage() {
     viewByRule,
     viewMode,
     viewByGroup,
-    exceptionStatus,
+    exceptionState,
     assignToFilter,
     ruleNameSearchApplied,
     treeSelected,
@@ -618,7 +618,7 @@ export default function DqMonitorPage() {
               undefined,
               "All",
               g,
-              exceptionStatus,
+              exceptionState,
               assignToFilter,
               ""
             );
@@ -652,7 +652,7 @@ export default function DqMonitorPage() {
     dqmType,
     severity,
     priority,
-    exceptionStatus,
+    exceptionState,
     assignToFilter,
   ]);
 
@@ -866,11 +866,11 @@ export default function DqMonitorPage() {
                 <h3 className="dq-sidebar-title">Exception Status</h3>
                 <select
                   className="dq-sidebar-select"
-                  value={exceptionStatus}
-                  onChange={(e) => setExceptionStatus(e.target.value)}
+                  value={exceptionState}
+                  onChange={(e) => setExceptionState(e.target.value)}
                 >
                   <option value="All">All</option>
-                  {exceptionStatusOptions.map((code) => (
+                  {exceptionStateOptions.map((code) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
@@ -1237,7 +1237,7 @@ export default function DqMonitorPage() {
                   — {assets[selectedRow].securityDescription} — {assets[selectedRow].aladdinId}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1246,7 +1246,7 @@ export default function DqMonitorPage() {
                   — Rule Group: {viewByGroup}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1255,7 +1255,7 @@ export default function DqMonitorPage() {
                   — Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1269,7 +1269,7 @@ export default function DqMonitorPage() {
                     : ""}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.status !== "Complete").length} exceptions)`}
+                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
             </div>
