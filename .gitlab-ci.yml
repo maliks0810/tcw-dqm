@@ -5,6 +5,7 @@ include:
 
 variables:
   PROJECT_NAME: tcw-dqm
+  ENABLE_TLS: 'true'
   DOMAIN: dqm
   DEPLOYMENT_NAME: tcw-dqm
 

@@ -829,26 +829,30 @@
   gap: 6px;
 }
 
+/* DevExtreme-style filter glyph on the header — bare icon, no box.
+   Muted white/gray when inactive, bright when active, no hover chrome. */
 .dq-col-filter-btn {
-  border: 1px solid #9ca3af;
-  background: #f3f4f6;
-  color: #374151;
-  border-radius: 4px;
-  padding: 0 6px;
-  height: 18px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0;
+  width: 14px;
+  height: 14px;
   line-height: 14px;
   font-size: 11px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dq-col-filter-btn:hover {
-  background: #e5e7eb;
+  color: #ffffff;
 }
 
-.dq-col-filter-btn-active {
-  background: #fde68a;
-  color: #92400e;
-  border-color: #f59e0b;
+.dq-col-filter-btn-active,
+.dq-col-filter-btn-active:hover {
+  color: #93c5fd;
 }
 
 .dq-col-filter-popover {

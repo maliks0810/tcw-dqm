@@ -119,7 +119,7 @@ export function exportExceptionsToExcel(
       vendor: r.vendor,
       action: r.action,
       comments: r.comments,
-      status: r.status,
+      state: r.state,
     };
     for (const k of extraKeys) {
       base[k] = r.resultData?.[k] ?? "";

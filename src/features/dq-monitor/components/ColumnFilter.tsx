@@ -160,7 +160,7 @@ export default function ColumnFilterHeader({
           else open();
         }}
       >
-        ▾
+        ▽
       </button>
       {isOpen && coords && createPortal(
         <div
