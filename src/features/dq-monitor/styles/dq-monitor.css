@@ -828,6 +828,86 @@
   word-break: break-word;
 }
 
+/* In-app alert dialog. Replaces window.alert so the message doesn't get
+   the browser's "<origin> says" prefix. Modal overlay + centered dialog
+   with a single OK button; clicking outside the dialog dismisses it. */
+.dq-alert-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dq-alert-dialog {
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  padding: 20px 24px 16px;
+  min-width: 320px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dq-alert-dialog-msg {
+  font-size: 14px;
+  color: #111827;
+  line-height: 1.4;
+}
+
+.dq-alert-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dq-alert-dialog-ok {
+  height: 32px;
+  padding: 0 18px;
+  border-radius: 6px;
+  border: none;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dq-alert-dialog-ok:hover {
+  background: #1e40af;
+}
+
+.dq-alert-dialog-ok:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+/* Suppress-date cell: native date input fills the column, no padding on
+   the TD so the input hugs the border like the comments cell. */
+.dq-td-suppress-date {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.dq-row-suppress-date-input {
+  width: 100%;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #111827;
+  box-sizing: border-box;
+}
+
+.dq-row-suppress-date-input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+}
+
 /* Comments cell: input fills the full column width. Zero padding on the
    TD means the input's left/right edges hug the cell border. */
 .dq-td-comments {

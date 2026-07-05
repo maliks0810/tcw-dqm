@@ -11,6 +11,10 @@ export type ExceptionRow = {
   comments: string;
   state: string;
   status: string;
+  // ISO YYYY-MM-DD (from EXCEPTION.SUPPRESS_DATE), or "" when unset.
+  // Rendered as an <input type="date"> in the editable SUPPRESS_DATE column
+  // when RULE_GROUP.FLAG_SUPPRESS_DATE is true for the current group.
+  suppressDate: string;
   // Parsed RESULT_DATA: every column from the rule's RULE_CATALOG_SOURCE row.
   // Keyed by column name as the rule SELECT emitted it. Undefined when the
   // exception's RESULT_DATA was null or didn't parse as a JSON object.

@@ -34,6 +34,8 @@ function getSortValue(row: ExceptionRow, key: string): string {
       return row.action;
     case "comments":
       return row.comments;
+    case "suppressDate":
+      return row.suppressDate;
     default:
       return "";
   }
@@ -57,6 +59,13 @@ type ExceptionsTableProps = {
   // onCommentsChange(exceptionId, newComments).
   showCommentsColumn?: boolean;
   onCommentsChange?: (exceptionId: number, comments: string) => void;
+  // When true (RULE_GROUP.FLAG_SUPPRESS_DATE=true path), the grid renders
+  // an editable SUPPRESS_DATE column (native <input type="date">) just
+  // before the COMMENTS column in view-exception mode. Committing a value
+  // fires onSuppressDateChange(exceptionId, newIsoDate) — empty string
+  // clears the cell.
+  showSuppressDateColumn?: boolean;
+  onSuppressDateChange?: (exceptionId: number, suppressDate: string) => void;
 };
 
 function getActionClass(action: string): string {
@@ -91,10 +100,14 @@ export default function ExceptionsTable({
   onStatusChange,
   showCommentsColumn: showCommentsColumnProp = false,
   onCommentsChange,
+  showSuppressDateColumn: showSuppressDateColumnProp = false,
+  onSuppressDateChange,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
   const showCommentsColumn = showResultDataColumns && showCommentsColumnProp;
+  const showSuppressDateColumn =
+    showResultDataColumns && showSuppressDateColumnProp;
   // Union of all keys across every row's parsed RESULT_DATA, minus the ones
   // already shown via core columns. Stable alphabetical order so the column
   // layout doesn't shuffle as rows come and go.
@@ -290,6 +303,7 @@ export default function ExceptionsTable({
   // the free-text edit box has room to breathe on first render.
   const [colWidths, setColWidths] = useState<Record<string, number>>({
     comments: 320,
+    suppressDate: 160,
   });
   const resizingRef = useRef<{
     key: string;
@@ -338,6 +352,25 @@ export default function ExceptionsTable({
       return compareValues(getSortValue(a, key), getSortValue(b, key)) * factor;
     });
   }, [visibleRows, sort]);
+
+  // Custom in-app alert replacement so the message doesn't come with a
+  // browser-injected "localhost:3000 says" prefix. Set to a non-empty
+  // string to show the modal; the OK button clears it. Declared here
+  // (above the early return below) so React hook order stays consistent.
+  const [alertMessage, setAlertMessage] = useState<string>("");
+  const alertOkRef = useRef<HTMLButtonElement | null>(null);
+  // Focus the OK button when the dialog opens (replaces autoFocus, which
+  // eslint-jsx-a11y flags), and dismiss on Escape via a document-level
+  // listener so the backdrop element itself stays purely presentational.
+  useEffect(() => {
+    if (!alertMessage) return;
+    alertOkRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAlertMessage("");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [alertMessage]);
 
   useEffect(() => {
     onVisibleRowsChange?.(sortedRows);
@@ -394,6 +427,18 @@ export default function ExceptionsTable({
                     {...thMenuProps("status")}
                   >
                     Status
+                  </SortableTh>
+                )}
+                {showSuppressDateColumn && !isHidden("suppressDate") && (
+                  <SortableTh
+                    colKey="suppressDate"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.suppressDate}
+                    onStartResize={startResize}
+                    {...thMenuProps("suppressDate")}
+                  >
+                    Suppress Date
                   </SortableTh>
                 )}
                 {extraKeys.map((k) => {
@@ -603,9 +648,24 @@ export default function ExceptionsTable({
                           <select
                             className="dq-row-status-select"
                             value={row.status}
-                            onChange={(e) =>
-                              onStatusChange?.(row.exceptionId, e.target.value)
-                            }
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              // Guard: can't move a row into "Suppress"
+                              // without a Suppress Date. Alert and keep
+                              // the select on its previous value — the
+                              // parent state is untouched because we
+                              // never call onStatusChange.
+                              if (
+                                next === "Suppress" &&
+                                !row.suppressDate
+                              ) {
+                                setAlertMessage(
+                                  "Please enter a Suppress Date before setting the status to Suppress."
+                                );
+                                return;
+                              }
+                              onStatusChange?.(row.exceptionId, next);
+                            }}
                           >
                             {(statusOptions ?? []).map((s) => (
                               <option key={s} value={s}>
@@ -619,6 +679,29 @@ export default function ExceptionsTable({
                           </select>
                         </td>
                       )}
+                      {showSuppressDateColumn &&
+                        !isHidden("suppressDate") && (
+                          <td
+                            className={
+                              (
+                                "dq-td-suppress-date" +
+                                tdPinnedClass("suppressDate")
+                              ).trim()
+                            }
+                          >
+                            <SuppressDateCell
+                              initialValue={row.suppressDate}
+                              onCommit={(next) => {
+                                if (next !== row.suppressDate) {
+                                  onSuppressDateChange?.(
+                                    row.exceptionId,
+                                    next
+                                  );
+                                }
+                              }}
+                            />
+                          </td>
+                        )}
                       {extraKeys.map((k) => {
                         const colKey = `rd:${k}`;
                         if (isHidden(colKey)) return null;
@@ -735,6 +818,30 @@ export default function ExceptionsTable({
         </tbody>
       </table>
       </div>
+      {alertMessage && (
+        <div className="dq-alert-overlay">
+          <div
+            className="dq-alert-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dq-alert-dialog-msg"
+          >
+            <div id="dq-alert-dialog-msg" className="dq-alert-dialog-msg">
+              {alertMessage}
+            </div>
+            <div className="dq-alert-dialog-actions">
+              <button
+                ref={alertOkRef}
+                type="button"
+                className="dq-alert-dialog-ok"
+                onClick={() => setAlertMessage("")}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -768,6 +875,69 @@ function CommentsCell({
           e.preventDefault();
           (e.target as HTMLInputElement).blur();
         }
+      }}
+    />
+  );
+}
+
+// Per-row SUPPRESS_DATE cell. A controlled <input type="date"> whose value
+// was bound directly to row.suppressDate reverted every user edit — React
+// re-rendered before the backend refetch completed, so the calendar's
+// pick / typed segments never stuck. Keeping a local draft lets the picker
+// commit immediately; onCommit fires onChange (calendar picked a valid
+// full date) and onBlur (typed value finished). Range-limited to
+// [today, today + 2 years] — the native `min`/`max` attributes gray out
+// out-of-range dates in the picker, and the commit guard rejects anything
+// that slips through typing.
+function SuppressDateCell({
+  initialValue,
+  onCommit,
+}: {
+  initialValue: string;
+  onCommit: (next: string) => void;
+}) {
+  const [draft, setDraft] = useState<string>(initialValue);
+  useEffect(() => {
+    setDraft(initialValue);
+  }, [initialValue]);
+  // Recomputed per render — cheap, and stays correct if the user leaves
+  // the page open across midnight.
+  const iso = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const today = new Date();
+  const minDate = iso(today);
+  const capDate = new Date(today);
+  capDate.setFullYear(capDate.getFullYear() + 2);
+  const maxDate = iso(capDate);
+  // Empty ("clear the cell") is always allowed; otherwise the ISO string
+  // compares lexicographically because it's zero-padded YYYY-MM-DD.
+  const withinRange = (v: string) => v === "" || (v >= minDate && v <= maxDate);
+  return (
+    <input
+      type="date"
+      className="dq-row-suppress-date-input"
+      value={draft}
+      min={minDate}
+      max={maxDate}
+      onChange={(e) => {
+        // Always accept the browser's proposed value into the draft — the
+        // segmented date editor emits intermediate states while the user
+        // types, and rejecting them here made typing look broken. The
+        // real-vs-fake range check happens once on blur.
+        const next = e.target.value;
+        setDraft(next);
+        if (withinRange(next) && next !== initialValue) onCommit(next);
+      }}
+      onBlur={() => {
+        if (!withinRange(draft)) {
+          setDraft(initialValue);
+          return;
+        }
+        if (draft !== initialValue) onCommit(draft);
       }}
     />
   );

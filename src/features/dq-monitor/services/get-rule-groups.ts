@@ -6,12 +6,14 @@ export type RuleGroupInfo = {
   name: string;
   flagStatusVisible: boolean;
   flagCommentsVisible: boolean;
+  flagSuppressDate: boolean;
 };
 
 type ApiRuleGroup = {
   name?: string;
   flag_status_visible?: boolean;
   flag_comments_visible?: boolean;
+  flag_suppress_date?: boolean;
 };
 
 export async function fetchRuleGroups(
@@ -31,5 +33,6 @@ export async function fetchRuleGroups(
       name: typeof g.name === "string" ? g.name : "",
       flagStatusVisible: g.flag_status_visible === true,
       flagCommentsVisible: g.flag_comments_visible === true,
+      flagSuppressDate: g.flag_suppress_date === true,
     }));
 }

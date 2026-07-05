@@ -46,6 +46,15 @@ function formatDateTime(iso?: string): string {
   });
 }
 
+// Coerces an incoming SUPPRESS_DATE (typically ISO like "2026-07-05" or a
+// full RFC3339 timestamp like "2026-07-05T00:00:00Z") to a YYYY-MM-DD
+// string suitable for <input type="date">. Empty / invalid → "".
+function isoDate(s?: string): string {
+  if (!s) return "";
+  const trimmed = s.length >= 10 ? s.slice(0, 10) : s;
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 function parseResultData(s?: string): Record<string, unknown> | undefined {
   if (!s) return undefined;
   try {
@@ -79,6 +88,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     comments: e.comments ?? "",
     state: e.exception_state ?? "",
     status: e.exception_status ?? "",
+    suppressDate: isoDate(e.suppress_date),
     resultData: parseResultData(e.result_data),
   };
 }

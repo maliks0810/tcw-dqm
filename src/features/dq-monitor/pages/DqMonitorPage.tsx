@@ -24,6 +24,7 @@ import {
 import { updateAssignTo } from "../services/update-assign-to";
 import { updateExceptionStatus } from "../services/update-exception-status";
 import { updateExceptionComments } from "../services/update-exception-comments";
+import { updateExceptionSuppressDate } from "../services/update-exception-suppress-date";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
@@ -206,10 +207,17 @@ export default function DqMonitorPage() {
   const [commentsVisibleGroups, setCommentsVisibleGroups] = useState<
     Set<string>
   >(new Set());
+  // Rule groups with FLAG_SUPPRESS_DATE = true. Drives the editable
+  // SUPPRESS_DATE column (date input) in the Exceptions grid.
+  const [suppressDateVisibleGroups, setSuppressDateVisibleGroups] = useState<
+    Set<string>
+  >(new Set());
   const showStatusPanel =
     viewMode !== "security" && statusVisibleGroups.has(viewByGroup);
   const showCommentsColumn =
     viewMode !== "security" && commentsVisibleGroups.has(viewByGroup);
+  const showSuppressDateColumn =
+    viewMode !== "security" && suppressDateVisibleGroups.has(viewByGroup);
   const DEFAULT_STATUS_FILTER = useMemo(
     () => new Set<string>(["New", "Challenge", "Override"]),
     []
@@ -343,6 +351,13 @@ export default function DqMonitorPage() {
           new Set(
             groups
               .filter((g) => g.flagCommentsVisible && g.name)
+              .map((g) => g.name)
+          )
+        );
+        setSuppressDateVisibleGroups(
+          new Set(
+            groups
+              .filter((g) => g.flagSuppressDate && g.name)
               .map((g) => g.name)
           )
         );
@@ -1483,6 +1498,35 @@ export default function DqMonitorPage() {
                           );
                         }
                       )
+                  : undefined
+              }
+              showSuppressDateColumn={showSuppressDateColumn}
+              onSuppressDateChange={
+                showSuppressDateColumn
+                  ? (exceptionId, suppressDate) => {
+                      // Setting a suppress date implies the exception is
+                      // being suppressed — flip status to "Suppress" in
+                      // the same commit so the two fields stay in sync.
+                      // Clearing the date leaves status alone (the user
+                      // presumably wants to keep whatever status they had
+                      // before enrolling into suppression).
+                      const p1 = updateExceptionSuppressDate(
+                        exceptionId,
+                        suppressDate
+                      );
+                      const p2 = suppressDate
+                        ? updateExceptionStatus(exceptionId, "Suppress")
+                        : Promise.resolve(0);
+                      return Promise.all([p1, p2])
+                        .then(() => setRefreshTick((n) => n + 1))
+                        .catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.error(
+                            "updateExceptionSuppressDate/Status failed",
+                            err
+                          );
+                        });
+                    }
                   : undefined
               }
             />
