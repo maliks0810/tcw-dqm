@@ -11,6 +11,7 @@ import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
 import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionState } from "../services/get-exception-state";
+import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchRuleGroups } from "../services/get-rule-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
@@ -21,6 +22,8 @@ import {
   exportExceptionsToExcel,
 } from "../../../utils/export-to-excel";
 import { updateAssignTo } from "../services/update-assign-to";
+import { updateExceptionStatus } from "../services/update-exception-status";
+import { updateExceptionComments } from "../services/update-exception-comments";
 import "../styles/dq-monitor.css";
 
 export default function DqMonitorPage() {
@@ -152,11 +155,21 @@ export default function DqMonitorPage() {
   const [exceptionsLimitExceeded, setExceptionsLimitExceeded] = useState(false);
 
   const [refreshTick, setRefreshTick] = useState(0);
-  const [lastEvent, setLastEvent] = useState<{
-    aladdinId: string;
-    count: number;
-    receivedAt: string;
-  } | null>(null);
+  // Two event flavors reach the footer: per-asset security exceptions
+  // (from ExecuteSecurityRules) and full-scope rule runs (from
+  // ExecuteRules). They render differently — one carries an Aladdin id,
+  // the other a rule name + type — so keep them as a discriminated union
+  // rather than jamming a rule identifier into aladdinId.
+  type LastEvent =
+    | { kind: "security"; aladdinId: string; count: number; receivedAt: string }
+    | {
+        kind: "rules";
+        ruleName: string;
+        ruleType: string;
+        count: number;
+        receivedAt: string;
+      };
+  const [lastEvent, setLastEvent] = useState<LastEvent | null>(null);
   const [blinkingAladdinId, setBlinkingAladdinId] = useState<string | null>(
     null
   );
@@ -172,6 +185,8 @@ export default function DqMonitorPage() {
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
   const [exceptionState, setExceptionState] = useState<string>("Pending");
   const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
+  const [exceptionStatus, setExceptionStatus] = useState<string>("All");
+  const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleCatalog" | "rule"
   >("rule");
@@ -181,6 +196,29 @@ export default function DqMonitorPage() {
   const [treeSelected, setTreeSelected] = useState<boolean>(false);
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
+  // Rule groups with FLAG_STATUS_VISIBLE = true (from SP_GET_RULE_GROUPS).
+  // Drives the STATUS filter panel + STATUS column in the Exceptions grid.
+  const [statusVisibleGroups, setStatusVisibleGroups] = useState<Set<string>>(
+    new Set()
+  );
+  // Rule groups with FLAG_COMMENTS_VISIBLE = true. Drives the trailing
+  // editable COMMENTS column in the Exceptions grid.
+  const [commentsVisibleGroups, setCommentsVisibleGroups] = useState<
+    Set<string>
+  >(new Set());
+  const showStatusPanel =
+    viewMode !== "security" && statusVisibleGroups.has(viewByGroup);
+  const showCommentsColumn =
+    viewMode !== "security" && commentsVisibleGroups.has(viewByGroup);
+  const DEFAULT_STATUS_FILTER = useMemo(
+    () => new Set<string>(["New", "Challenge", "Override"]),
+    []
+  );
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(
+    () => new Set<string>(["New", "Challenge", "Override"])
+  );
+  const [statusComboOpen, setStatusComboOpen] = useState<boolean>(false);
+  const statusComboRef = useRef<HTMLDivElement | null>(null);
   const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
   const [viewByRule, setViewByRule] = useState<string>("All");
   // Display label for the currently-selected rule (RULE_DESCRIPTION when
@@ -193,41 +231,6 @@ export default function DqMonitorPage() {
   const [ruleQuery, setRuleQuery] = useState<string>("");
   const [ruleComboOpen, setRuleComboOpen] = useState<boolean>(false);
   const ruleComboRef = useRef<HTMLDivElement | null>(null);
-
-  const originalTitleRef = useRef<string>(
-    typeof document !== "undefined" ? document.title : ""
-  );
-  const titleBlinkRef = useRef<number | null>(null);
-
-  const stopTitleBlink = () => {
-    if (titleBlinkRef.current != null) {
-      window.clearInterval(titleBlinkRef.current);
-      titleBlinkRef.current = null;
-    }
-    document.title = originalTitleRef.current;
-  };
-
-  const startTitleBlink = () => {
-    if (titleBlinkRef.current != null) return;
-    let alt = false;
-    titleBlinkRef.current = window.setInterval(() => {
-      document.title = alt ? originalTitleRef.current : "🔔 New exception";
-      alt = !alt;
-    }, 800);
-  };
-
-  useEffect(() => {
-    const onVisibility = () => {
-      if (!document.hidden) stopTitleBlink();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", stopTitleBlink);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", stopTitleBlink);
-      stopTitleBlink();
-    };
-  }, []);
 
   // Ask once for OS-level notification permission so SSE events can also
   // surface in the Windows Action Center, not just the footer.
@@ -306,6 +309,16 @@ export default function DqMonitorPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    fetchExceptionStatus(controller.signal)
+      .then((codes) => setExceptionStatusOptions(codes))
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
     fetchDMUsers(controller.signal)
       .then((users) => setDmUserOptions(users))
       .catch((e: unknown) => {
@@ -317,7 +330,23 @@ export default function DqMonitorPage() {
   useEffect(() => {
     const controller = new AbortController();
     fetchRuleGroups(controller.signal)
-      .then((names) => setRuleGroupOptions(names))
+      .then((groups) => {
+        setRuleGroupOptions(groups.map((g) => g.name).filter(Boolean));
+        setStatusVisibleGroups(
+          new Set(
+            groups
+              .filter((g) => g.flagStatusVisible && g.name)
+              .map((g) => g.name)
+          )
+        );
+        setCommentsVisibleGroups(
+          new Set(
+            groups
+              .filter((g) => g.flagCommentsVisible && g.name)
+              .map((g) => g.name)
+          )
+        );
+      })
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
       });
@@ -379,6 +408,20 @@ export default function DqMonitorPage() {
   }, [ruleComboOpen, commitRuleQuery]);
 
   useEffect(() => {
+    if (!statusComboOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        statusComboRef.current &&
+        !statusComboRef.current.contains(e.target as Node)
+      ) {
+        setStatusComboOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [statusComboOpen]);
+
+  useEffect(() => {
     if (!viewByRuleCatalog || viewByRuleCatalog === "All") {
       setRuleOptions([]);
       setViewByRule("All");
@@ -415,6 +458,7 @@ export default function DqMonitorPage() {
         const count = typeof payload.count === "number" ? payload.count : 0;
         const receivedAt = new Date().toLocaleTimeString();
         setLastEvent({
+          kind: "security",
           aladdinId,
           count,
           receivedAt,
@@ -424,7 +468,6 @@ export default function DqMonitorPage() {
           aladdinId
         ) {
           setBlinkingAladdinId(aladdinId);
-          if (document.hidden) startTitleBlink();
         }
         setFooterBlinking(true);
         if (
@@ -438,6 +481,41 @@ export default function DqMonitorPage() {
             });
           } catch {
             /* some browsers throw when window is unfocused — ignore */
+          }
+        }
+        setRefreshTick((n) => n + 1);
+      } else if (event.type === "rules.executed") {
+        // ExecuteRules fires this once per run — no per-asset detail, just
+        // rule scope + total inserted count. Refresh the grids and light
+        // the footer so the user knows the run finished.
+        const payload = (event.payload ?? {}) as {
+          rule_name?: string;
+          rule_type?: string;
+          count?: number;
+        };
+        const ruleName = payload.rule_name ?? "";
+        const ruleType = payload.rule_type ?? "";
+        const count = typeof payload.count === "number" ? payload.count : 0;
+        const receivedAt = new Date().toLocaleTimeString();
+        setLastEvent({
+          kind: "rules",
+          ruleName,
+          ruleType,
+          count,
+          receivedAt,
+        });
+        setFooterBlinking(true);
+        if (
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            new Notification("TCW-DQM", {
+              body: `Rule = ${ruleName} (${ruleType}), No of Exceptions = ${count}, Received at ${receivedAt}`,
+              tag: "tcw-dqm-rules-executed",
+            });
+          } catch {
+            /* ignore — some browsers throw when window is unfocused */
           }
         }
         setRefreshTick((n) => n + 1);
@@ -863,7 +941,7 @@ export default function DqMonitorPage() {
               </div>
 
               <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Exception Status</h3>
+                <h3 className="dq-sidebar-title">Exception State</h3>
                 <select
                   className="dq-sidebar-select"
                   value={exceptionState}
@@ -871,6 +949,22 @@ export default function DqMonitorPage() {
                 >
                   <option value="All">All</option>
                   {exceptionStateOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dq-sidebar-row">
+                <h3 className="dq-sidebar-title">Exception Status</h3>
+                <select
+                  className="dq-sidebar-select"
+                  value={exceptionStatus}
+                  onChange={(e) => setExceptionStatus(e.target.value)}
+                >
+                  <option value="All">All</option>
+                  {exceptionStatusOptions.map((code) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
@@ -1289,10 +1383,108 @@ export default function DqMonitorPage() {
               </div>
             )}
 
+            {showStatusPanel && (
+              <div className="dq-status-filter">
+                <label
+                  className="dq-status-filter-label"
+                  htmlFor="dq-status-combo-trigger"
+                  id="dq-status-combo-label"
+                >
+                  Status
+                </label>
+                <div
+                  className="dq-status-combo"
+                  ref={statusComboRef}
+                >
+                  <button
+                    type="button"
+                    id="dq-status-combo-trigger"
+                    className="dq-status-combo-trigger"
+                    aria-haspopup="listbox"
+                    aria-expanded={statusComboOpen}
+                    aria-labelledby="dq-status-combo-label dq-status-combo-trigger"
+                    onClick={() => setStatusComboOpen((v) => !v)}
+                  >
+                    <span className="dq-status-combo-summary">
+                      {statusFilter.size === 0
+                        ? "None"
+                        : Array.from(statusFilter).join(", ")}
+                    </span>
+                    <span className="dq-status-combo-caret">▾</span>
+                  </button>
+                  {statusComboOpen && (
+                    <div
+                      className="dq-status-combo-popover"
+                      role="group"
+                      aria-labelledby="dq-status-combo-label"
+                    >
+                      {exceptionStatusOptions.map((code) => {
+                        const checked = statusFilter.has(code);
+                        return (
+                          <label
+                            key={code}
+                            className="dq-status-combo-item"
+                          >
+                            <input
+                              type="checkbox"
+                              className="dq-status-combo-check"
+                              checked={checked}
+                              onChange={() => {
+                                setStatusFilter((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(code)) next.delete(code);
+                                  else next.add(code);
+                                  return next;
+                                });
+                              }}
+                            />
+                            <span>{code}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <ExceptionsTable
-              data={exceptions}
+              data={
+                showStatusPanel
+                  ? exceptions.filter((r) => statusFilter.has(r.status))
+                  : exceptions
+              }
               showResultDataColumns={viewMode !== "security"}
               onVisibleRowsChange={setVisibleExceptions}
+              statusOptions={
+                showStatusPanel ? exceptionStatusOptions : undefined
+              }
+              onStatusChange={
+                showStatusPanel
+                  ? (exceptionId, status) =>
+                      updateExceptionStatus(exceptionId, status)
+                        .then(() => setRefreshTick((n) => n + 1))
+                        .catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.error("updateExceptionStatus failed", err);
+                        })
+                  : undefined
+              }
+              showCommentsColumn={showCommentsColumn}
+              onCommentsChange={
+                showCommentsColumn
+                  ? (exceptionId, comments) =>
+                      updateExceptionComments(exceptionId, comments).catch(
+                        (err) => {
+                          // eslint-disable-next-line no-console
+                          console.error(
+                            "updateExceptionComments failed",
+                            err
+                          );
+                        }
+                      )
+                  : undefined
+              }
             />
           </section>
           )}
@@ -1315,7 +1507,9 @@ export default function DqMonitorPage() {
         }}
       >
         {lastEvent
-          ? `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
+          ? lastEvent.kind === "rules"
+            ? `Rule = ${lastEvent.ruleName} (${lastEvent.ruleType}), No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
+            : `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
           : ""}
       </div>
     </div>

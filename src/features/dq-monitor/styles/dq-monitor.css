@@ -688,6 +688,173 @@
   min-height: 0;
 }
 
+/* Status multi-select filter shown above the Exceptions grid when the
+   currently-scoped rule group has RULE_GROUP.FLAG_STATUS_VISIBLE = true. */
+.dq-status-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex: none;
+}
+
+.dq-status-filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
+  padding-top: 4px;
+}
+
+.dq-status-filter-select {
+  min-width: 160px;
+  height: 96px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.dq-status-combo {
+  position: relative;
+  min-width: 180px;
+}
+
+.dq-status-combo-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 180px;
+  height: 26px;
+  padding: 2px 6px;
+  font-size: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dq-status-combo-trigger:hover {
+  border-color: #9ca3af;
+}
+
+.dq-status-combo-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dq-status-combo-caret {
+  color: #6b7280;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.dq-status-combo-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: #111827;
+  padding: 2px 0;
+}
+
+.dq-status-combo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.dq-status-combo-item:hover {
+  background: #fef3c7;
+}
+
+.dq-status-combo-check {
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1f2937;
+}
+
+/* Per-row STATUS <select> that lives as the first column of the
+   Exceptions grid in view-exception mode when the STATUS filter is
+   enabled. Compact so it doesn't distort row height. */
+.dq-row-status-select {
+  width: 100%;
+  min-width: 100px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #111827;
+}
+
+/* RESULT_DATA (extraKeys) TDs. The actual width clamp lives on the inner
+   <div> below — TDs in table-layout:auto silently ignore max-width, but
+   a plain block-level child respects it. Vertical-align:top keeps the
+   header baseline consistent when one column wraps to multiple lines. */
+.dq-td-rd {
+  vertical-align: top;
+}
+
+/* Default: single-line, no wrap — every column opens wide enough to show
+   its value on one line, and the .dq-table-container scrolls horizontally
+   if the total exceeds the viewport. */
+.dq-td-rd-inner {
+  white-space: nowrap;
+}
+
+/* Applied only when the user resizes the column via the drag handle (the
+   TD carries an inline maxWidth). Flipping on wrap lets the shrunk width
+   actually take effect. */
+.dq-td-rd-inner-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Comments cell: input fills the full column width. Zero padding on the
+   TD means the input's left/right edges hug the cell border. */
+.dq-td-comments {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.dq-td-comments-inner {
+  width: 100%;
+}
+
+.dq-row-comments-input {
+  width: 100%;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #111827;
+  box-sizing: border-box;
+}
+
+.dq-row-comments-input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+}
+
 .dq-hidden-cols-bar {
   display: flex;
   align-items: center;

@@ -14,6 +14,8 @@ function getSortValue(row: ExceptionRow, key: string): string {
     return formatCell(row.resultData?.[key.slice(3)]);
   }
   switch (key) {
+    case "status":
+      return row.status;
     case "dateTime":
       return row.dateTime;
     case "priority":
@@ -43,6 +45,18 @@ type ExceptionsTableProps = {
   // Fires whenever the in-memory column filters change the visible row set,
   // so the parent page can re-export only the rows the user actually sees.
   onVisibleRowsChange?: (rows: ExceptionRow[]) => void;
+  // When provided (RULE_GROUP.FLAG_STATUS_VISIBLE=true path), the
+  // Exceptions grid renders a STATUS column as the first column in
+  // view-exception mode. Each cell is a <select> bound to row.status;
+  // picking a new value fires onStatusChange(exceptionId, newStatus).
+  statusOptions?: string[];
+  onStatusChange?: (exceptionId: number, status: string) => void;
+  // When true (RULE_GROUP.FLAG_COMMENTS_VISIBLE=true path), the Exceptions
+  // grid renders an editable COMMENTS column as the LAST column in
+  // view-exception mode. Committing an edit (blur or Enter) fires
+  // onCommentsChange(exceptionId, newComments).
+  showCommentsColumn?: boolean;
+  onCommentsChange?: (exceptionId: number, comments: string) => void;
 };
 
 function getActionClass(action: string): string {
@@ -73,7 +87,14 @@ export default function ExceptionsTable({
   data,
   showResultDataColumns = true,
   onVisibleRowsChange,
+  statusOptions,
+  onStatusChange,
+  showCommentsColumn: showCommentsColumnProp = false,
+  onCommentsChange,
 }: ExceptionsTableProps) {
+  const showStatusColumn =
+    showResultDataColumns && Array.isArray(statusOptions);
+  const showCommentsColumn = showResultDataColumns && showCommentsColumnProp;
   // Union of all keys across every row's parsed RESULT_DATA, minus the ones
   // already shown via core columns. Stable alphabetical order so the column
   // layout doesn't shuffle as rows come and go.
@@ -265,7 +286,11 @@ export default function ExceptionsTable({
   // Per-column width overrides driven by the right-edge drag handle.
   // Missing key ⇒ natural width; the value is applied as inline width,
   // minWidth, and maxWidth so the browser can't grow/shrink around it.
-  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  // Default the COMMENTS column wider than a normal RESULT_DATA column so
+  // the free-text edit box has room to breathe on first render.
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    comments: 320,
+  });
   const resizingRef = useRef<{
     key: string;
     startX: number;
@@ -358,32 +383,58 @@ export default function ExceptionsTable({
         <thead>
           <tr>
             {showResultDataColumns ? (
-              extraKeys.map((k) => {
-                const colKey = `rd:${k}`;
-                if (isHidden(colKey)) return null;
-                return (
+              <>
+                {showStatusColumn && !isHidden("status") && (
                   <SortableTh
-                    key={k}
-                    colKey={colKey}
+                    colKey="status"
                     sort={sort}
                     onSort={toggleSort}
-                    width={colWidths[colKey]}
+                    width={colWidths.status}
                     onStartResize={startResize}
-                    {...thMenuProps(colKey)}
+                    {...thMenuProps("status")}
                   >
-                    <ColumnFilterHeader
-                      label={k}
-                      allValues={valuesByKey[k] ?? []}
-                      filter={resultDataFilters[k] ?? null}
-                      onChange={(next) => setKeyFilter(k, next)}
-                      isOpen={openFilterId === `rd:${k}`}
-                      onToggle={(open) =>
-                        setOpenFilterId(open ? `rd:${k}` : null)
-                      }
-                    />
+                    Status
                   </SortableTh>
-                );
-              })
+                )}
+                {extraKeys.map((k) => {
+                  const colKey = `rd:${k}`;
+                  if (isHidden(colKey)) return null;
+                  return (
+                    <SortableTh
+                      key={k}
+                      colKey={colKey}
+                      sort={sort}
+                      onSort={toggleSort}
+                      width={colWidths[colKey]}
+                      onStartResize={startResize}
+                      {...thMenuProps(colKey)}
+                    >
+                      <ColumnFilterHeader
+                        label={k}
+                        allValues={valuesByKey[k] ?? []}
+                        filter={resultDataFilters[k] ?? null}
+                        onChange={(next) => setKeyFilter(k, next)}
+                        isOpen={openFilterId === `rd:${k}`}
+                        onToggle={(open) =>
+                          setOpenFilterId(open ? `rd:${k}` : null)
+                        }
+                      />
+                    </SortableTh>
+                  );
+                })}
+                {showCommentsColumn && !isHidden("comments") && (
+                  <SortableTh
+                    colKey="comments"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.comments}
+                    onStartResize={startResize}
+                    {...thMenuProps("comments")}
+                  >
+                    Comments
+                  </SortableTh>
+                )}
+              </>
             ) : (
               <>
                 {!isHidden("dateTime") && (
@@ -545,15 +596,85 @@ export default function ExceptionsTable({
             return (
               <tr key={`${row.ruleName}-${index}`} className={cls}>
                 {showResultDataColumns
-                  ? extraKeys.map((k) => {
-                      const colKey = `rd:${k}`;
-                      if (isHidden(colKey)) return null;
-                      return (
-                        <td key={k} className={tdPinnedClass(colKey).trim()}>
-                          {formatCell(row.resultData?.[k])}
+                  ? (
+                    <>
+                      {showStatusColumn && !isHidden("status") && (
+                        <td className={tdPinnedClass("status").trim()}>
+                          <select
+                            className="dq-row-status-select"
+                            value={row.status}
+                            onChange={(e) =>
+                              onStatusChange?.(row.exceptionId, e.target.value)
+                            }
+                          >
+                            {(statusOptions ?? []).map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                            {row.status &&
+                              !(statusOptions ?? []).includes(row.status) && (
+                                <option value={row.status}>{row.status}</option>
+                              )}
+                          </select>
                         </td>
-                      );
-                    })
+                      )}
+                      {extraKeys.map((k) => {
+                        const colKey = `rd:${k}`;
+                        if (isHidden(colKey)) return null;
+                        const w = colWidths[colKey];
+                        const tdClass =
+                          ("dq-td-rd" + tdPinnedClass(colKey)).trim();
+                        // Wrap content in a block-level div: TDs in
+                        // table-layout:auto ignore max-width when sizing
+                        // columns, but a plain <div> respects it. Default
+                        // (no user resize) is single-line nowrap so every
+                        // column opens wide enough to show its value on
+                        // one line — the container scrolls horizontally if
+                        // the total exceeds the viewport. Only when the
+                        // user drags the resize handle narrower do we flip
+                        // on wrap so the shrunk width can be honored.
+                        const innerClass =
+                          "dq-td-rd-inner" +
+                          (w ? " dq-td-rd-inner-wrap" : "");
+                        return (
+                          <td key={k} className={tdClass}>
+                            <div
+                              className={innerClass}
+                              style={w ? { maxWidth: w } : undefined}
+                            >
+                              {formatCell(row.resultData?.[k])}
+                            </div>
+                          </td>
+                        );
+                      })}
+                      {showCommentsColumn && !isHidden("comments") && (
+                        <td
+                          className={
+                            ("dq-td-comments" + tdPinnedClass("comments")).trim()
+                          }
+                        >
+                          <div
+                            className="dq-td-comments-inner"
+                            style={
+                              colWidths.comments
+                                ? { maxWidth: colWidths.comments }
+                                : undefined
+                            }
+                          >
+                            <CommentsCell
+                              initialValue={row.comments}
+                              onCommit={(next) => {
+                                if (next !== row.comments) {
+                                  onCommentsChange?.(row.exceptionId, next);
+                                }
+                              }}
+                            />
+                          </div>
+                        </td>
+                      )}
+                    </>
+                  )
                   : (
                     <>
                       {!isHidden("dateTime") && (
@@ -599,7 +720,10 @@ export default function ExceptionsTable({
                         </td>
                       )}
                       {!isHidden("comments") && (
-                        <td className={tdPinnedClass("comments").trim()}>
+                        <td
+                          className={tdPinnedClass("comments").trim()}
+                          title={row.comments}
+                        >
                           {row.comments}
                         </td>
                       )}
@@ -612,5 +736,39 @@ export default function ExceptionsTable({
       </table>
       </div>
     </div>
+  );
+}
+
+// Per-row COMMENTS cell. Keeps a local draft so keystrokes don't hit the
+// backend on every character; commits on blur (or Enter) via onCommit,
+// which the parent forwards to updateExceptionComments only if the value
+// actually changed.
+function CommentsCell({
+  initialValue,
+  onCommit,
+}: {
+  initialValue: string;
+  onCommit: (next: string) => void;
+}) {
+  const [draft, setDraft] = useState<string>(initialValue);
+  useEffect(() => {
+    setDraft(initialValue);
+  }, [initialValue]);
+  return (
+    <input
+      type="text"
+      className="dq-row-comments-input"
+      value={draft}
+      maxLength={2048}
+      title={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
   );
 }

@@ -4,7 +4,8 @@ const EVENTS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/
 
 export type DomainEventType =
   | "security_exception.inserted"
-  | "security_exception.updated";
+  | "security_exception.updated"
+  | "rules.executed";
 
 export type DomainEvent = {
   type: DomainEventType;
@@ -13,9 +14,13 @@ export type DomainEvent = {
 
 export type EventHandler = (event: DomainEvent) => void;
 
+// EventSource dispatches by `event:` name, so every type the app cares
+// about has to be listed here — adding a case in the page's handler is
+// not enough on its own.
 const HANDLED_EVENT_TYPES: DomainEventType[] = [
   "security_exception.inserted",
   "security_exception.updated",
+  "rules.executed",
 ];
 
 export function subscribeToEvents(handler: EventHandler): () => void {

@@ -14,7 +14,9 @@ type ApiException = {
   id_bb_global?: string;
   state_id?: number;
   exception_state?: string;
-  comment_id?: number;
+  status_id?: number;
+  exception_status?: string;
+  comments?: string;
   issue_description?: string;
   result_data?: string;
   suppress_date?: string;
@@ -65,6 +67,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
       ? String(e.rule_id)
       : "";
   return {
+    exceptionId: typeof e.exception_id === "number" ? e.exception_id : 0,
     dateTime: formatDateTime(e.exception_time),
     priority: e.priority ?? "",
     ruleName: ruleLabel,
@@ -73,8 +76,9 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     idBbGlobal: e.id_bb_global ?? "",
     vendor: "",
     action: "",
-    comments: "",
+    comments: e.comments ?? "",
     state: e.exception_state ?? "",
+    status: e.exception_status ?? "",
     resultData: parseResultData(e.result_data),
   };
 }
