@@ -1160,34 +1160,42 @@ export default function DqMonitorPage() {
             )}
 
             <div className="dq-sidebar-tree-wrap">
-              <div className="dq-sidebar-row dq-dqm-date-row">
-                <label
-                  className="dq-sidebar-title"
-                  htmlFor="dq-dqm-date-select"
-                >
-                  Exceptions Date
-                </label>
-                <select
-                  id="dq-dqm-date-select"
-                  className="dq-sidebar-select"
-                  value={dqmDate}
-                  onChange={(e) => setDqmDate(e.target.value)}
-                >
-                  {/* Empty value = live EXCEPTION table. Display label
-                      shows today's ISO date so the user sees the same
-                      EXCEPTION_DATE that's in the current EXCEPTION rows. */}
-                  <option value="">
-                    {formatDqmDate(todayIsoDate)}
-                  </option>
-                  {histDates
-                    .filter((d) => d !== todayIsoDate)
-                    .map((d) => (
-                      <option key={d} value={d}>
-                        {formatDqmDate(d)}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {/* Exceptions Date only makes sense in tree modes (rule
+                  group / catalog / rule). In "View by Security" mode
+                  the RHS grid is the SecurityTable, which is always
+                  driven from the live EXCEPTION table — hiding the
+                  date selector avoids implying a control that has no
+                  effect on that view. */}
+              {viewMode !== "security" && (
+                <div className="dq-sidebar-row dq-dqm-date-row">
+                  <label
+                    className="dq-sidebar-title"
+                    htmlFor="dq-dqm-date-select"
+                  >
+                    Exceptions Date
+                  </label>
+                  <select
+                    id="dq-dqm-date-select"
+                    className="dq-sidebar-select"
+                    value={dqmDate}
+                    onChange={(e) => setDqmDate(e.target.value)}
+                  >
+                    {/* Empty value = live EXCEPTION table. Display label
+                        shows today's ISO date so the user sees the same
+                        EXCEPTION_DATE that's in the current EXCEPTION rows. */}
+                    <option value="">
+                      {formatDqmDate(todayIsoDate)}
+                    </option>
+                    {histDates
+                      .filter((d) => d !== todayIsoDate)
+                      .map((d) => (
+                        <option key={d} value={d}>
+                          {formatDqmDate(d)}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
               <h3 className="dq-sidebar-title">View Exceptions</h3>
 
           <div className="dq-combo" ref={ruleComboRef}>
