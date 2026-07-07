@@ -36,6 +36,8 @@ function getSortValue(row: ExceptionRow, key: string): string {
       return row.comments;
     case "suppressDate":
       return row.suppressDate;
+    case "assignTo":
+      return row.assignTo;
     default:
       return "";
   }
@@ -66,6 +68,15 @@ type ExceptionsTableProps = {
   // clears the cell.
   showSuppressDateColumn?: boolean;
   onSuppressDateChange?: (exceptionId: number, suppressDate: string) => void;
+  // When true (RULE_GROUP.FLAG_ASSIGN_TO_VISIBLE=true path), the grid
+  // renders an editable ASSIGN TO column just after SUPPRESS_DATE (and
+  // before COMMENTS) in view-exception mode. Options come from the
+  // same DM_USER list the Assets grid uses. Committing fires
+  // onAssignToChange(exceptionId, newAssignee); empty string clears
+  // the assignment.
+  showAssignToColumn?: boolean;
+  assignToOptions?: string[];
+  onAssignToChange?: (exceptionId: number, assignTo: string) => void;
 };
 
 function getActionClass(action: string): string {
@@ -102,12 +113,17 @@ export default function ExceptionsTable({
   onCommentsChange,
   showSuppressDateColumn: showSuppressDateColumnProp = false,
   onSuppressDateChange,
+  showAssignToColumn: showAssignToColumnProp = false,
+  assignToOptions,
+  onAssignToChange,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
   const showCommentsColumn = showResultDataColumns && showCommentsColumnProp;
   const showSuppressDateColumn =
     showResultDataColumns && showSuppressDateColumnProp;
+  const showAssignToColumn =
+    showResultDataColumns && showAssignToColumnProp;
   // Union of all keys across every row's parsed RESULT_DATA, minus the ones
   // already shown via core columns. Stable alphabetical order so the column
   // layout doesn't shuffle as rows come and go.
@@ -304,6 +320,7 @@ export default function ExceptionsTable({
   const [colWidths, setColWidths] = useState<Record<string, number>>({
     comments: 320,
     suppressDate: 160,
+    assignTo: 180,
   });
   const resizingRef = useRef<{
     key: string;
@@ -439,6 +456,18 @@ export default function ExceptionsTable({
                     {...thMenuProps("suppressDate")}
                   >
                     Suppress Date
+                  </SortableTh>
+                )}
+                {showAssignToColumn && !isHidden("assignTo") && (
+                  <SortableTh
+                    colKey="assignTo"
+                    sort={sort}
+                    onSort={toggleSort}
+                    width={colWidths.assignTo}
+                    onStartResize={startResize}
+                    {...thMenuProps("assignTo")}
+                  >
+                    Assign To
                   </SortableTh>
                 )}
                 {extraKeys.map((k) => {
@@ -702,6 +731,35 @@ export default function ExceptionsTable({
                             />
                           </td>
                         )}
+                      {showAssignToColumn && !isHidden("assignTo") && (
+                        <td className={tdPinnedClass("assignTo").trim()}>
+                          <select
+                            className="dq-assign-select"
+                            value={row.assignTo}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              if (next !== row.assignTo) {
+                                onAssignToChange?.(row.exceptionId, next);
+                              }
+                            }}
+                          >
+                            <option value="">Unassigned</option>
+                            {(assignToOptions ?? []).map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                            {row.assignTo &&
+                              !(assignToOptions ?? []).includes(
+                                row.assignTo
+                              ) && (
+                                <option value={row.assignTo}>
+                                  {row.assignTo}
+                                </option>
+                              )}
+                          </select>
+                        </td>
+                      )}
                       {extraKeys.map((k) => {
                         const colKey = `rd:${k}`;
                         if (isHidden(colKey)) return null;

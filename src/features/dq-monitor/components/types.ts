@@ -11,6 +11,10 @@ export type ExceptionRow = {
   comments: string;
   state: string;
   status: string;
+  // DM_USER.USER string resolved from EXCEPTION.ASSIGN_TO_ID, or "" when
+  // unassigned. Rendered as an editable <select> in the ASSIGN TO column
+  // when RULE_GROUP.FLAG_ASSIGN_TO_VISIBLE is true for the current group.
+  assignTo: string;
   // ISO YYYY-MM-DD (from EXCEPTION.SUPPRESS_DATE), or "" when unset.
   // Rendered as an <input type="date"> in the editable SUPPRESS_DATE column
   // when RULE_GROUP.FLAG_SUPPRESS_DATE is true for the current group.

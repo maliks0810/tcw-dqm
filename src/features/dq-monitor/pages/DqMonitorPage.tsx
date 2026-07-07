@@ -6,6 +6,8 @@ import RuleTreeView from "../components/RuleTreeView";
 import type { ExceptionRow, SecurityRow } from "../components/types";
 import { fetchAssets } from "../services/get-assets";
 import { fetchExceptions } from "../services/get-exceptions";
+import { fetchExceptionsHist } from "../services/get-exceptions-hist";
+import { fetchExceptionHistDates } from "../services/get-exception-hist-dates";
 import { executeSecurityRules } from "../services/execute-rules";
 import { fetchExceptionTypes } from "../services/get-exception-types";
 import { fetchSeverityTypes } from "../services/get-severity-types";
@@ -25,7 +27,16 @@ import { updateAssignTo } from "../services/update-assign-to";
 import { updateExceptionStatus } from "../services/update-exception-status";
 import { updateExceptionComments } from "../services/update-exception-comments";
 import { updateExceptionSuppressDate } from "../services/update-exception-suppress-date";
+import { updateExceptionAssignTo } from "../services/update-exception-assign-to";
 import "../styles/dq-monitor.css";
+
+// Render an ISO YYYY-MM-DD as MM/DD/YYYY for the "DQM Date" dropdown.
+// Falls back to the raw string when it doesn't parse.
+function formatDqmDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
 
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
@@ -197,6 +208,22 @@ export default function DqMonitorPage() {
   const [treeSelected, setTreeSelected] = useState<boolean>(false);
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
+  // "DQM Date" back-in-time selector for the Exceptions grid.
+  //   dqmDate = ""      → read from the live EXCEPTION table (default).
+  //   dqmDate = "YYYY-MM-DD" → read from EXCEPTION_HIST for that day's
+  //                            LATEST BATCH_ID within the tree scope.
+  // histDates is the sorted-DESC list of ISO dates from SP_GET_EXCEPTION_
+  // HIST_DATES (last 60 days). todayIsoDate is the "Current" option's
+  // display label (matches the EXCEPTION table's EXCEPTION_DATE).
+  const [dqmDate, setDqmDate] = useState<string>("");
+  const [histDates, setHistDates] = useState<string[]>([]);
+  const todayIsoDate = useMemo<string>(() => {
+    const d = new Date();
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
   // Rule groups with FLAG_STATUS_VISIBLE = true (from SP_GET_RULE_GROUPS).
   // Drives the STATUS filter panel + STATUS column in the Exceptions grid.
   const [statusVisibleGroups, setStatusVisibleGroups] = useState<Set<string>>(
@@ -212,12 +239,19 @@ export default function DqMonitorPage() {
   const [suppressDateVisibleGroups, setSuppressDateVisibleGroups] = useState<
     Set<string>
   >(new Set());
+  // Rule groups with FLAG_ASSIGN_TO_VISIBLE = true. Drives the editable
+  // ASSIGN TO column (DM_USER dropdown) in the Exceptions grid.
+  const [assignToVisibleGroups, setAssignToVisibleGroups] = useState<
+    Set<string>
+  >(new Set());
   const showStatusPanel =
     viewMode !== "security" && statusVisibleGroups.has(viewByGroup);
   const showCommentsColumn =
     viewMode !== "security" && commentsVisibleGroups.has(viewByGroup);
   const showSuppressDateColumn =
     viewMode !== "security" && suppressDateVisibleGroups.has(viewByGroup);
+  const showAssignToColumn =
+    viewMode !== "security" && assignToVisibleGroups.has(viewByGroup);
   const DEFAULT_STATUS_FILTER = useMemo(
     () => new Set<string>(["New", "Challenge", "Override"]),
     []
@@ -361,7 +395,27 @@ export default function DqMonitorPage() {
               .map((g) => g.name)
           )
         );
+        setAssignToVisibleGroups(
+          new Set(
+            groups
+              .filter((g) => g.flagAssignToVisible && g.name)
+              .map((g) => g.name)
+          )
+        );
       })
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
+
+  // Populate the "DQM Date" dropdown once from EXCEPTION_HIST. Silently
+  // no-op on AbortError; other failures just leave the list empty
+  // (dropdown falls back to the "Current" option only).
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchExceptionHistDates(controller.signal)
+      .then((dates) => setHistDates(dates))
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
       });
@@ -633,19 +687,37 @@ export default function DqMonitorPage() {
     const ruleGroupArg =
       inGroupMode || inRuleCatalogMode || inRuleMode ? viewByGroup : undefined;
     const ruleCatalogArg = inGroupMode ? undefined : viewByRuleCatalog;
-    fetchExceptions(
-      assetArg,
-      controller.signal,
-      dqmType,
-      severity,
-      priority,
-      ruleCatalogArg,
-      viewByRule,
-      ruleGroupArg,
-      exceptionState,
-      assignToFilter,
-      ruleNameSearchApplied
-    )
+    // Empty dqmDate → live EXCEPTION table. Non-empty ISO date → the
+    // LATEST BATCH_ID for that day from EXCEPTION_HIST, scoped by tree.
+    const fetcher = dqmDate
+      ? fetchExceptionsHist(
+          dqmDate,
+          assetArg,
+          controller.signal,
+          dqmType,
+          severity,
+          priority,
+          ruleCatalogArg,
+          viewByRule,
+          ruleGroupArg,
+          exceptionState,
+          assignToFilter,
+          ruleNameSearchApplied
+        )
+      : fetchExceptions(
+          assetArg,
+          controller.signal,
+          dqmType,
+          severity,
+          priority,
+          ruleCatalogArg,
+          viewByRule,
+          ruleGroupArg,
+          exceptionState,
+          assignToFilter,
+          ruleNameSearchApplied
+        );
+    fetcher
       .then((rows) => {
         if (rows.length > 1000) {
           setExceptions([]);
@@ -676,6 +748,7 @@ export default function DqMonitorPage() {
     assignToFilter,
     ruleNameSearchApplied,
     treeSelected,
+    dqmDate,
   ]);
 
   // When 'All' is selected on the tree, the Number of Exceptions panel
@@ -1087,6 +1160,34 @@ export default function DqMonitorPage() {
             )}
 
             <div className="dq-sidebar-tree-wrap">
+              <div className="dq-sidebar-row dq-dqm-date-row">
+                <label
+                  className="dq-sidebar-title"
+                  htmlFor="dq-dqm-date-select"
+                >
+                  Exceptions Date
+                </label>
+                <select
+                  id="dq-dqm-date-select"
+                  className="dq-sidebar-select"
+                  value={dqmDate}
+                  onChange={(e) => setDqmDate(e.target.value)}
+                >
+                  {/* Empty value = live EXCEPTION table. Display label
+                      shows today's ISO date so the user sees the same
+                      EXCEPTION_DATE that's in the current EXCEPTION rows. */}
+                  <option value="">
+                    {formatDqmDate(todayIsoDate)}
+                  </option>
+                  {histDates
+                    .filter((d) => d !== todayIsoDate)
+                    .map((d) => (
+                      <option key={d} value={d}>
+                        {formatDqmDate(d)}
+                      </option>
+                    ))}
+                </select>
+              </div>
               <h3 className="dq-sidebar-title">View Exceptions</h3>
 
           <div className="dq-combo" ref={ruleComboRef}>
@@ -1527,6 +1628,24 @@ export default function DqMonitorPage() {
                           );
                         });
                     }
+                  : undefined
+              }
+              showAssignToColumn={showAssignToColumn}
+              assignToOptions={
+                showAssignToColumn ? dmUserOptions : undefined
+              }
+              onAssignToChange={
+                showAssignToColumn
+                  ? (exceptionId, assignTo) =>
+                      updateExceptionAssignTo(exceptionId, assignTo)
+                        .then(() => setRefreshTick((n) => n + 1))
+                        .catch((err) => {
+                          // eslint-disable-next-line no-console
+                          console.error(
+                            "updateExceptionAssignTo failed",
+                            err
+                          );
+                        })
                   : undefined
               }
             />

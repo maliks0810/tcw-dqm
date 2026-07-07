@@ -260,6 +260,34 @@
   gap: 4px;
 }
 
+/* "Exceptions Date" row sits just above the View Exceptions tree — a bit
+   of breathing room below so the h3 that follows isn't glued to the
+   select. The label overrides .dq-sidebar-row's fixed 70px / wrapping
+   defaults so "Exceptions Date" stays on one line next to the select. */
+.dq-dqm-date-row {
+  margin-bottom: 8px;
+  flex-wrap: nowrap;
+}
+
+/* Chain both classes on the same element (.dq-sidebar-row.dq-dqm-date-row)
+   so this beats the later, equal-specificity ".dq-sidebar-row
+   .dq-sidebar-title" rule that pins the label to 70px + wrapping. */
+.dq-sidebar-row.dq-dqm-date-row .dq-sidebar-title {
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+}
+
+.dq-sidebar-row.dq-dqm-date-row .dq-sidebar-title::after {
+  content: "";
+}
+
+.dq-sidebar-row.dq-dqm-date-row .dq-sidebar-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
 .dq-sidebar-row .dq-sidebar-title {
   flex: 0 0 70px;
   width: 70px;

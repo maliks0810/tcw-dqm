@@ -2,7 +2,7 @@ import type { ExceptionRow } from "../components/types";
 
 const DATA_QUALITY_SERVICE_URL =
   process.env.REACT_APP_DATA_QUALITY_SERVICE_URL ?? "http://127.0.0.1:8100";
-const EXCEPTIONS_ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getExceptions`;
+const ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getExceptionsHist`;
 
 type ApiException = {
   exception_id?: number;
@@ -46,9 +46,6 @@ function formatDateTime(iso?: string): string {
   });
 }
 
-// Coerces an incoming SUPPRESS_DATE (typically ISO like "2026-07-05" or a
-// full RFC3339 timestamp like "2026-07-05T00:00:00Z") to a YYYY-MM-DD
-// string suitable for <input type="date">. Empty / invalid → "".
 function isoDate(s?: string): string {
   if (!s) return "";
   const trimmed = s.length >= 10 ? s.slice(0, 10) : s;
@@ -63,7 +60,7 @@ function parseResultData(s?: string): Record<string, unknown> | undefined {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    /* malformed JSON — fall through and treat as absent */
+    /* malformed JSON — fall through */
   }
   return undefined;
 }
@@ -94,7 +91,12 @@ function toExceptionRow(e: ApiException): ExceptionRow {
   };
 }
 
-export async function fetchExceptions(
+// Read-only view over EXCEPTION_HIST for a specific ISO date. The backend
+// picks the LATEST BATCH_ID for that day within the caller's
+// rule/catalog/group scope, so the grid reflects the last archived
+// snapshot for the LHS tree selection.
+export async function fetchExceptionsHist(
+  exceptionDate: string,
   assetId: string,
   signal?: AbortSignal,
   exceptionType?: string,
@@ -108,6 +110,7 @@ export async function fetchExceptions(
   ruleNamePattern?: string
 ): Promise<ExceptionRow[]> {
   const params = new URLSearchParams();
+  params.set("exception_date", exceptionDate);
   if (assetId) params.set("asset_id", assetId);
   if (exceptionType) params.set("exception_type", exceptionType);
   if (severity && severity !== "All") params.set("severity", severity);
@@ -126,15 +129,16 @@ export async function fetchExceptions(
         : `%${trimmed}%`;
     params.set("rule_name_pattern", pattern);
   }
-  const qs = params.toString();
-  const url = qs ? `${EXCEPTIONS_ENDPOINT}?${qs}` : EXCEPTIONS_ENDPOINT;
+  const url = `${ENDPOINT}?${params.toString()}`;
   const res = await fetch(url, { signal });
   if (!res.ok) {
-    throw new Error(`getExceptions failed: ${res.status} ${res.statusText}`);
+    throw new Error(
+      `getExceptionsHist failed: ${res.status} ${res.statusText}`
+    );
   }
   const raw = (await res.json()) as ApiException[];
   if (!Array.isArray(raw)) {
-    throw new Error("getExceptions: expected array response");
+    throw new Error("getExceptionsHist: expected array response");
   }
   const sorted = raw.slice().sort((a, b) => {
     const ta = a.exception_time ? new Date(a.exception_time).getTime() : 0;
