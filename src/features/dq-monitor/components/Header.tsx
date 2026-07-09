@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useOktaAuth } from "@okta/okta-react";
-import { USE_OKTA } from "../../../services/auth-mode";
+import {
+  SWAGGER_ENABLED,
+  SWAGGER_URL,
+  USE_OKTA,
+} from "../../../services/auth-mode";
 
 type HeaderProps = {
   onExportClick?: () => void;
@@ -67,6 +71,16 @@ export default function Header({
           >
             Export to Excel
           </button>
+        )}
+        {SWAGGER_ENABLED && (
+          <a
+            className="dq-export-btn"
+            href={SWAGGER_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Swagger
+          </a>
         )}
         {USE_OKTA && (
           <>

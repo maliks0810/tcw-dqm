@@ -112,10 +112,21 @@
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  /* Anchor reset: the Swagger link reuses this class as an <a>. Without
+     these an <a> would show its default underline and blue color, and
+     wouldn't vertically center its label like a native button. */
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .dq-export-btn:hover {
   background: #e5e7eb;
+  text-decoration: none;
+}
+
+.dq-export-btn:visited {
+  color: #111827;
 }
 
 .dq-body {
