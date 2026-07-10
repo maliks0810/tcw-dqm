@@ -35,6 +35,20 @@ export type SortableThProps = {
   pinned: boolean;
   onTogglePin: () => void;
   children: React.ReactNode;
+  // Multi-pin: sticky offset from the left edge (px). Applied only when
+  // pinned. Undefined ⇒ falls back to 0.
+  pinnedLeft?: number;
+  // Drag-to-reorder: caller supplies onDragStart/onDragOver/onDrop; when
+  // present, the <th> becomes draggable and dispatches those events.
+  onDragStart?: (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => void;
+  onDragOver?: (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => void;
+  onDrop?: (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => void;
+  onDragEnd?: (e: React.DragEvent<HTMLTableCellElement>) => void;
+  isDropTarget?: boolean;
+  // Optional callback the parent uses to grab the <th> node for width
+  // measurement when the user pins the column (needed to compute the
+  // sticky left offsets of neighbouring pinned columns).
+  thRef?: (el: HTMLTableCellElement | null) => void;
 };
 
 // Wraps a <th> with click-to-sort (three-way cycle: asc → desc → off),
@@ -56,12 +70,26 @@ export default function SortableTh({
   pinned,
   onTogglePin,
   children,
+  pinnedLeft,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDropTarget,
+  thRef,
 }: SortableThProps) {
   const active = sort?.key === colKey;
   const arrow = active && sort?.dir === "asc" ? " ▲" : active ? " ▼" : "";
-  const style = width
-    ? { width, minWidth: width, maxWidth: width }
-    : undefined;
+  // Combine width + inline sticky-left. Width pins column size; left
+  // positions pinned columns progressively rightwards so multiple pins
+  // stack without overlapping.
+  const style: React.CSSProperties = {};
+  if (width) {
+    style.width = width;
+    style.minWidth = width;
+    style.maxWidth = width;
+  }
+  if (pinned) style.left = pinnedLeft ?? 0;
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!menuOpen) return;
@@ -73,14 +101,40 @@ export default function SortableTh({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen, onMenuToggle]);
+  const draggable = Boolean(onDragStart);
   return (
     <th
-      style={style}
+      ref={thRef}
+      style={Object.keys(style).length ? style : undefined}
       className={
         "dq-th-sortable" +
         (active ? " dq-th-sorted" : "") +
-        (pinned ? " dq-th-pinned" : "")
+        (pinned ? " dq-th-pinned" : "") +
+        (isDropTarget ? " dq-th-drop-target" : "")
       }
+      draggable={draggable}
+      onDragStart={
+        onDragStart
+          ? (e) => {
+              onDragStart(colKey, e);
+            }
+          : undefined
+      }
+      onDragOver={
+        onDragOver
+          ? (e) => {
+              onDragOver(colKey, e);
+            }
+          : undefined
+      }
+      onDrop={
+        onDrop
+          ? (e) => {
+              onDrop(colKey, e);
+            }
+          : undefined
+      }
+      onDragEnd={onDragEnd}
       onClick={() => onSort(colKey)}
     >
       <span className="dq-th-inner">

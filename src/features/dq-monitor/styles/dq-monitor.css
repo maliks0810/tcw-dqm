@@ -694,17 +694,34 @@
    horizontally. The base ".dq-table th { position: sticky }" already
    handles top-sticky; pinning adds left:0 with a higher z-index so
    pinned headers sit above their unpinned peers when both stack. */
+/* Multi-pin: `left` is set inline by the React layer (accumulated width
+   of previously-pinned columns), so all pinned columns stack side-by-
+   side at the left edge without overlap. No default `left` here — the
+   React caller always supplies it. */
 .dq-table th.dq-th-pinned {
   position: sticky;
-  left: 0;
   z-index: 3;
 }
 
 .dq-table td.dq-td-pinned {
   position: sticky;
-  left: 0;
   z-index: 1;
   background: #ffffff;
+}
+
+/* Drag-to-reorder: while a column is being dragged over another, the
+   target TH glows so the drop position is obvious. */
+.dq-table th.dq-th-drop-target {
+  outline: 2px solid #1d4ed8;
+  outline-offset: -2px;
+}
+
+/* Draggable header cells get a subtle grab cursor to hint at the affordance. */
+.dq-th-sortable[draggable="true"] {
+  cursor: grab;
+}
+.dq-th-sortable[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .dq-table-row-complete td.dq-td-pinned {

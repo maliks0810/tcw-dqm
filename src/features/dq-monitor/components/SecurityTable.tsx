@@ -5,6 +5,15 @@ import SortableTh, {
   compareValues,
   type SortState,
 } from "./SortableTh";
+import {
+  loadColumnLayout,
+  usePersistedColumnLayout,
+} from "./useColumnLayoutStorage";
+
+// localStorage key for this grid's persistent column layout (order,
+// pinned set, hidden set, per-column widths). Bump the vN suffix to
+// invalidate every browser's cached blob when the schema drifts.
+const SEC_STORAGE_KEY = "dqm.securityTable.layout.v1";
 
 // Pulls a sort key value from a SecurityRow. Non-sortable widgets
 // (Actions dropdown, Assign To dropdown, Trigger BBG checkbox) collapse
@@ -44,6 +53,47 @@ function getSecuritySortValue(row: SecurityRow, key: string): string {
       return "";
   }
 }
+
+// Canonical column order for the security grid. The user's live
+// columnOrder state starts as a copy of this and gets mutated by drag-
+// reorder — any new key introduced later gets appended to preserve
+// existing arrangement.
+const SEC_COL_KEYS: string[] = [
+  "actions",
+  "dateTime",
+  "priority",
+  "severity",
+  "type",
+  "assignTo",
+  "assetId",
+  "figi",
+  "securityDescription",
+  "trader",
+  "tradingTeam",
+  "exceptionCount",
+  "bbgLastRefresh",
+  "triggerBbg",
+];
+
+// Fallback per-column pixel width used only when computing sticky-left
+// offsets for pinned columns and the column has no explicit colWidth
+// entry yet (i.e. user never resized or pinned it before).
+const SEC_DEFAULT_WIDTHS: Record<string, number> = {
+  actions: 120,
+  dateTime: 140,
+  priority: 100,
+  severity: 100,
+  type: 140,
+  assignTo: 160,
+  assetId: 120,
+  figi: 140,
+  securityDescription: 240,
+  trader: 140,
+  tradingTeam: 140,
+  exceptionCount: 120,
+  bbgLastRefresh: 160,
+  triggerBbg: 120,
+};
 
 type SecurityTableProps = {
   data: SecurityRow[];
@@ -232,8 +282,13 @@ export default function SecurityTable({
     setSort({ key, dir });
   }, []);
 
-  // Per-column width overrides driven by the right-edge drag handle.
-  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  // Per-column width overrides driven by the right-edge drag handle AND
+  // by the pin action (which snapshots the column's current width so
+  // multi-pin left-offset math has an authoritative width to sum).
+  // Hydrated from localStorage so a resize survives page reloads.
+  const [colWidths, setColWidths] = useState<Record<string, number>>(
+    () => loadColumnLayout(SEC_STORAGE_KEY)?.widths ?? {}
+  );
   const resizingRef = useRef<{
     key: string;
     startX: number;
@@ -273,17 +328,38 @@ export default function SecurityTable({
     };
   }, []);
 
-  // ⋮ column-menu state: open-column + hidden set + single pinned column.
+  // ⋮ column-menu state: open-column + hidden set + multi-pin set +
+  // user-driven columnOrder for drag-to-reorder. Hidden / pinned /
+  // columnOrder all hydrate from localStorage so layout survives reload.
   const [openMenuColKey, setOpenMenuColKey] = useState<string | null>(null);
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
-  const [pinnedCol, setPinnedCol] = useState<string | null>(null);
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(
+    () => new Set(loadColumnLayout(SEC_STORAGE_KEY)?.hidden ?? [])
+  );
+  const [pinnedCols, setPinnedCols] = useState<Set<string>>(
+    () => new Set(loadColumnLayout(SEC_STORAGE_KEY)?.pinned ?? [])
+  );
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const persisted = loadColumnLayout(SEC_STORAGE_KEY)?.columnOrder;
+    if (!persisted) return SEC_COL_KEYS;
+    // Reconcile against canonical: keep persisted keys that still exist,
+    // append any new canonical keys at the tail.
+    const set = new Set(SEC_COL_KEYS);
+    const kept = persisted.filter((k) => set.has(k));
+    const missing = SEC_COL_KEYS.filter((k) => !kept.includes(k));
+    return [...kept, ...missing];
+  });
+  // ref map so pin can snapshot the column's rendered width when it
+  // toggles ON (used by the sticky-left offset math for other pinned
+  // columns to its right).
+  const thRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
+
   const isHidden = useCallback(
     (key: string) => hiddenCols.has(key),
     [hiddenCols]
   );
   const isPinned = useCallback(
-    (key: string) => pinnedCol === key,
-    [pinnedCol]
+    (key: string) => pinnedCols.has(key),
+    [pinnedCols]
   );
   const hideCol = useCallback((key: string) => {
     setHiddenCols((prev) => {
@@ -293,9 +369,46 @@ export default function SecurityTable({
     });
   }, []);
   const togglePinCol = useCallback((key: string) => {
-    setPinnedCol((prev) => (prev === key ? null : key));
+    setPinnedCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+        return next;
+      }
+      next.add(key);
+      // Snapshot the current rendered width if we don't already have
+      // one, so the pinned-offset accumulator has a real number for the
+      // columns pinned after this one.
+      const th = thRefs.current[key];
+      if (th) {
+        setColWidths((prevW) =>
+          prevW[key] != null
+            ? prevW
+            : { ...prevW, [key]: th.getBoundingClientRect().width }
+        );
+      }
+      return next;
+    });
   }, []);
   const showAllCols = useCallback(() => setHiddenCols(new Set()), []);
+  // Full reset: strip every user override (hidden, pinned, resized,
+  // reordered) back to the built-in defaults. The persist effect
+  // re-serializes the fresh state immediately after.
+  const resetColumns = useCallback(() => {
+    setHiddenCols(new Set());
+    setPinnedCols(new Set());
+    setColWidths({});
+    setColumnOrder(SEC_COL_KEYS);
+  }, []);
+
+  // Persist the layout on every relevant state change.
+  usePersistedColumnLayout(
+    SEC_STORAGE_KEY,
+    columnOrder,
+    pinnedCols,
+    hiddenCols,
+    colWidths
+  );
 
   const sortedRows = useMemo(() => {
     if (!sort) return visibleRows;
@@ -312,15 +425,65 @@ export default function SecurityTable({
     onVisibleRowsChange?.(sortedRows);
   }, [sortedRows, onVisibleRowsChange]);
 
-  const thMenuProps = (key: string) => ({
-    menuOpen: openMenuColKey === key,
-    onMenuToggle: (open: boolean) => setOpenMenuColKey(open ? key : null),
-    onSortDir: (dir: "asc" | "desc") => setSortDir(key, dir),
-    onHide: () => hideCol(key),
-    pinned: isPinned(key),
-    onTogglePin: () => togglePinCol(key),
-  });
-  const tdPinnedClass = (key: string) => (isPinned(key) ? " dq-td-pinned" : "");
+  // Drag-to-reorder: dragged key stashed in ref, drop swaps positions
+  // inside columnOrder. Also drives the drop-target outline via state.
+  const dragKeyRef = useRef<string | null>(null);
+  const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
+  const onDragStart = useCallback(
+    (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => {
+      dragKeyRef.current = colKey;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", colKey);
+    },
+    []
+  );
+  const onDragOver = useCallback(
+    (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => {
+      if (!dragKeyRef.current) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dropTargetKey !== colKey) setDropTargetKey(colKey);
+    },
+    [dropTargetKey]
+  );
+  const onDrop = useCallback(
+    (colKey: string, e: React.DragEvent<HTMLTableCellElement>) => {
+      e.preventDefault();
+      const fromKey = dragKeyRef.current;
+      dragKeyRef.current = null;
+      setDropTargetKey(null);
+      if (!fromKey || fromKey === colKey) return;
+      setColumnOrder((prev) => {
+        const from = prev.indexOf(fromKey);
+        const to = prev.indexOf(colKey);
+        if (from < 0 || to < 0) return prev;
+        const next = prev.slice();
+        next.splice(from, 1);
+        next.splice(to, 0, fromKey);
+        return next;
+      });
+    },
+    []
+  );
+  const onDragEnd = useCallback(() => {
+    dragKeyRef.current = null;
+    setDropTargetKey(null);
+  }, []);
+
+  // Cumulative sticky-left offset for each pinned column, computed in
+  // display order so pinned columns stack side-by-side without overlap.
+  const pinnedOffsets = useMemo(() => {
+    const off: Record<string, number> = {};
+    let acc = 0;
+    for (const key of columnOrder) {
+      if (hiddenCols.has(key)) continue;
+      if (pinnedCols.has(key)) {
+        off[key] = acc;
+        acc += colWidths[key] ?? SEC_DEFAULT_WIDTHS[key] ?? 120;
+      }
+    }
+    return off;
+  }, [columnOrder, hiddenCols, pinnedCols, colWidths]);
 
   const commonThProps = (key: string) => ({
     colKey: key,
@@ -328,250 +491,361 @@ export default function SecurityTable({
     onSort: toggleSort,
     width: colWidths[key],
     onStartResize: startResize,
-    ...thMenuProps(key),
+    menuOpen: openMenuColKey === key,
+    onMenuToggle: (open: boolean) => setOpenMenuColKey(open ? key : null),
+    onSortDir: (dir: "asc" | "desc") => setSortDir(key, dir),
+    onHide: () => hideCol(key),
+    pinned: isPinned(key),
+    onTogglePin: () => togglePinCol(key),
+    pinnedLeft: pinnedOffsets[key],
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+    isDropTarget: dropTargetKey === key,
+    thRef: (el: HTMLTableCellElement | null) => {
+      thRefs.current[key] = el;
+    },
   });
+
+  // Per-column TD style: same sticky-left offset as its header when
+  // pinned; otherwise no positional overrides.
+  const tdStyle = (key: string): React.CSSProperties | undefined =>
+    isPinned(key) ? { left: pinnedOffsets[key] ?? 0 } : undefined;
+  const tdClass = (key: string) =>
+    isPinned(key) ? "dq-td-pinned" : "";
+
+  // Header renderer per key. Filter-bearing columns get the
+  // ColumnFilterHeader child; everything else is a plain label.
+  const renderHeader = (key: string): React.ReactNode => {
+    switch (key) {
+      case "actions":
+        return (
+          <SortableTh key={key} {...commonThProps("actions")}>
+            Actions
+          </SortableTh>
+        );
+      case "dateTime":
+        return (
+          <SortableTh key={key} {...commonThProps("dateTime")}>
+            Date/Time
+          </SortableTh>
+        );
+      case "priority":
+        return (
+          <SortableTh key={key} {...commonThProps("priority")}>
+            <ColumnFilterHeader
+              label="Priority"
+              allValues={allPriorities}
+              filter={priorityFilter}
+              onChange={setPriorityFilter}
+              isOpen={openFilterId === "priority"}
+              onToggle={(open) => setOpenFilterId(open ? "priority" : null)}
+            />
+          </SortableTh>
+        );
+      case "severity":
+        return (
+          <SortableTh key={key} {...commonThProps("severity")}>
+            <ColumnFilterHeader
+              label="Severity"
+              allValues={allSeverities}
+              filter={severityFilter}
+              onChange={setSeverityFilter}
+              isOpen={openFilterId === "severity"}
+              onToggle={(open) => setOpenFilterId(open ? "severity" : null)}
+            />
+          </SortableTh>
+        );
+      case "type":
+        return (
+          <SortableTh key={key} {...commonThProps("type")}>
+            Type
+          </SortableTh>
+        );
+      case "assignTo":
+        return (
+          <SortableTh key={key} {...commonThProps("assignTo")}>
+            Assign To
+          </SortableTh>
+        );
+      case "assetId":
+        return (
+          <SortableTh key={key} {...commonThProps("assetId")}>
+            <ColumnFilterHeader
+              label="Asset Id"
+              allValues={allAssetIds}
+              filter={assetIdFilter}
+              onChange={setAssetIdFilter}
+              isOpen={openFilterId === "assetId"}
+              onToggle={(open) => setOpenFilterId(open ? "assetId" : null)}
+            />
+          </SortableTh>
+        );
+      case "figi":
+        return (
+          <SortableTh key={key} {...commonThProps("figi")}>
+            <ColumnFilterHeader
+              label="FIGI"
+              allValues={allFigis}
+              filter={figiFilter}
+              onChange={setFigiFilter}
+              isOpen={openFilterId === "figi"}
+              onToggle={(open) => setOpenFilterId(open ? "figi" : null)}
+            />
+          </SortableTh>
+        );
+      case "securityDescription":
+        return (
+          <SortableTh key={key} {...commonThProps("securityDescription")}>
+            Security Description
+          </SortableTh>
+        );
+      case "trader":
+        return (
+          <SortableTh key={key} {...commonThProps("trader")}>
+            Trader
+          </SortableTh>
+        );
+      case "tradingTeam":
+        return (
+          <SortableTh key={key} {...commonThProps("tradingTeam")}>
+            Trading Team
+          </SortableTh>
+        );
+      case "exceptionCount":
+        return (
+          <SortableTh key={key} {...commonThProps("exceptionCount")}>
+            Exception Count
+          </SortableTh>
+        );
+      case "bbgLastRefresh":
+        return (
+          <SortableTh key={key} {...commonThProps("bbgLastRefresh")}>
+            BBG Last Refresh
+          </SortableTh>
+        );
+      case "triggerBbg":
+        return (
+          <SortableTh key={key} {...commonThProps("triggerBbg")}>
+            Trigger BBG
+          </SortableTh>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Body cell renderer per key + row.
+  const renderCell = (
+    key: string,
+    row: SecurityRow,
+    index: number,
+    ctx: { currentAssignee: string; options: string[] }
+  ): React.ReactNode => {
+    switch (key) {
+      case "actions":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.type === "Security Setup" && onAction && (
+              <ActionSelect
+                assetId={row.aladdinId}
+                idBbGlobal={row.figi ?? ""}
+                shown={actionByAsset?.[row.aladdinId] ?? ""}
+                setShown={onActionShownChange ?? (() => undefined)}
+                onAction={onAction}
+              />
+            )}
+          </td>
+        );
+      case "dateTime":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.dateTime}
+          </td>
+        );
+      case "priority":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.priority}
+          </td>
+        );
+      case "severity":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.severity}
+          </td>
+        );
+      case "type":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.type}
+          </td>
+        );
+      case "assignTo":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            <select
+              className="dq-assign-select"
+              value={ctx.currentAssignee}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => onAssignToChange(index, e.target.value)}
+            >
+              <option value="">{UNASSIGNED_LABEL}</option>
+              {ctx.options.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </td>
+        );
+      case "assetId":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.aladdinId}
+          </td>
+        );
+      case "figi":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.figi}
+          </td>
+        );
+      case "securityDescription":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.securityDescription}
+          </td>
+        );
+      case "trader":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.trader}
+          </td>
+        );
+      case "tradingTeam":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.tradingTeam}
+          </td>
+        );
+      case "exceptionCount":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.exceptionCount}
+          </td>
+        );
+      case "bbgLastRefresh":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            {row.bbgLastRefresh}
+          </td>
+        );
+      case "triggerBbg":
+        return (
+          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
+            <input type="checkbox" checked={row.triggerBbg} readOnly />
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Only visible columns, in the user's current drag-reorder sequence.
+  const visibleKeys = columnOrder.filter((k) => !isHidden(k));
+
+  // Any user-driven override present? Compared against the canonical
+  // key list + empty width dict so the bar hides after Reset.
+  const orderChanged =
+    columnOrder.length !== SEC_COL_KEYS.length ||
+    columnOrder.some((k, i) => SEC_COL_KEYS[i] !== k);
+  const widthsChanged = Object.keys(colWidths).length > 0;
+  const hasOverrides =
+    hiddenCols.size > 0 ||
+    pinnedCols.size > 0 ||
+    orderChanged ||
+    widthsChanged;
 
   return (
     <div className="dq-exceptions-wrap">
-      {hiddenCols.size > 0 && (
+      {hasOverrides && (
         <div className="dq-hidden-cols-bar">
           <span>
-            {hiddenCols.size} column{hiddenCols.size === 1 ? "" : "s"} hidden
+            {hiddenCols.size > 0 && (
+              <>
+                {hiddenCols.size} column
+                {hiddenCols.size === 1 ? "" : "s"} hidden
+              </>
+            )}
+            {hiddenCols.size > 0 && pinnedCols.size > 0 && ", "}
+            {pinnedCols.size > 0 && <>{pinnedCols.size} pinned</>}
+            {hiddenCols.size === 0 &&
+              pinnedCols.size === 0 &&
+              "Column layout customized"}
           </span>
+          {hiddenCols.size > 0 && (
+            <button
+              type="button"
+              className="dq-hidden-cols-restore"
+              onClick={showAllCols}
+            >
+              Show all
+            </button>
+          )}
           <button
             type="button"
             className="dq-hidden-cols-restore"
-            onClick={showAllCols}
+            onClick={resetColumns}
           >
-            Show all
+            Reset columns
           </button>
         </div>
       )}
       <div className="dq-table-container">
-      <table className="dq-table">
-        <thead>
-          <tr>
-            {!isHidden("actions") && (
-              <SortableTh {...commonThProps("actions")}>Actions</SortableTh>
-            )}
-            {!isHidden("dateTime") && (
-              <SortableTh {...commonThProps("dateTime")}>Date/Time</SortableTh>
-            )}
-            {!isHidden("priority") && (
-              <SortableTh {...commonThProps("priority")}>
-                <ColumnFilterHeader
-                  label="Priority"
-                  allValues={allPriorities}
-                  filter={priorityFilter}
-                  onChange={setPriorityFilter}
-                  isOpen={openFilterId === "priority"}
-                  onToggle={(open) =>
-                    setOpenFilterId(open ? "priority" : null)
-                  }
-                />
-              </SortableTh>
-            )}
-            {!isHidden("severity") && (
-              <SortableTh {...commonThProps("severity")}>
-                <ColumnFilterHeader
-                  label="Severity"
-                  allValues={allSeverities}
-                  filter={severityFilter}
-                  onChange={setSeverityFilter}
-                  isOpen={openFilterId === "severity"}
-                  onToggle={(open) =>
-                    setOpenFilterId(open ? "severity" : null)
-                  }
-                />
-              </SortableTh>
-            )}
-            {!isHidden("type") && (
-              <SortableTh {...commonThProps("type")}>Type</SortableTh>
-            )}
-            {!isHidden("assignTo") && (
-              <SortableTh {...commonThProps("assignTo")}>Assign To</SortableTh>
-            )}
-            {!isHidden("assetId") && (
-              <SortableTh {...commonThProps("assetId")}>
-                <ColumnFilterHeader
-                  label="Asset Id"
-                  allValues={allAssetIds}
-                  filter={assetIdFilter}
-                  onChange={setAssetIdFilter}
-                  isOpen={openFilterId === "assetId"}
-                  onToggle={(open) =>
-                    setOpenFilterId(open ? "assetId" : null)
-                  }
-                />
-              </SortableTh>
-            )}
-            {!isHidden("figi") && (
-              <SortableTh {...commonThProps("figi")}>
-                <ColumnFilterHeader
-                  label="FIGI"
-                  allValues={allFigis}
-                  filter={figiFilter}
-                  onChange={setFigiFilter}
-                  isOpen={openFilterId === "figi"}
-                  onToggle={(open) => setOpenFilterId(open ? "figi" : null)}
-                />
-              </SortableTh>
-            )}
-            {!isHidden("securityDescription") && (
-              <SortableTh {...commonThProps("securityDescription")}>
-                Security Description
-              </SortableTh>
-            )}
-            {!isHidden("trader") && (
-              <SortableTh {...commonThProps("trader")}>Trader</SortableTh>
-            )}
-            {!isHidden("tradingTeam") && (
-              <SortableTh {...commonThProps("tradingTeam")}>
-                Trading Team
-              </SortableTh>
-            )}
-            {!isHidden("exceptionCount") && (
-              <SortableTh {...commonThProps("exceptionCount")}>
-                Exception Count
-              </SortableTh>
-            )}
-            {!isHidden("bbgLastRefresh") && (
-              <SortableTh {...commonThProps("bbgLastRefresh")}>
-                BBG Last Refresh
-              </SortableTh>
-            )}
-            {!isHidden("triggerBbg") && (
-              <SortableTh {...commonThProps("triggerBbg")}>
-                Trigger BBG
-              </SortableTh>
-            )}
-          </tr>
-        </thead>
+        <table className="dq-table">
+          <thead>
+            <tr>{visibleKeys.map((k) => renderHeader(k))}</tr>
+          </thead>
 
-        <tbody>
-          {sortedRows.map((row) => {
-            const index = data.indexOf(row);
-
-            const currentAssignee = row.assignTo ?? "";
-            const optionSet = new Set(assigneeOptions);
-            if (currentAssignee) optionSet.add(currentAssignee);
-            const options = Array.from(optionSet).sort((a, b) =>
-              a.localeCompare(b)
-            );
-
-            const isBlinking =
-              !!blinkingAladdinId && row.aladdinId === blinkingAladdinId;
-            return (
-              <tr
-                key={`${row.aladdinId}-${index}`}
-                onClick={() => onRowSelect(index)}
-                className={[
-                  "dq-table-row",
-                  selectedRow === index
-                    ? "dq-table-row-selected"
-                    : row.allComplete
-                    ? "dq-table-row-complete"
-                    : index % 2 === 0
-                    ? "dq-table-row-even"
-                    : "dq-table-row-odd",
-                  isBlinking ? "dq-table-row-blinking" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {!isHidden("actions") && (
-                  <td className={tdPinnedClass("actions").trim()}>
-                    {row.type === "Security Setup" && onAction && (
-                      <ActionSelect
-                        assetId={row.aladdinId}
-                        idBbGlobal={row.figi ?? ""}
-                        shown={actionByAsset?.[row.aladdinId] ?? ""}
-                        setShown={
-                          onActionShownChange ?? (() => undefined)
-                        }
-                        onAction={onAction}
-                      />
-                    )}
-                  </td>
-                )}
-                {!isHidden("dateTime") && (
-                  <td className={tdPinnedClass("dateTime").trim()}>
-                    {row.dateTime}
-                  </td>
-                )}
-                {!isHidden("priority") && (
-                  <td className={tdPinnedClass("priority").trim()}>
-                    {row.priority}
-                  </td>
-                )}
-                {!isHidden("severity") && (
-                  <td className={tdPinnedClass("severity").trim()}>
-                    {row.severity}
-                  </td>
-                )}
-                {!isHidden("type") && (
-                  <td className={tdPinnedClass("type").trim()}>{row.type}</td>
-                )}
-                {!isHidden("assignTo") && (
-                  <td className={tdPinnedClass("assignTo").trim()}>
-                    <select
-                      className="dq-assign-select"
-                      value={currentAssignee}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => onAssignToChange(index, e.target.value)}
-                    >
-                      <option value="">{UNASSIGNED_LABEL}</option>
-                      {options.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                )}
-                {!isHidden("assetId") && (
-                  <td className={tdPinnedClass("assetId").trim()}>
-                    {row.aladdinId}
-                  </td>
-                )}
-                {!isHidden("figi") && (
-                  <td className={tdPinnedClass("figi").trim()}>{row.figi}</td>
-                )}
-                {!isHidden("securityDescription") && (
-                  <td className={tdPinnedClass("securityDescription").trim()}>
-                    {row.securityDescription}
-                  </td>
-                )}
-                {!isHidden("trader") && (
-                  <td className={tdPinnedClass("trader").trim()}>
-                    {row.trader}
-                  </td>
-                )}
-                {!isHidden("tradingTeam") && (
-                  <td className={tdPinnedClass("tradingTeam").trim()}>
-                    {row.tradingTeam}
-                  </td>
-                )}
-                {!isHidden("exceptionCount") && (
-                  <td className={tdPinnedClass("exceptionCount").trim()}>
-                    {row.exceptionCount}
-                  </td>
-                )}
-                {!isHidden("bbgLastRefresh") && (
-                  <td className={tdPinnedClass("bbgLastRefresh").trim()}>
-                    {row.bbgLastRefresh}
-                  </td>
-                )}
-                {!isHidden("triggerBbg") && (
-                  <td className={tdPinnedClass("triggerBbg").trim()}>
-                    <input type="checkbox" checked={row.triggerBbg} readOnly />
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+          <tbody>
+            {sortedRows.map((row) => {
+              const index = data.indexOf(row);
+              const currentAssignee = row.assignTo ?? "";
+              const optionSet = new Set(assigneeOptions);
+              if (currentAssignee) optionSet.add(currentAssignee);
+              const options = Array.from(optionSet).sort((a, b) =>
+                a.localeCompare(b)
+              );
+              const isBlinking =
+                !!blinkingAladdinId && row.aladdinId === blinkingAladdinId;
+              return (
+                <tr
+                  key={`${row.aladdinId}-${index}`}
+                  onClick={() => onRowSelect(index)}
+                  className={[
+                    "dq-table-row",
+                    selectedRow === index
+                      ? "dq-table-row-selected"
+                      : row.allComplete
+                      ? "dq-table-row-complete"
+                      : index % 2 === 0
+                      ? "dq-table-row-even"
+                      : "dq-table-row-odd",
+                    isBlinking ? "dq-table-row-blinking" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {visibleKeys.map((k) =>
+                    renderCell(k, row, index, { currentAssignee, options })
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
