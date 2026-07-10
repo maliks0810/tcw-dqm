@@ -660,8 +660,15 @@
   border-radius: 6px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   padding: 4px 0;
-  display: flex;
-  flex-direction: column;
+}
+
+/* Leftmost column: flipping the popover so it opens rightward keeps
+   the menu inside the .dq-table-container's overflow-x boundary.
+   Without this the ⋮ menu on the first column falls off the left
+   edge and the pin / hide / sort options are visually clipped. */
+.dq-table thead th:first-child .dq-th-menu-popover {
+  right: auto;
+  left: 0;
 }
 
 .dq-th-menu-item {

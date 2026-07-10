@@ -419,15 +419,36 @@ export default function ExceptionsTable({
     () => loadColumnLayout(STORAGE_KEY)?.columnOrder ?? canonicalKeys
   );
 
+  // Mount-time snapshot of columnOrder. Used both to compute
+  // "reordered THIS SESSION" (so the Reset button doesn't appear
+  // just because a persisted layout differs from canonical), and as
+  // the target when the user clicks Reset. Frozen — no updates after
+  // first render.
+  const [initialColumnOrder] = useState<string[]>(
+    () => loadColumnLayout(STORAGE_KEY)?.columnOrder ?? canonicalKeys
+  );
+
+  // True after the user drops a column onto another in the current
+  // session. Cleared by Reset. Persistence layer never touches it, so
+  // a fresh page load always starts false — the Reset chip stays
+  // hidden until the user actively drags.
+  const [hasReordered, setHasReordered] = useState<boolean>(false);
+
   // Full reset: strip every user override (hidden, pinned, resized,
-  // reordered) back to the mode's defaults. The persist effect
-  // re-serializes the fresh state immediately after.
+  // reordered) back to the session's baseline. Column order is
+  // restored to the mount-time snapshot, reconciled against the current
+  // canonical (so keys that appeared since mount stay visible, appended
+  // at the tail).
   const resetColumns = useCallback(() => {
     setHiddenCols(new Set());
     setPinnedCols(new Set());
     setColWidths({ ...INITIAL_WIDTHS });
-    setColumnOrder(canonicalKeys);
-  }, [canonicalKeys]);
+    const set = new Set(canonicalKeys);
+    const kept = initialColumnOrder.filter((k) => set.has(k));
+    const missing = canonicalKeys.filter((k) => !kept.includes(k));
+    setColumnOrder([...kept, ...missing]);
+    setHasReordered(false);
+  }, [canonicalKeys, initialColumnOrder]);
   useEffect(() => {
     setColumnOrder((prev) => {
       const set = new Set(canonicalKeys);
@@ -487,6 +508,7 @@ export default function ExceptionsTable({
       dragKeyRef.current = null;
       setDropTargetKey(null);
       if (!fromKey || fromKey === colKey) return;
+      setHasReordered(true);
       setColumnOrder((prev) => {
         const from = prev.indexOf(fromKey);
         const to = prev.indexOf(colKey);
@@ -937,26 +959,16 @@ export default function ExceptionsTable({
 
   const visibleKeys = columnOrder.filter((k) => !isHidden(k));
 
-  // Any user-driven override present? Compared against the mode's
-  // canonical baseline so the bar hides itself when the user has done
-  // nothing (or after Reset). Widths compare against INITIAL_WIDTHS
-  // rather than {} because those three seeds are default-not-override.
-  const orderChanged =
-    columnOrder.length !== canonicalKeys.length ||
-    columnOrder.some((k, i) => canonicalKeys[i] !== k);
-  const widthsChanged =
-    Object.keys(colWidths).some(
-      (k) => colWidths[k] !== INITIAL_WIDTHS[k]
-    ) || Object.keys(INITIAL_WIDTHS).some((k) => !(k in colWidths));
-  const hasOverrides =
-    hiddenCols.size > 0 ||
-    pinnedCols.size > 0 ||
-    orderChanged ||
-    widthsChanged;
+  // "Reset column order" appears only when the user has dragged a
+  // column in the current session. Hide + pin + resize each have their
+  // own in-grid affordance (Show all / Unpin / drag the resize handle),
+  // and a persisted layout from a previous session is treated as the
+  // baseline — not as an override waiting to be reset.
+  const showTopBar = hiddenCols.size > 0 || hasReordered;
 
   return (
     <div className="dq-exceptions-wrap">
-      {hasOverrides && (
+      {showTopBar && (
         <div className="dq-hidden-cols-bar">
           <span>
             {hiddenCols.size > 0 && (
@@ -965,15 +977,8 @@ export default function ExceptionsTable({
                 {hiddenCols.size === 1 ? "" : "s"} hidden
               </>
             )}
-            {hiddenCols.size > 0 && pinnedCols.size > 0 && ", "}
-            {pinnedCols.size > 0 && (
-              <>
-                {pinnedCols.size} pinned
-              </>
-            )}
-            {hiddenCols.size === 0 &&
-              pinnedCols.size === 0 &&
-              "Column layout customized"}
+            {hiddenCols.size > 0 && hasReordered && ", "}
+            {hasReordered && "columns reordered"}
           </span>
           {hiddenCols.size > 0 && (
             <button
@@ -984,13 +989,15 @@ export default function ExceptionsTable({
               Show all
             </button>
           )}
-          <button
-            type="button"
-            className="dq-hidden-cols-restore"
-            onClick={resetColumns}
-          >
-            Reset columns
-          </button>
+          {hasReordered && (
+            <button
+              type="button"
+              className="dq-hidden-cols-restore"
+              onClick={resetColumns}
+            >
+              Reset column order
+            </button>
+          )}
         </div>
       )}
       <div className="dq-table-container">

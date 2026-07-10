@@ -348,6 +348,24 @@ export default function SecurityTable({
     const missing = SEC_COL_KEYS.filter((k) => !kept.includes(k));
     return [...kept, ...missing];
   });
+
+  // Mount-time snapshot — used both to detect session-scoped reorders
+  // (so a persisted layout from a previous session isn't treated as
+  // an override) and as the target of the Reset action. Frozen after
+  // first render.
+  const [initialColumnOrder] = useState<string[]>(() => {
+    const persisted = loadColumnLayout(SEC_STORAGE_KEY)?.columnOrder;
+    if (!persisted) return SEC_COL_KEYS;
+    const set = new Set(SEC_COL_KEYS);
+    const kept = persisted.filter((k) => set.has(k));
+    const missing = SEC_COL_KEYS.filter((k) => !kept.includes(k));
+    return [...kept, ...missing];
+  });
+
+  // True after any successful drag-drop in this session. Cleared by
+  // Reset. Persistence never touches it, so a fresh page load always
+  // starts false.
+  const [hasReordered, setHasReordered] = useState<boolean>(false);
   // ref map so pin can snapshot the column's rendered width when it
   // toggles ON (used by the sticky-left offset math for other pinned
   // columns to its right).
@@ -391,15 +409,16 @@ export default function SecurityTable({
     });
   }, []);
   const showAllCols = useCallback(() => setHiddenCols(new Set()), []);
-  // Full reset: strip every user override (hidden, pinned, resized,
-  // reordered) back to the built-in defaults. The persist effect
+  // Full reset: strip session-scoped overrides (hidden, pinned, resized,
+  // reordered) back to the mount-time snapshot. The persist effect
   // re-serializes the fresh state immediately after.
   const resetColumns = useCallback(() => {
     setHiddenCols(new Set());
     setPinnedCols(new Set());
     setColWidths({});
-    setColumnOrder(SEC_COL_KEYS);
-  }, []);
+    setColumnOrder(initialColumnOrder);
+    setHasReordered(false);
+  }, [initialColumnOrder]);
 
   // Persist the layout on every relevant state change.
   usePersistedColumnLayout(
@@ -453,6 +472,7 @@ export default function SecurityTable({
       dragKeyRef.current = null;
       setDropTargetKey(null);
       if (!fromKey || fromKey === colKey) return;
+      setHasReordered(true);
       setColumnOrder((prev) => {
         const from = prev.indexOf(fromKey);
         const to = prev.indexOf(colKey);
@@ -756,21 +776,15 @@ export default function SecurityTable({
   // Only visible columns, in the user's current drag-reorder sequence.
   const visibleKeys = columnOrder.filter((k) => !isHidden(k));
 
-  // Any user-driven override present? Compared against the canonical
-  // key list + empty width dict so the bar hides after Reset.
-  const orderChanged =
-    columnOrder.length !== SEC_COL_KEYS.length ||
-    columnOrder.some((k, i) => SEC_COL_KEYS[i] !== k);
-  const widthsChanged = Object.keys(colWidths).length > 0;
-  const hasOverrides =
-    hiddenCols.size > 0 ||
-    pinnedCols.size > 0 ||
-    orderChanged ||
-    widthsChanged;
+  // "Reset column order" appears only when the user has dragged a
+  // column in the current session. A persisted layout from a previous
+  // session is treated as the baseline — not as an override waiting to
+  // be reset.
+  const showTopBar = hiddenCols.size > 0 || hasReordered;
 
   return (
     <div className="dq-exceptions-wrap">
-      {hasOverrides && (
+      {showTopBar && (
         <div className="dq-hidden-cols-bar">
           <span>
             {hiddenCols.size > 0 && (
@@ -779,11 +793,8 @@ export default function SecurityTable({
                 {hiddenCols.size === 1 ? "" : "s"} hidden
               </>
             )}
-            {hiddenCols.size > 0 && pinnedCols.size > 0 && ", "}
-            {pinnedCols.size > 0 && <>{pinnedCols.size} pinned</>}
-            {hiddenCols.size === 0 &&
-              pinnedCols.size === 0 &&
-              "Column layout customized"}
+            {hiddenCols.size > 0 && hasReordered && ", "}
+            {hasReordered && "columns reordered"}
           </span>
           {hiddenCols.size > 0 && (
             <button
@@ -794,13 +805,15 @@ export default function SecurityTable({
               Show all
             </button>
           )}
-          <button
-            type="button"
-            className="dq-hidden-cols-restore"
-            onClick={resetColumns}
-          >
-            Reset columns
-          </button>
+          {hasReordered && (
+            <button
+              type="button"
+              className="dq-hidden-cols-restore"
+              onClick={resetColumns}
+            >
+              Reset column order
+            </button>
+          )}
         </div>
       )}
       <div className="dq-table-container">
