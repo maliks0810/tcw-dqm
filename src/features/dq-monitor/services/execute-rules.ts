@@ -40,7 +40,10 @@ export async function executeRules(
   }
   const qs = params.toString();
   const url = qs ? `${EXECUTE_RULES_ENDPOINT}?${qs}` : EXECUTE_RULES_ENDPOINT;
-  const res = await fetch(url, { method: "GET", signal });
+  // POST intentionally: the backend switched /executeRules to POST so
+  // an ingress / load balancer doesn't retry a slow archive-then-insert
+  // and duplicate rows. Params still travel in the query string.
+  const res = await fetch(url, { method: "POST", signal });
   if (!res.ok) {
     throw new Error(`executeRules failed: ${res.status} ${res.statusText}`);
   }
