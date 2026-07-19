@@ -89,7 +89,11 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v1";
+// v2 bump: canonical column order changed to Status → Suppress Date →
+// Assign To → Comments → (RESULT_DATA columns). Any layout persisted
+// under v1 is silently discarded so users get the corrected default
+// the first time they load the page after this deploy.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v2";
 
 // Seed widths for the three widget-cell columns so their content has
 // room to breathe on a fresh install (before any user resize / persist).
@@ -394,12 +398,19 @@ export default function ExceptionsTable({
         "comments",
       ];
     }
+    // Canonical order in view-exception mode: Status → Suppress Date →
+    // Assign To → Comments → (all RESULT_DATA JSON columns). The four
+    // static/editable columns cluster at the left; dynamic RESULT_DATA
+    // columns land after them, in the order Snowflake / Postgres
+    // projected them from the SP result. STORAGE_KEY v2 bump above
+    // discards any previously-persisted layout so users see this
+    // default the first time they load after deploy.
     const keys: string[] = [];
     if (showStatusColumn) keys.push("status");
     if (showSuppressDateColumn) keys.push("suppressDate");
     if (showAssignToColumn) keys.push("assignTo");
-    for (const k of extraKeys) keys.push(`rd:${k}`);
     if (showCommentsColumn) keys.push("comments");
+    for (const k of extraKeys) keys.push(`rd:${k}`);
     return keys;
   }, [
     showResultDataColumns,

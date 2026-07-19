@@ -58,6 +58,22 @@ export default function DqMonitorPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(331);
+  // Collapse/expand toggle for the whole LHS. Persisted under a
+  // dedicated key so a full-page refresh brings the sidebar back to
+  // whatever state the user last chose. Width when collapsed is a thin
+  // rail (COLLAPSED_WIDTH); expand restores sidebarWidth.
+  const COLLAPSED_WIDTH = 32;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("dqm.sidebar.collapsed") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "dqm.sidebar.collapsed",
+      sidebarCollapsed ? "1" : "0"
+    );
+  }, [sidebarCollapsed]);
   const sidebarResizingRef = useRef<boolean>(false);
   const sidebarRef = useRef<HTMLElement | null>(null);
   // Captured once on mount: the sidebar's content-area width at startup.
@@ -959,9 +975,38 @@ export default function DqMonitorPage() {
       <div className="dq-body">
         <aside
           ref={sidebarRef}
-          className="dq-sidebar"
-          style={{ flex: `0 0 ${sidebarWidth}px` }}
+          className={
+            "dq-sidebar" + (sidebarCollapsed ? " dq-sidebar-collapsed" : "")
+          }
+          style={{
+            flex: `0 0 ${sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth}px`,
+          }}
         >
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              className="dq-sidebar-toggle dq-sidebar-toggle-collapsed"
+              aria-label="Expand filters sidebar"
+              title="Expand"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              ▶
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="dq-sidebar-toggle dq-sidebar-toggle-expanded"
+              aria-label="Collapse filters sidebar"
+              title="Collapse"
+              onClick={() => setSidebarCollapsed(true)}
+            >
+              ◀
+            </button>
+          )}
+          {/* When collapsed, .dq-sidebar-collapsed CSS hides every child
+              except .dq-sidebar-toggle so the inner sidebar state
+              (filters, tree, refs) stays mounted and just re-appears on
+              expand — no reset, no refetch. */}
           {viewMode === "security" && (
             <>
               <div className="dq-sidebar-row">
@@ -1313,31 +1358,33 @@ export default function DqMonitorPage() {
 
         </aside>
 
-        <div
-          className="dq-sidebar-resizer"
-          onMouseDown={startSidebarResize}
-          onKeyDown={(e) => {
-            const min = 180;
-            const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
-            const step = e.shiftKey ? 40 : 10;
-            if (e.key === "ArrowLeft") {
-              e.preventDefault();
-              setSidebarWidth((w) => Math.max(min, w - step));
-            } else if (e.key === "ArrowRight") {
-              e.preventDefault();
-              setSidebarWidth((w) => Math.min(max, w + step));
-            }
-          }}
-          role="slider"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          aria-valuenow={sidebarWidth}
-          aria-valuemin={180}
-          aria-valuemax={Math.floor(
-            typeof window !== "undefined" ? window.innerWidth * 0.6 : 800
-          )}
-          tabIndex={0}
-        />
+        {!sidebarCollapsed && (
+          <div
+            className="dq-sidebar-resizer"
+            onMouseDown={startSidebarResize}
+            onKeyDown={(e) => {
+              const min = 180;
+              const max = Math.max(min, Math.floor(window.innerWidth * 0.6));
+              const step = e.shiftKey ? 40 : 10;
+              if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                setSidebarWidth((w) => Math.max(min, w - step));
+              } else if (e.key === "ArrowRight") {
+                e.preventDefault();
+                setSidebarWidth((w) => Math.min(max, w + step));
+              }
+            }}
+            role="slider"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuenow={sidebarWidth}
+            aria-valuemin={180}
+            aria-valuemax={Math.floor(
+              typeof window !== "undefined" ? window.innerWidth * 0.6 : 800
+            )}
+            tabIndex={0}
+          />
+        )}
 
         <div className="dq-main" ref={dqMainRef}>
           {viewMode === "security" && (
