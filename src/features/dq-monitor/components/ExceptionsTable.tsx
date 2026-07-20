@@ -829,11 +829,18 @@ export default function ExceptionsTable({
               }}
             >
               <option value="">Unassigned</option>
-              {(assignToOptions ?? []).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
+              {(assignToOptions ?? [])
+                // Backend getDMUsers returns a literal "Unassigned"
+                // DM_USER row alongside the real assignees. We already
+                // render an empty-value "Unassigned" entry above, so
+                // drop the backend duplicate to keep the dropdown from
+                // showing two "Unassigned" rows.
+                .filter((name) => name.trim().toLowerCase() !== "unassigned")
+                .map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               {row.assignTo &&
                 !(assignToOptions ?? []).includes(row.assignTo) && (
                   <option value={row.assignTo}>{row.assignTo}</option>
