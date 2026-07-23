@@ -24,28 +24,65 @@ function buildParams(
   return params;
 }
 
-// /executeRules now wipes today's EXCEPTION rows for the scoped catalogs
-// (via DELETE_EXCEPTIONS) and re-inserts whatever the catalog sources
+// Body shape POSTed to /executeRules. Mirrors models.ExecuteRulesRequest
+// on the Go side. is_refresh defaults to 'Y' server-side when omitted.
+export type ExecuteRulesRequest = {
+  rule_name?: string;
+  rule_type?: RuleFilterType;
+  is_refresh?: "Y" | "N";
+  params?: Record<string, string>;
+};
+
+// Every response from /executeRules — 200, 404, 500 — carries this
+// shape. Mirrors models.ExecuteRulesResponse on the Go side.
+// exception_status duplicates the HTTP status so callers that only
+// inspect the body still see the outcome.
+export type ExecuteRulesResponse = {
+  exception_count: number;
+  exception_message?: string;
+  exception_status: number;
+};
+
+// /executeRules archives today's EXCEPTION rows for the scoped catalogs
+// into EXCEPTION_HIST, then re-inserts whatever the catalog sources
 // return — no asset_id / id_bb_global scoping. Use executeSecurityRules
 // for the per-asset incremental flow.
+//
+// Sends the ExecuteRulesRequest as a JSON POST body (backend also
+// accepts the legacy query-string form for GET compatibility, but we
+// prefer the typed body). Returns the parsed ExecuteRulesResponse
+// verbatim regardless of HTTP status — callers can branch on
+// exception_status. Only throws on a network failure or an
+// unparseable response body.
 export async function executeRules(
   ruleName?: string,
   ruleType?: RuleFilterType,
   signal?: AbortSignal
-): Promise<void> {
-  const params = new URLSearchParams();
+): Promise<ExecuteRulesResponse> {
+  const body: ExecuteRulesRequest = {};
   if (ruleName && ruleName !== "All") {
-    params.set("rule_name", ruleName);
-    if (ruleType) params.set("rule_type", ruleType);
+    body.rule_name = ruleName;
+    if (ruleType) body.rule_type = ruleType;
   }
-  const qs = params.toString();
-  const url = qs ? `${EXECUTE_RULES_ENDPOINT}?${qs}` : EXECUTE_RULES_ENDPOINT;
-  // POST intentionally: the backend switched /executeRules to POST so
-  // an ingress / load balancer doesn't retry a slow archive-then-insert
-  // and duplicate rows. Params still travel in the query string.
-  const res = await fetch(url, { method: "POST", signal });
-  if (!res.ok) {
-    throw new Error(`executeRules failed: ${res.status} ${res.statusText}`);
+  const res = await fetch(EXECUTE_RULES_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  // Body always JSON of shape ExecuteRulesResponse — parse regardless
+  // of res.ok because the backend encodes error text into
+  // exception_message. If the body parse fails (proxy interference,
+  // 502/504 gateway page), synthesize a response so callers still get
+  // a typed value.
+  try {
+    return (await res.json()) as ExecuteRulesResponse;
+  } catch {
+    return {
+      exception_count: 0,
+      exception_message: `executeRules failed: ${res.status} ${res.statusText}`,
+      exception_status: res.status,
+    };
   }
 }
 
