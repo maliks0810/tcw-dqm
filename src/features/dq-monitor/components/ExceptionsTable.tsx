@@ -89,11 +89,45 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v2 bump: canonical column order changed to Status → Suppress Date →
-// Assign To → Comments → (RESULT_DATA columns). Any layout persisted
-// under v1 is silently discarded so users get the corrected default
-// the first time they load the page after this deploy.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v2";
+// v3 bump: stale persisted orders where Comments (or another static)
+// had drifted to the front are silently discarded. Combined with the
+// pinStaticsToCanonicalOrder guard below, users always start each
+// session with Status → Suppress Date → Assign To → Comments in the
+// static section regardless of what the previous session persisted.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v3";
+
+// Keys that live in the fixed "left of the RESULT_DATA columns" section
+// of the Exceptions grid. Their canonical position is Status → Suppress
+// Date → Assign To → Comments; any deviation in a persisted layout is
+// normalized away by pinStaticsToCanonicalOrder every time we hydrate
+// or reconcile columnOrder.
+const STATIC_COLUMN_KEYS = new Set([
+  "status",
+  "suppressDate",
+  "assignTo",
+  "comments",
+]);
+
+// Rewrites `order` so that whichever static columns appear in it are
+// emitted first, in the exact position they hold in `canonical`. All
+// non-static keys retain their prior order and land after the static
+// block. This lets users freely drag RESULT_DATA columns around while
+// preventing a stale persisted state from ever shoving Comments (or
+// any other static) into the leading column.
+function pinStaticsToCanonicalOrder(
+  order: string[],
+  canonical: string[]
+): string[] {
+  const canonicalStatics = canonical.filter((k) => STATIC_COLUMN_KEYS.has(k));
+  const seen = new Set<string>();
+  const nonStatics: string[] = [];
+  for (const k of order) {
+    if (STATIC_COLUMN_KEYS.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    nonStatics.push(k);
+  }
+  return [...canonicalStatics, ...nonStatics];
+}
 
 // Seed widths for the three widget-cell columns so their content has
 // room to breathe on a fresh install (before any user resize / persist).
@@ -425,19 +459,24 @@ export default function ExceptionsTable({
   // schema still matches, else falls back to the canonical order for the
   // current mode. Either way the sync effect below reconciles with
   // canonical (drops unknown keys, appends missing ones) so we can't get
-  // stuck on stale state from a previous mode.
-  const [columnOrder, setColumnOrder] = useState<string[]>(
-    () => loadColumnLayout(STORAGE_KEY)?.columnOrder ?? canonicalKeys
-  );
+  // stuck on stale state from a previous mode. The persisted layout is
+  // passed through pinStaticsToCanonicalOrder so a prior session that
+  // dragged e.g. Comments to column 0 doesn't survive a reload — statics
+  // always start in canonical order at every hydrate.
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const persisted = loadColumnLayout(STORAGE_KEY)?.columnOrder;
+    return pinStaticsToCanonicalOrder(persisted ?? canonicalKeys, canonicalKeys);
+  });
 
   // Mount-time snapshot of columnOrder. Used both to compute
   // "reordered THIS SESSION" (so the Reset button doesn't appear
   // just because a persisted layout differs from canonical), and as
   // the target when the user clicks Reset. Frozen — no updates after
   // first render.
-  const [initialColumnOrder] = useState<string[]>(
-    () => loadColumnLayout(STORAGE_KEY)?.columnOrder ?? canonicalKeys
-  );
+  const [initialColumnOrder] = useState<string[]>(() => {
+    const persisted = loadColumnLayout(STORAGE_KEY)?.columnOrder;
+    return pinStaticsToCanonicalOrder(persisted ?? canonicalKeys, canonicalKeys);
+  });
 
   // True after the user drops a column onto another in the current
   // session. Cleared by Reset. Persistence layer never touches it, so
@@ -465,7 +504,10 @@ export default function ExceptionsTable({
       const set = new Set(canonicalKeys);
       const kept = prev.filter((k) => set.has(k));
       const missing = canonicalKeys.filter((k) => !kept.includes(k));
-      const next = [...kept, ...missing];
+      // pinStaticsToCanonicalOrder guarantees the four static columns
+      // stay in canonical order at the front regardless of how
+      // extraKeys arriving async might have shuffled prev.
+      const next = pinStaticsToCanonicalOrder([...kept, ...missing], canonicalKeys);
       if (
         next.length === prev.length &&
         next.every((k, i) => k === prev[i])
