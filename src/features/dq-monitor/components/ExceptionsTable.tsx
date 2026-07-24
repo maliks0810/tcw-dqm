@@ -89,12 +89,12 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v3 bump: stale persisted orders where Comments (or another static)
-// had drifted to the front are silently discarded. Combined with the
-// pinStaticsToCanonicalOrder guard below, users always start each
-// session with Status → Suppress Date → Assign To → Comments in the
-// static section regardless of what the previous session persisted.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v3";
+// v4 bump: drag reorder is now blocked for any static column (and any
+// drop targeting a static slot) — the four static columns are locked
+// in canonical Status → Suppress Date → Assign To → Comments order.
+// Only RESULT_DATA columns reorder. Wipes any v3 layouts that had a
+// static persisted out of position from an accidental drag.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v4";
 
 // Keys that live in the fixed "left of the RESULT_DATA columns" section
 // of the Exceptions grid. Their canonical position is Status → Suppress
@@ -561,6 +561,11 @@ export default function ExceptionsTable({
       dragKeyRef.current = null;
       setDropTargetKey(null);
       if (!fromKey || fromKey === colKey) return;
+      // Any explicit drop is honored — statics and RESULT_DATA columns
+      // alike. Non-drag paths (hydrate, reconciler) still enforce the
+      // canonical static order via pinStaticsToCanonicalOrder, so a
+      // user-initiated reorder only lives for the current session:
+      // next page load falls back to the canonical default.
       setHasReordered(true);
       setColumnOrder((prev) => {
         const from = prev.indexOf(fromKey);
