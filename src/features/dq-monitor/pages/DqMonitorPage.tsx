@@ -874,20 +874,31 @@ export default function DqMonitorPage() {
     };
   }, [viewMode, viewByGroup]);
 
+  // Shared filtered slice used by every count that must agree with the
+  // grid. The grid itself already filters by statusFilter when the
+  // Status panel is shown (see the ExceptionsTable data prop below), so
+  // mirror that here: when the panel is on and the user has narrowed
+  // the status set, counts must exclude rows outside that set. When the
+  // panel is off, no additional filtering — every row loaded counts.
+  const statusFilteredExceptions = useMemo<ExceptionRow[]>(() => {
+    if (!showStatusPanel) return exceptions;
+    return exceptions.filter((r) => statusFilter.has(r.status));
+  }, [exceptions, showStatusPanel, statusFilter]);
+
   // Counts shown in the "Number of Exceptions" grid. Row 1 is the current
   // scope (group / rule type), subsequent rows are the breakdown one level
-  // deeper. Derived from the currently-loaded exceptions so it stays in
-  // sync with the bottom grid.
+  // deeper. Derived from statusFilteredExceptions so the panel tracks
+  // whatever status subset is currently visible in the bottom grid.
   const exceptionCountRows = useMemo<{ name: string; count: number }[]>(() => {
     if (viewMode === "security") return [];
 
     if (viewMode === "group") {
       if (!viewByGroup || viewByGroup === "All") return [];
       const rows: { name: string; count: number }[] = [
-        { name: viewByGroup, count: exceptions.length },
+        { name: viewByGroup, count: statusFilteredExceptions.length },
       ];
       const byType = new Map<string, number>();
-      for (const e of exceptions) {
+      for (const e of statusFilteredExceptions) {
         const t = ruleCatalogByRuleName[e.ruleName] ?? "Unknown";
         byType.set(t, (byType.get(t) ?? 0) + 1);
       }
@@ -902,10 +913,10 @@ export default function DqMonitorPage() {
     if (viewMode === "ruleCatalog") {
       if (!viewByRuleCatalog || viewByRuleCatalog === "All") return [];
       const rows: { name: string; count: number }[] = [
-        { name: viewByRuleCatalog, count: exceptions.length },
+        { name: viewByRuleCatalog, count: statusFilteredExceptions.length },
       ];
       const byRule = new Map<string, number>();
-      for (const e of exceptions) {
+      for (const e of statusFilteredExceptions) {
         const name = e.ruleName || "(unnamed)";
         byRule.set(name, (byRule.get(name) ?? 0) + 1);
       }
@@ -919,6 +930,9 @@ export default function DqMonitorPage() {
 
     // 'All' selected on the tree (nothing scoped yet) — one row per rule
     // group, populated from the per-group fetch in the groupCounts effect.
+    // groupCounts is fetched per-group without status context, so it
+    // stays unfiltered here; the panel labels this as an "All" summary
+    // and doesn't claim to reflect the status subset.
     if (
       viewByGroup === "All" &&
       viewByRuleCatalog === "All" &&
@@ -932,7 +946,7 @@ export default function DqMonitorPage() {
 
     // viewMode === "rule" — flat list of rules and their counts.
     const counts = new Map<string, number>();
-    for (const e of exceptions) {
+    for (const e of statusFilteredExceptions) {
       const name = e.ruleName || "(unnamed)";
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
@@ -945,7 +959,7 @@ export default function DqMonitorPage() {
     viewByRuleCatalog,
     viewByRule,
     ruleNameSearchApplied,
-    exceptions,
+    statusFilteredExceptions,
     ruleCatalogByRuleName,
     ruleGroupOptions,
     groupCounts,
@@ -1502,7 +1516,7 @@ export default function DqMonitorPage() {
                   — {assets[selectedRow].securityDescription} — {assets[selectedRow].aladdinId}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
+                    : ` (${statusFilteredExceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1511,7 +1525,7 @@ export default function DqMonitorPage() {
                   — Rule Group: {viewByGroup}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
+                    : ` (${statusFilteredExceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1520,7 +1534,7 @@ export default function DqMonitorPage() {
                   — Rule Group: {viewByGroup} / Rule Catalog: {viewByRuleCatalog}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
+                    : ` (${statusFilteredExceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
 
@@ -1534,7 +1548,7 @@ export default function DqMonitorPage() {
                     : ""}
                   {exceptionsLoading
                     ? " (loading…)"
-                    : ` (${exceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
+                    : ` (${statusFilteredExceptions.filter((e) => e.state !== "Complete").length} exceptions)`}
                 </span>
               )}
             </div>
