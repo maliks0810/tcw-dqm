@@ -735,7 +735,7 @@ export default function DqMonitorPage() {
         );
     fetcher
       .then((rows) => {
-        if (rows.length > 1000) {
+        if (rows.length > 2000) {
           setExceptions([]);
           setExceptionsLimitExceeded(true);
         } else {
@@ -1564,7 +1564,7 @@ export default function DqMonitorPage() {
                 className="dq-section-subtitle"
                 style={{ color: "crimson", fontWeight: 700 }}
               >
-                More than 1000 exceptions — refine your filters
+                More than 2000 exceptions — refine your filters
               </div>
             )}
 
