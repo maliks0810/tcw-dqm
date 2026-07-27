@@ -885,6 +885,99 @@ export default function DqMonitorPage() {
     return exceptions.filter((r) => statusFilter.has(r.status));
   }, [exceptions, showStatusPanel, statusFilter]);
 
+  // Tree-selection actions extracted here so both the RuleTreeView and
+  // the "Number of Exceptions" panel below invoke the same state
+  // transitions. Clicking a row in the count panel needs to behave
+  // identically to clicking the equivalent node in the tree.
+  const selectAllTree = useCallback(() => {
+    setViewMode((m) => (m === "security" ? m : "rule"));
+    setViewByGroup("All");
+    setViewByRuleCatalog("All");
+    setViewByRule("All");
+    setViewByRuleLabel("");
+    setRuleNameSearchApplied("");
+    setTreeSelected(true);
+  }, []);
+  const selectGroupTree = useCallback((g: string) => {
+    setViewMode((m) => (m === "security" ? m : "group"));
+    setViewByGroup(g);
+    setViewByRuleCatalog("All");
+    setViewByRule("All");
+    setViewByRuleLabel("");
+    setRuleNameSearchApplied("");
+    setTreeSelected(true);
+  }, []);
+  const selectTypeTree = useCallback((g: string, t: string) => {
+    setViewMode((m) => (m === "security" ? m : "ruleCatalog"));
+    setViewByGroup(g);
+    setViewByRuleCatalog(t);
+    setViewByRule("All");
+    setViewByRuleLabel("");
+    setRuleNameSearchApplied("");
+    setTreeSelected(true);
+  }, []);
+  const selectRuleTree = useCallback(
+    (g: string, t: string, r: string, label: string) => {
+      setViewMode((m) => (m === "security" ? m : "rule"));
+      setViewByGroup(g);
+      setViewByRuleCatalog(t);
+      setViewByRule(r);
+      setViewByRuleLabel(label);
+      setRuleNameSearchApplied("");
+      setTreeSelected(true);
+    },
+    []
+  );
+
+  // Given a row's position in the "Number of Exceptions" panel, decide
+  // which tree-equivalent selection it should trigger when clicked.
+  // Returns null when the row shouldn't be clickable (security mode).
+  const countRowAction = useCallback(
+    (row: { name: string; count: number }, i: number): (() => void) | null => {
+      if (viewMode === "security") return null;
+      const inAllScope =
+        viewByGroup === "All" &&
+        viewByRuleCatalog === "All" &&
+        viewByRule === "All" &&
+        !ruleNameSearchApplied;
+      if (inAllScope) {
+        // Rows are rule groups.
+        return () => selectGroupTree(row.name);
+      }
+      if (viewMode === "group") {
+        // Row 0 is the group header; rest are rule catalogs under it.
+        return i === 0
+          ? () => selectGroupTree(row.name)
+          : () => selectTypeTree(viewByGroup, row.name);
+      }
+      if (viewMode === "ruleCatalog") {
+        // Row 0 is the catalog header; rest are rules under it.
+        return i === 0
+          ? () => selectTypeTree(viewByGroup, viewByRuleCatalog)
+          : () =>
+              selectRuleTree(
+                viewByGroup,
+                viewByRuleCatalog,
+                row.name,
+                row.name
+              );
+      }
+      // viewMode === "rule" fallthrough — every row is a rule.
+      return () =>
+        selectRuleTree(viewByGroup, viewByRuleCatalog, row.name, row.name);
+    },
+    [
+      viewMode,
+      viewByGroup,
+      viewByRuleCatalog,
+      viewByRule,
+      ruleNameSearchApplied,
+      selectGroupTree,
+      selectTypeTree,
+      selectRuleTree,
+    ]
+  );
+
   // Counts shown in the "Number of Exceptions" grid. Row 1 is the current
   // scope (group / rule type), subsequent rows are the breakdown one level
   // deeper. Derived from statusFilteredExceptions so the panel tracks
@@ -1152,6 +1245,7 @@ export default function DqMonitorPage() {
                         const isHeader =
                           i === 0 &&
                           (viewMode === "group" || viewMode === "ruleCatalog");
+                        const action = countRowAction(row, i);
                         return (
                           <tr
                             key={`${row.name}-${i}`}
@@ -1161,7 +1255,25 @@ export default function DqMonitorPage() {
                                 ? "dq-count-row-header"
                                 : i % 2 === 0
                                 ? "dq-table-row-even"
-                                : "dq-table-row-odd")
+                                : "dq-table-row-odd") +
+                              (action ? " dq-count-row-clickable" : "")
+                            }
+                            // Row click mirrors the tree — same drill-down
+                            // as if the user had clicked the equivalent
+                            // node under View Exceptions. onKeyDown +
+                            // role/tabIndex give keyboard parity.
+                            role={action ? "button" : undefined}
+                            tabIndex={action ? 0 : undefined}
+                            onClick={action ?? undefined}
+                            onKeyDown={
+                              action
+                                ? (e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      action();
+                                    }
+                                  }
+                                : undefined
                             }
                           >
                             <td>{row.name}</td>
@@ -1330,42 +1442,10 @@ export default function DqMonitorPage() {
               rule: viewByRule,
             }}
             hasSelection={treeSelected}
-            onSelectAll={() => {
-              setViewMode((m) => (m === "security" ? m : "rule"));
-              setViewByGroup("All");
-              setViewByRuleCatalog("All");
-              setViewByRule("All");
-              setViewByRuleLabel("");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectGroup={(g) => {
-              setViewMode((m) => (m === "security" ? m : "group"));
-              setViewByGroup(g);
-              setViewByRuleCatalog("All");
-              setViewByRule("All");
-              setViewByRuleLabel("");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectType={(g, t) => {
-              setViewMode((m) => (m === "security" ? m : "ruleCatalog"));
-              setViewByGroup(g);
-              setViewByRuleCatalog(t);
-              setViewByRule("All");
-              setViewByRuleLabel("");
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
-            onSelectRule={(g, t, r, label) => {
-              setViewMode((m) => (m === "security" ? m : "rule"));
-              setViewByGroup(g);
-              setViewByRuleCatalog(t);
-              setViewByRule(r);
-              setViewByRuleLabel(label);
-              setRuleNameSearchApplied("");
-              setTreeSelected(true);
-            }}
+            onSelectAll={selectAllTree}
+            onSelectGroup={selectGroupTree}
+            onSelectType={selectTypeTree}
+            onSelectRule={selectRuleTree}
           />
             </div>
           </div>

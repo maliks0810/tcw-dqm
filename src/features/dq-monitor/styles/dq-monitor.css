@@ -558,6 +558,20 @@
   font-weight: 700;
 }
 
+/* Clickable count-panel row — mirrors the tree-view drill-down. Pointer
+   cursor + hover tint make the affordance obvious. Focus outline for
+   keyboard users (Enter/Space activate). */
+.dq-count-row-clickable {
+  cursor: pointer;
+}
+.dq-count-row-clickable:hover td {
+  background: #eef2ff;
+}
+.dq-count-row-clickable:focus {
+  outline: 2px solid #1d4ed8;
+  outline-offset: -2px;
+}
+
 .dq-section-title {
   margin: 0 0 8px 0;
   font-size: 12px;
