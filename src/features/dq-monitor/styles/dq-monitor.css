@@ -29,7 +29,7 @@
 
 .dq-header {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 16px;
   flex: none;
@@ -47,14 +47,6 @@
   font-weight: 800;
   color: #1d4ed8;
   line-height: 1;
-}
-
-.dq-header-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  justify-self: center;
-  text-align: center;
 }
 
 .dq-header-title {
@@ -556,6 +548,43 @@
 .dq-count-row-header td {
   background: #e0e7ff;
   font-weight: 700;
+}
+
+/* Single-line status count summary shown above the Exceptions grid
+   for RULE_GROUP.FLAG_STATUS_VISIBLE=true groups. Status names appear
+   in bold (<strong>) via inline markup; this container just sets the
+   line style. */
+.dq-status-breakdown {
+  padding: 4px 8px;
+  margin: 4px 0 6px 0;
+  font-size: 12px;
+  color: #111827;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.dq-status-breakdown strong {
+  color: #111827;
+}
+
+/* Middle cell of the top header when a status breakdown is present.
+   Width is auto so the row consumes just what the counts need; the
+   header's grid-template-columns places it starting at the Exceptions
+   grid's left edge (breakdownLeftOffset). font-size / colors match the
+   inline breakdown that used to sit above the grid. */
+.dq-header-breakdown {
+  justify-self: start;
+  align-self: center;
+  font-size: 12px;
+  color: #111827;
+  white-space: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.dq-header-breakdown strong {
+  color: #111827;
 }
 
 /* Clickable count-panel row — mirrors the tree-view drill-down. Pointer
@@ -1477,7 +1506,6 @@
   }
 
   .dq-header-left,
-  .dq-header-title-wrap,
   .dq-header-right {
     justify-self: stretch;
   }

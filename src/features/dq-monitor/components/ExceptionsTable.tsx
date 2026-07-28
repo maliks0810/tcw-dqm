@@ -89,12 +89,12 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v4 bump: drag reorder is now blocked for any static column (and any
-// drop targeting a static slot) — the four static columns are locked
-// in canonical Status → Suppress Date → Assign To → Comments order.
-// Only RESULT_DATA columns reorder. Wipes any v3 layouts that had a
-// static persisted out of position from an accidental drag.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v4";
+// v5 bump: rd:* column order now mirrors the RESULT_DATA JSON key
+// order of the first row that carries a RESULT_DATA blob, so the grid
+// matches whatever order the SP emitted. Invalidates any v4 layout
+// that persisted an rd:* order derived from the old union-across-rows
+// scheme.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v5";
 
 // Keys that live in the fixed "left of the RESULT_DATA columns" section
 // of the Exceptions grid. Their canonical position is Status → Suppress
@@ -177,17 +177,26 @@ export default function ExceptionsTable({
   const showAssignToColumn =
     showResultDataColumns && showAssignToColumnProp;
 
-  // Union of all RESULT_DATA keys across the current row set. Preserves
-  // insertion order (first occurrence wins) so the layout stays stable
-  // even as rows come and go.
+  // RESULT_DATA column order. The first row with a RESULT_DATA blob
+  // fixes the order — that's the order the stored procedure projected
+  // its columns in, and every subsequent row is expected to carry the
+  // same schema. Any keys that only appear in later rows (schema drift
+  // or partial rows) are appended at the tail so nothing is dropped.
+  // Result: the grid's rd:* columns line up with the JSON order the
+  // backend emitted, not an accretion-order union across the row set.
   const extraKeys = useMemo(() => {
     if (!showResultDataColumns) return [];
-    const set = new Set<string>();
+    const seen = new Set<string>();
+    const order: string[] = [];
     for (const row of data) {
       if (!row.resultData) continue;
-      for (const k of Object.keys(row.resultData)) set.add(k);
+      for (const k of Object.keys(row.resultData)) {
+        if (seen.has(k)) continue;
+        seen.add(k);
+        order.push(k);
+      }
     }
-    return Array.from(set);
+    return order;
   }, [data, showResultDataColumns]);
 
   // Column filters mirror the SecurityTable shape: distinct values,

@@ -885,6 +885,25 @@ export default function DqMonitorPage() {
     return exceptions.filter((r) => statusFilter.has(r.status));
   }, [exceptions, showStatusPanel, statusFilter]);
 
+  // "New: 45  Accept: 3  Suppress: 30 ..." breakdown shown above the
+  // Exceptions grid for groups that expose the Status column
+  // (RULE_GROUP.FLAG_STATUS_VISIBLE — Security Master today). Counts
+  // come from the unfiltered `exceptions` set so users see the full
+  // picture regardless of what the Status filter is currently
+  // narrowing to — the whole point is to know how many rows sit in
+  // each bucket before choosing which to view. Statuses with zero
+  // count are omitted; canonical order comes from exceptionStatusOptions.
+  const statusBreakdown = useMemo<{ status: string; count: number }[]>(() => {
+    if (!showStatusPanel) return [];
+    const counts = new Map<string, number>();
+    for (const e of exceptions) {
+      counts.set(e.status, (counts.get(e.status) ?? 0) + 1);
+    }
+    return exceptionStatusOptions
+      .filter((s) => (counts.get(s) ?? 0) > 0)
+      .map((s) => ({ status: s, count: counts.get(s) ?? 0 }));
+  }, [showStatusPanel, exceptions, exceptionStatusOptions]);
+
   // Tree-selection actions extracted here so both the RuleTreeView and
   // the "Number of Exceptions" panel below invoke the same state
   // transitions. Clicking a row in the count panel needs to behave
@@ -1066,6 +1085,12 @@ export default function DqMonitorPage() {
             ? exportAssetsToExcel(visibleAssets)
             : exportExceptionsToExcel(visibleExceptions)
         }
+        // DATA QUALITY MONITOR (left) + View by Security toggle + Export
+        // to Excel (right) all share the top row. Status breakdown, when
+        // present, drops into a middle column left-aligned with the
+        // Exceptions grid — breakdownLeftOffset matches the sidebar's
+        // outer width (sidebar + gap + resizer + gap) so it lines up
+        // with the grid regardless of collapse / user resize.
         modeToggleLabel={
           viewByGroup === "Security Master"
             ? viewMode === "security"
@@ -1077,6 +1102,22 @@ export default function DqMonitorPage() {
           setViewMode((m) => (m === "security" ? "rule" : "security"));
           setTreeSelected(true);
         }}
+        breakdown={
+          statusBreakdown.length > 0 ? (
+            <>
+              {statusBreakdown.map(({ status, count }, i) => (
+                <span key={status}>
+                  <strong>{status}:</strong> {count}
+                  {i < statusBreakdown.length - 1 && " | "}
+                </span>
+              ))}
+            </>
+          ) : undefined
+        }
+        breakdownLeftOffset={
+          (sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth) +
+          (sidebarCollapsed ? 12 : 30)
+        }
       />
 
       <div className="dq-body">

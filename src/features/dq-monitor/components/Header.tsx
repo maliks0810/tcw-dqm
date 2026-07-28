@@ -6,12 +6,16 @@ type HeaderProps = {
   onExportClick?: () => void;
   modeToggleLabel?: string;
   onModeToggleClick?: () => void;
+  breakdown?: React.ReactNode;
+  breakdownLeftOffset?: number;
 };
 
 export default function Header({
   onExportClick,
   modeToggleLabel,
   onModeToggleClick,
+  breakdown,
+  breakdownLeftOffset,
 }: HeaderProps = {}) {
   const oktaCtx = useOktaAuth();
   const oktaAuth = oktaCtx?.oktaAuth;
@@ -39,15 +43,26 @@ export default function Header({
     });
   };
 
+  // When a breakdown row is supplied, force the left column to occupy
+  // exactly `breakdownLeftOffset` pixels so the breakdown starts at the
+  // horizontal position where the Exceptions grid begins (sidebar width
+  // + resizer + gaps computed by the caller). Right column keeps its
+  // buttons flush right via .dq-header-right's justify-self: end.
+  const headerStyle: React.CSSProperties | undefined =
+    breakdown != null && breakdownLeftOffset != null
+      ? { gridTemplateColumns: `${breakdownLeftOffset}px auto 1fr` }
+      : undefined;
+
   return (
-    <div className="dq-header">
+    <div className="dq-header" style={headerStyle}>
       <div className="dq-header-left">
         {USE_OKTA && <div className="dq-header-brand">TCW</div>}
-      </div>
-
-      <div className="dq-header-title-wrap">
         <h1 className="dq-header-title">DATA QUALITY MONITOR</h1>
       </div>
+
+      {breakdown != null && (
+        <div className="dq-header-breakdown">{breakdown}</div>
+      )}
 
       <div className="dq-header-right">
         {modeToggleLabel && onModeToggleClick && (
