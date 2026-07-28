@@ -572,19 +572,50 @@
 /* Middle cell of the top header when a status breakdown is present.
    Width is auto so the row consumes just what the counts need; the
    header's grid-template-columns places it starting at the Exceptions
-   grid's left edge (breakdownLeftOffset). font-size / colors match the
-   inline breakdown that used to sit above the grid. */
+   grid's left edge (breakdownLeftOffset). Height is pinned to match
+   the Exceptions grid <th> so the two rows read as the same size;
+   background / font stay on the page default (transparent, dark
+   text). */
 .dq-header-breakdown {
   justify-self: start;
   align-self: center;
-  font-size: 12px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
   color: #111827;
+  /* Match the original in-grid status breakdown font (was 12px above
+     the ExceptionsTable before the row moved into the header). The
+     header defaults to browser 16px otherwise. */
+  font-size: 12px;
+  line-height: 1.2;
+  height: 30px;
+  padding: 0 10px;
   white-space: nowrap;
   overflow-x: auto;
   max-width: 100%;
 }
 .dq-header-breakdown strong {
   color: #111827;
+}
+
+/* Individual status entries whose rows in the Exceptions grid render as
+   "complete" (Accept / Override / Suppress) reuse the same #dcfce7
+   swatch so the top-of-page count reinforces the row coloring below.
+   Only the label + count get the swatch — the surrounding " | "
+   separators stay on the header's plain background. */
+.dq-header-breakdown-complete {
+  background: #dcfce7;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+
+/* Pipe separator between breakdown entries. white-space: pre keeps the
+   leading + trailing spaces inside the span visible — an inline-flex
+   parent otherwise trims boundary whitespace of its flex items, which
+   was making the counts render as "New: 2|Accept: 1" instead of
+   "New: 2 | Accept: 1". */
+.dq-header-breakdown-sep {
+  white-space: pre;
 }
 
 /* Clickable count-panel row — mirrors the tree-view drill-down. Pointer
@@ -1062,6 +1093,15 @@
 .dq-row-suppress-date-input:focus {
   outline: none;
   border-color: #1d4ed8;
+}
+
+/* Hide the browser's "mm/dd/yyyy" format hint on empty <input type="date">
+   cells. When the input has no value, an is-empty class is applied so
+   the datetime-edit sub-fields render transparent — the calendar icon
+   stays visible so the user can still open the picker. On focus the
+   text is restored so typed input is legible while editing. */
+.dq-row-suppress-date-input.dq-row-suppress-date-input-empty:not(:focus)::-webkit-datetime-edit {
+  color: transparent;
 }
 
 /* Comments cell: input fills the full column width. Zero padding on the

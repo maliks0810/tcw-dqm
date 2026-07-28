@@ -60,6 +60,14 @@ type ExceptionsTableProps = {
   showAssignToColumn?: boolean;
   assignToOptions?: string[];
   onAssignToChange?: (exceptionId: number, assignTo: string) => void;
+  // RESULT_DATA keys the parent wants surfaced first in the RD section
+  // of canonicalKeys (right after Comments, before the rest of the
+  // RD columns). Used e.g. in view-by-group mode to keep RULE_NAME +
+  // ALADDIN_ID left of the other rd:* columns so a mixed-catalog view
+  // reads coherently. Order preserved as passed. Unknown keys (not
+  // present in any row's RESULT_DATA) are ignored. Undefined / empty
+  // → the RD section keeps its natural projection order.
+  priorityRdKeys?: string[];
 };
 
 function getActionClass(action: string): string {
@@ -168,6 +176,7 @@ export default function ExceptionsTable({
   showAssignToColumn: showAssignToColumnProp = false,
   assignToOptions,
   onAssignToChange,
+  priorityRdKeys,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -442,18 +451,27 @@ export default function ExceptionsTable({
       ];
     }
     // Canonical order in view-exception mode: Status → Suppress Date →
-    // Assign To → Comments → (all RESULT_DATA JSON columns). The four
-    // static/editable columns cluster at the left; dynamic RESULT_DATA
-    // columns land after them, in the order Snowflake / Postgres
-    // projected them from the SP result. STORAGE_KEY v2 bump above
-    // discards any previously-persisted layout so users see this
-    // default the first time they load after deploy.
+    // Assign To → Comments → (priority RD keys, if any) → (rest of the
+    // RESULT_DATA JSON columns). Priority keys are hoisted so a
+    // group-mode view can pin e.g. RULE_NAME + ALADDIN_ID immediately
+    // after Comments while leaving every other RD column in projection
+    // order. Unknown priority keys (not in extraKeys) are silently
+    // ignored so callers can hand a superset without breaking layouts
+    // for catalogs that don't expose those keys.
     const keys: string[] = [];
     if (showStatusColumn) keys.push("status");
     if (showSuppressDateColumn) keys.push("suppressDate");
     if (showAssignToColumn) keys.push("assignTo");
     if (showCommentsColumn) keys.push("comments");
-    for (const k of extraKeys) keys.push(`rd:${k}`);
+    const priority = (priorityRdKeys ?? []).filter((k) =>
+      extraKeys.includes(k)
+    );
+    const prioritySet = new Set(priority);
+    for (const k of priority) keys.push(`rd:${k}`);
+    for (const k of extraKeys) {
+      if (prioritySet.has(k)) continue;
+      keys.push(`rd:${k}`);
+    }
     return keys;
   }, [
     showResultDataColumns,
@@ -462,6 +480,7 @@ export default function ExceptionsTable({
     showAssignToColumn,
     extraKeys,
     showCommentsColumn,
+    priorityRdKeys,
   ]);
 
   // Drag-reordered column order. Starts from any persisted layout if the
@@ -1082,7 +1101,21 @@ export default function ExceptionsTable({
 
           <tbody>
             {sortedRows.map((row, index) => {
-              const isComplete = row.state === "Complete";
+              // A row picks up the "complete" visual style (muted green
+              // background from .dq-table-row-complete) when either its
+              // STATE is Complete OR its STATUS falls into the group of
+              // resolved statuses — Accept, Override, Suppress. These
+              // three status values represent user-actioned completion
+              // states even when the underlying STATE hasn't flipped to
+              // Complete yet.
+              const completeStatuses = new Set([
+                "accept",
+                "override",
+                "suppress",
+              ]);
+              const isComplete =
+                row.state === "Complete" ||
+                completeStatuses.has(row.status.toLowerCase());
               const cls = [
                 "dq-table-row",
                 isComplete ? "dq-table-row-complete" : "dq-table-row-even",
@@ -1193,7 +1226,10 @@ function SuppressDateCell({
   return (
     <input
       type="date"
-      className="dq-row-suppress-date-input"
+      className={
+        "dq-row-suppress-date-input" +
+        (draft === "" ? " dq-row-suppress-date-input-empty" : "")
+      }
       value={draft}
       min={minDate}
       max={maxDate}

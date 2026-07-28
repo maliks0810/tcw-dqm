@@ -1105,12 +1105,31 @@ export default function DqMonitorPage() {
         breakdown={
           statusBreakdown.length > 0 ? (
             <>
-              {statusBreakdown.map(({ status, count }, i) => (
-                <span key={status}>
-                  <strong>{status}:</strong> {count}
-                  {i < statusBreakdown.length - 1 && " | "}
-                </span>
-              ))}
+              <span key="__total">
+                <strong>Total:</strong>{" "}
+                {statusBreakdown.reduce((s, x) => s + x.count, 0)}
+              </span>
+              <span key="__total-sep" className="dq-header-breakdown-sep">
+                {" | "}
+              </span>
+              {statusBreakdown.map(({ status, count }, i) => {
+                // No per-status background on the breakdown line — the
+                // grid-row coloring already telegraphs which statuses
+                // count as completed, so shading the count text was
+                // redundant / distracting.
+                return (
+                  <React.Fragment key={status}>
+                    <span>
+                      <strong>{status}:</strong> {count}
+                    </span>
+                    {i < statusBreakdown.length - 1 && (
+                      <span className="dq-header-breakdown-sep">
+                        {" | "}
+                      </span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </>
           ) : undefined
         }
@@ -1761,6 +1780,14 @@ export default function DqMonitorPage() {
                   : exceptions
               }
               showResultDataColumns={viewMode !== "security"}
+              // In group mode (e.g. Security Master selected) the grid
+              // spans catalogs whose RESULT_DATA differs; surface
+              // RULE_NAME + ALADDIN_ID right after Comments so mixed-
+              // catalog runs stay readable. Other modes keep the raw
+              // projection order.
+              priorityRdKeys={
+                viewMode === "group" ? ["RULE_NAME", "ALADDIN_ID"] : undefined
+              }
               onVisibleRowsChange={setVisibleExceptions}
               statusOptions={
                 showStatusPanel ? exceptionStatusOptions : undefined
