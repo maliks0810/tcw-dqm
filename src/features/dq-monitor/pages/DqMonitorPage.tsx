@@ -926,11 +926,16 @@ export default function DqMonitorPage() {
       .map((s) => ({ status: s, count: counts.get(s) ?? 0 }));
   }, [showStatusPanel, exceptions, exceptionStatusOptions]);
 
-  // Bulk Assign is only meaningful inside the Security Master group and
-  // in the exception view (not the "View by Security" grid). Any other
-  // group / mode hides the button and forces the panel closed.
+  // Bulk Assign is only meaningful inside the Security Master group,
+  // in the exception view (not the "View by Security" grid), AND
+  // against the current-day EXCEPTION table — historical EXCEPTION_HIST
+  // days must stay read-only (see ExceptionsTable readOnly wiring).
+  // Any other group / mode / historical-date hides the button and
+  // forces the panel closed.
   const showBulkAssign =
-    viewByGroup === "Security Master" && viewMode !== "security";
+    viewByGroup === "Security Master" &&
+    viewMode !== "security" &&
+    dqmDate === "";
   useEffect(() => {
     if (!showBulkAssign && bulkPanelOpen) setBulkPanelOpen(false);
   }, [showBulkAssign, bulkPanelOpen]);
@@ -2083,6 +2088,11 @@ export default function DqMonitorPage() {
               priorityRdKeys={
                 viewMode === "group" ? ["RULE_NAME", "ALADDIN_ID"] : undefined
               }
+              // Any non-empty dqmDate means the grid is showing
+              // EXCEPTION_HIST for a prior day. Historical rows must
+              // stay read-only — mutating them would rewrite an
+              // already-archived snapshot.
+              readOnly={dqmDate !== ""}
               onVisibleRowsChange={setVisibleExceptions}
               statusOptions={
                 showStatusPanel ? exceptionStatusOptions : undefined

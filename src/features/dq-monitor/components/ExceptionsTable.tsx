@@ -68,6 +68,13 @@ type ExceptionsTableProps = {
   // present in any row's RESULT_DATA) are ignored. Undefined / empty
   // → the RD section keeps its natural projection order.
   priorityRdKeys?: string[];
+  // When true, every editable cell (STATUS + SUPPRESS DATE + ASSIGN TO
+  // + COMMENTS) renders in a locked, non-interactive form. Used when
+  // the parent has picked a historical Exceptions Date — the grid is
+  // showing EXCEPTION_HIST, and mutating older-day rows would be
+  // confusing / unsupported by the backend. Callbacks are still
+  // wired but never fire while readOnly is on.
+  readOnly?: boolean;
 };
 
 function getActionClass(action: string): string {
@@ -177,6 +184,7 @@ export default function ExceptionsTable({
   assignToOptions,
   onAssignToChange,
   priorityRdKeys,
+  readOnly = false,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -840,6 +848,7 @@ export default function ExceptionsTable({
             <select
               className="dq-row-status-select"
               value={row.status}
+              disabled={readOnly}
               onChange={(e) => {
                 const next = e.target.value;
                 // Guard: can't move a row into "Suppress" without a
@@ -878,6 +887,7 @@ export default function ExceptionsTable({
           >
             <SuppressDateCell
               initialValue={row.suppressDate}
+              readOnly={readOnly}
               onCommit={(next) => {
                 if (next !== row.suppressDate) {
                   onSuppressDateChange?.(row.exceptionId, next);
@@ -896,6 +906,7 @@ export default function ExceptionsTable({
             <select
               className="dq-assign-select"
               value={row.assignTo}
+              disabled={readOnly}
               onChange={(e) => {
                 const next = e.target.value;
                 if (next !== row.assignTo) {
@@ -945,6 +956,7 @@ export default function ExceptionsTable({
               >
                 <CommentsCell
                   initialValue={row.comments}
+                  readOnly={readOnly}
                   onCommit={(next) => {
                     if (next !== row.comments) {
                       onCommentsChange?.(row.exceptionId, next);
@@ -1164,9 +1176,11 @@ export default function ExceptionsTable({
 function CommentsCell({
   initialValue,
   onCommit,
+  readOnly = false,
 }: {
   initialValue: string;
   onCommit: (next: string) => void;
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState<string>(initialValue);
   useEffect(() => {
@@ -1179,8 +1193,11 @@ function CommentsCell({
       value={draft}
       maxLength={2048}
       title={draft}
+      readOnly={readOnly}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => onCommit(draft)}
+      onBlur={() => {
+        if (!readOnly) onCommit(draft);
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -1203,9 +1220,11 @@ function CommentsCell({
 function SuppressDateCell({
   initialValue,
   onCommit,
+  readOnly = false,
 }: {
   initialValue: string;
   onCommit: (next: string) => void;
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState<string>(initialValue);
   useEffect(() => {
@@ -1233,12 +1252,15 @@ function SuppressDateCell({
       value={draft}
       min={minDate}
       max={maxDate}
+      disabled={readOnly}
       onChange={(e) => {
+        if (readOnly) return;
         const next = e.target.value;
         setDraft(next);
         if (withinRange(next) && next !== initialValue) onCommit(next);
       }}
       onBlur={() => {
+        if (readOnly) return;
         if (!withinRange(draft)) {
           setDraft(initialValue);
           return;
