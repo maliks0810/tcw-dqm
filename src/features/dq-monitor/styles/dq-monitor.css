@@ -618,6 +618,237 @@
   white-space: pre;
 }
 
+/* Bulk processing panel: card that opens between the Exceptions
+   section header (status filter etc.) and the ExceptionsTable when
+   the user clicks Bulk Assign. Same white card / gray border /
+   rounded-corner styling as the LHS sidebar so it reads as a peer
+   surface, not a modal. */
+.dq-bulk-panel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 4px 0 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+.dq-bulk-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dq-bulk-panel-title {
+  /* Match the Exceptions section title (.dq-section-title +
+     .dq-section-title-bold): 12px / 700 / #111827. */
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+.dq-bulk-panel-close {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #4b5563;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dq-bulk-panel-close:hover {
+  background: #eef2ff;
+  color: #1d4ed8;
+  border-color: #9ca3af;
+}
+.dq-bulk-panel-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dq-bulk-panel-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #111827;
+}
+.dq-bulk-panel-label {
+  font-weight: 700;
+}
+.dq-bulk-panel-select {
+  min-width: 200px;
+  max-width: 320px;
+  height: 28px;
+  padding: 2px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 12px;
+}
+
+/* Is Permanent checkbox that sits just left of the Assign button.
+   Inline so the label + box read as a single control; matches the
+   panel's 12px body font. When ticked, the backend writes
+   RULE.ASSIGN_TO_ID directly instead of a soft RULE_ASSIGN_OVERRIDE. */
+.dq-bulk-panel-permanent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+  user-select: none;
+}
+.dq-bulk-panel-permanent input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Assign submit button next to the User dropdown. Mirrors the top-row
+   .dq-export-btn styling (grey pill, dark text, 1px border) so it
+   reads as the same UI element family as View by Security / Export
+   to Excel. Kept a hair shorter (28px vs 36px) because it lives inside
+   the Bulk Assign side panel where vertical space is tighter. */
+.dq-bulk-panel-assign-btn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid #9ca3af;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dq-bulk-panel-assign-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+.dq-bulk-panel-assign-btn:disabled {
+  background: #d1d5db;
+  border-color: #d1d5db;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+/* Inline status message next to the Assign button. Neutral color so it
+   works for both success and error surfaces; the text itself carries
+   the outcome. aria-live=polite keeps SR users informed. */
+.dq-bulk-panel-message {
+  font-size: 12px;
+  color: #111827;
+  padding-left: 4px;
+}
+
+/* Multi-select rule combo inside the Bulk Assign panel. Same shape as
+   .dq-status-combo (trigger button + absolute popover with a checkbox
+   list) but wider so long rule names fit. */
+.dq-bulk-rule-combo {
+  position: relative;
+  min-width: 280px;
+  max-width: 520px;
+}
+.dq-bulk-rule-combo-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 2px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.dq-bulk-rule-combo-trigger:hover:not(:disabled) {
+  border-color: #9ca3af;
+}
+.dq-bulk-rule-combo-trigger:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+.dq-bulk-rule-combo-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dq-bulk-rule-combo-caret {
+  color: #6b7280;
+  font-size: 10px;
+  margin-left: 4px;
+}
+.dq-bulk-rule-combo-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+}
+.dq-bulk-rule-combo-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  flex: none;
+}
+.dq-bulk-rule-combo-action {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.dq-bulk-rule-combo-action:hover {
+  background: #eef2ff;
+  border-color: #9ca3af;
+}
+.dq-bulk-rule-combo-list {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.dq-bulk-rule-combo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+}
+.dq-bulk-rule-combo-item:hover {
+  background: #fef3c7;
+}
+.dq-bulk-rule-combo-check {
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1f2937;
+}
+
 /* Clickable count-panel row — mirrors the tree-view drill-down. Pointer
    cursor + hover tint make the affordance obvious. Focus outline for
    keyboard users (Enter/Space activate). */
@@ -1187,6 +1418,17 @@
 }
 
 .dq-table-row-complete td {
+  background: #dcfce7;
+}
+
+/* Widget cells on a completed row inherit the row's green swatch so
+   inputs/selects don't punch white holes through the coloring. Includes
+   the Status / Assign To dropdowns and the Comments + Suppress Date
+   inputs. Focus keeps the same green so editing doesn't flash white. */
+.dq-table-row-complete .dq-row-status-select,
+.dq-table-row-complete .dq-assign-select,
+.dq-table-row-complete .dq-row-comments-input,
+.dq-table-row-complete .dq-row-suppress-date-input {
   background: #dcfce7;
 }
 

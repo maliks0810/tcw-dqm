@@ -6,6 +6,8 @@ type HeaderProps = {
   onExportClick?: () => void;
   modeToggleLabel?: string;
   onModeToggleClick?: () => void;
+  onBulkAssignClick?: () => void;
+  bulkAssignLabel?: string;
   breakdown?: React.ReactNode;
   breakdownLeftOffset?: number;
 };
@@ -14,6 +16,8 @@ export default function Header({
   onExportClick,
   modeToggleLabel,
   onModeToggleClick,
+  onBulkAssignClick,
+  bulkAssignLabel,
   breakdown,
   breakdownLeftOffset,
 }: HeaderProps = {}) {
@@ -65,6 +69,15 @@ export default function Header({
       )}
 
       <div className="dq-header-right">
+        {onBulkAssignClick && (
+          <button
+            className="dq-export-btn"
+            type="button"
+            onClick={onBulkAssignClick}
+          >
+            {bulkAssignLabel ?? "Bulk Assign"}
+          </button>
+        )}
         {modeToggleLabel && onModeToggleClick && (
           <button
             className="dq-export-btn"

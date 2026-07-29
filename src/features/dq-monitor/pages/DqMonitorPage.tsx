@@ -28,6 +28,7 @@ import { updateExceptionStatus } from "../services/update-exception-status";
 import { updateExceptionComments } from "../services/update-exception-comments";
 import { updateExceptionSuppressDate } from "../services/update-exception-suppress-date";
 import { updateExceptionAssignTo } from "../services/update-exception-assign-to";
+import { updateBulkAssign } from "../services/update-bulk-assign";
 import "../styles/dq-monitor.css";
 
 // Render an ISO YYYY-MM-DD as MM/DD/YYYY for the "DQM Date" dropdown.
@@ -289,6 +290,27 @@ export default function DqMonitorPage() {
   const [ruleQuery, setRuleQuery] = useState<string>("");
   const [ruleComboOpen, setRuleComboOpen] = useState<boolean>(false);
   const ruleComboRef = useRef<HTMLDivElement | null>(null);
+
+  // Bulk processing panel state. Panel opens when the user clicks Bulk
+  // Assign (only visible under viewByGroup === "Security Master" and
+  // viewMode !== "security"); the rule dropdown is multi-select via a
+  // checkbox combo (same pattern as .dq-status-combo above).
+  const [bulkPanelOpen, setBulkPanelOpen] = useState<boolean>(false);
+  const [bulkSelectedRules, setBulkSelectedRules] = useState<Set<string>>(
+    () => new Set<string>()
+  );
+  const [bulkRuleComboOpen, setBulkRuleComboOpen] = useState<boolean>(false);
+  const bulkRuleComboRef = useRef<HTMLDivElement | null>(null);
+  // Second Bulk Assign dropdown: DM_USER pick. Single-select — reuses
+  // dmUserOptions already fetched for the per-row Assign To cell.
+  const [bulkSelectedUser, setBulkSelectedUser] = useState<string>("");
+  // Is Permanent (checkbox next to Assign). When true the backend
+  // writes RULE.ASSIGN_TO_ID directly instead of RULE_ASSIGN_OVERRIDE,
+  // so the change becomes the rule's default assignee rather than a
+  // soft override.
+  const [bulkIsPermanent, setBulkIsPermanent] = useState<boolean>(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
+  const [bulkMessage, setBulkMessage] = useState<string>("");
 
   // Ask once for OS-level notification permission so SSE events can also
   // surface in the Windows Action Center, not just the footer.
@@ -904,6 +926,70 @@ export default function DqMonitorPage() {
       .map((s) => ({ status: s, count: counts.get(s) ?? 0 }));
   }, [showStatusPanel, exceptions, exceptionStatusOptions]);
 
+  // Bulk Assign is only meaningful inside the Security Master group and
+  // in the exception view (not the "View by Security" grid). Any other
+  // group / mode hides the button and forces the panel closed.
+  const showBulkAssign =
+    viewByGroup === "Security Master" && viewMode !== "security";
+  useEffect(() => {
+    if (!showBulkAssign && bulkPanelOpen) setBulkPanelOpen(false);
+  }, [showBulkAssign, bulkPanelOpen]);
+
+  // Rule dropdown options for the Bulk processing panel. Follows the
+  // tree selection:
+  //   - a specific rule selected     → just that rule
+  //   - a catalog selected (no rule) → every rule under that catalog
+  //   - only the group selected      → every rule across every catalog
+  //                                    in Security Master
+  // ruleCatalogByRuleName is populated by the effect below (originally
+  // used for the count panel) and covers the group-only case.
+  const bulkRuleOptions = useMemo<string[]>(() => {
+    if (!showBulkAssign) return [];
+    if (viewByRule && viewByRule !== "All") return [viewByRule];
+    if (viewByRuleCatalog && viewByRuleCatalog !== "All") return ruleOptions;
+    return Object.keys(ruleCatalogByRuleName).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [
+    showBulkAssign,
+    viewByRule,
+    viewByRuleCatalog,
+    ruleOptions,
+    ruleCatalogByRuleName,
+  ]);
+  // Drop any previously-selected rules that no longer appear in the
+  // current option list (e.g. tree selection changed to a narrower
+  // catalog / rule). Preserves the user's other selections.
+  useEffect(() => {
+    setBulkSelectedRules((prev) => {
+      const allowed = new Set(bulkRuleOptions);
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((r) => {
+        if (allowed.has(r)) next.add(r);
+        else changed = true;
+      });
+      if (!changed) return prev;
+      return next;
+    });
+  }, [bulkRuleOptions]);
+
+  // Close the rule combo popover on outside-click. Same pattern as the
+  // Status filter combo above (see statusComboRef).
+  useEffect(() => {
+    if (!bulkRuleComboOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        bulkRuleComboRef.current &&
+        !bulkRuleComboRef.current.contains(e.target as Node)
+      ) {
+        setBulkRuleComboOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [bulkRuleComboOpen]);
+
   // Tree-selection actions extracted here so both the RuleTreeView and
   // the "Number of Exceptions" panel below invoke the same state
   // transitions. Clicking a row in the count panel needs to behave
@@ -1085,12 +1171,17 @@ export default function DqMonitorPage() {
             ? exportAssetsToExcel(visibleAssets)
             : exportExceptionsToExcel(visibleExceptions)
         }
-        // DATA QUALITY MONITOR (left) + View by Security toggle + Export
-        // to Excel (right) all share the top row. Status breakdown, when
-        // present, drops into a middle column left-aligned with the
-        // Exceptions grid — breakdownLeftOffset matches the sidebar's
-        // outer width (sidebar + gap + resizer + gap) so it lines up
-        // with the grid regardless of collapse / user resize.
+        onBulkAssignClick={
+          showBulkAssign ? () => setBulkPanelOpen((v) => !v) : undefined
+        }
+        bulkAssignLabel={bulkPanelOpen ? "Hide Bulk Assign" : "Bulk Assign"}
+        // DATA QUALITY MONITOR (left) + Bulk Assign + View by Security
+        // toggle + Export to Excel (right) all share the top row.
+        // Status breakdown, when present, drops into a middle column
+        // left-aligned with the Exceptions grid — breakdownLeftOffset
+        // matches the sidebar's outer width (sidebar + gap + resizer +
+        // gap) so it lines up with the grid regardless of collapse /
+        // user resize.
         modeToggleLabel={
           viewByGroup === "Security Master"
             ? viewMode === "security"
@@ -1768,6 +1859,210 @@ export default function DqMonitorPage() {
                         );
                       })}
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {bulkPanelOpen && showBulkAssign && (
+              <div className="dq-bulk-panel">
+                <div className="dq-bulk-panel-header">
+                  <h3 className="dq-bulk-panel-title">Bulk Assign</h3>
+                  <button
+                    type="button"
+                    className="dq-bulk-panel-close"
+                    onClick={() => setBulkPanelOpen(false)}
+                    aria-label="Close bulk processing panel"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="dq-bulk-panel-body">
+                  <div className="dq-bulk-panel-field">
+                    <span
+                      className="dq-bulk-panel-label"
+                      id="dq-bulk-rule-combo-label"
+                    >
+                      Rules:
+                    </span>
+                    <div
+                      className="dq-bulk-rule-combo"
+                      ref={bulkRuleComboRef}
+                    >
+                      <button
+                        type="button"
+                        className="dq-bulk-rule-combo-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded={bulkRuleComboOpen}
+                        aria-labelledby="dq-bulk-rule-combo-label"
+                        disabled={bulkRuleOptions.length === 0}
+                        onClick={() => setBulkRuleComboOpen((v) => !v)}
+                      >
+                        <span className="dq-bulk-rule-combo-summary">
+                          {bulkRuleOptions.length === 0
+                            ? "No rules available"
+                            : bulkSelectedRules.size === 0
+                            ? "None"
+                            : bulkSelectedRules.size === 1
+                            ? Array.from(bulkSelectedRules)[0]
+                            : `${bulkSelectedRules.size} rules selected`}
+                        </span>
+                        <span className="dq-bulk-rule-combo-caret">▾</span>
+                      </button>
+                      {bulkRuleComboOpen && bulkRuleOptions.length > 0 && (
+                        <div
+                          className="dq-bulk-rule-combo-popover"
+                          role="group"
+                          aria-labelledby="dq-bulk-rule-combo-label"
+                        >
+                          <div className="dq-bulk-rule-combo-actions">
+                            <button
+                              type="button"
+                              className="dq-bulk-rule-combo-action"
+                              onClick={() =>
+                                setBulkSelectedRules(
+                                  new Set(bulkRuleOptions)
+                                )
+                              }
+                            >
+                              Select all
+                            </button>
+                            <button
+                              type="button"
+                              className="dq-bulk-rule-combo-action"
+                              onClick={() =>
+                                setBulkSelectedRules(new Set())
+                              }
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          <div className="dq-bulk-rule-combo-list">
+                            {bulkRuleOptions.map((rule) => {
+                              const checked = bulkSelectedRules.has(rule);
+                              return (
+                                <label
+                                  key={rule}
+                                  className="dq-bulk-rule-combo-item"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="dq-bulk-rule-combo-check"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setBulkSelectedRules((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(rule)) next.delete(rule);
+                                        else next.add(rule);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                  <span>{rule}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="dq-bulk-panel-field">
+                    <label
+                      className="dq-bulk-panel-label"
+                      htmlFor="dq-bulk-user-select"
+                    >
+                      Assign to:
+                    </label>
+                    <select
+                      id="dq-bulk-user-select"
+                      className="dq-bulk-panel-select"
+                      value={bulkSelectedUser}
+                      onChange={(e) => setBulkSelectedUser(e.target.value)}
+                    >
+                      <option value="">Select user…</option>
+                      {dmUserOptions
+                        // Backend getDMUsers returns a literal
+                        // "Unassigned" entry; mirror the ExceptionsTable
+                        // per-row select which also filters it out — the
+                        // Bulk Assign flow always resolves to a real user.
+                        .filter(
+                          (u) => u.trim().toLowerCase() !== "unassigned"
+                        )
+                        .map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <label
+                    className="dq-bulk-panel-permanent"
+                    htmlFor="dq-bulk-is-permanent"
+                  >
+                    <input
+                      id="dq-bulk-is-permanent"
+                      type="checkbox"
+                      checked={bulkIsPermanent}
+                      onChange={(e) => setBulkIsPermanent(e.target.checked)}
+                    />
+                    Is Permanent
+                  </label>
+                  <button
+                    type="button"
+                    className="dq-bulk-panel-assign-btn"
+                    disabled={
+                      bulkSubmitting ||
+                      bulkSelectedRules.size === 0 ||
+                      bulkSelectedUser === ""
+                    }
+                    onClick={() => {
+                      if (
+                        bulkSubmitting ||
+                        bulkSelectedRules.size === 0 ||
+                        bulkSelectedUser === ""
+                      ) {
+                        return;
+                      }
+                      const rules = Array.from(bulkSelectedRules);
+                      const isPermanent = bulkIsPermanent;
+                      setBulkSubmitting(true);
+                      setBulkMessage("");
+                      updateBulkAssign(rules, bulkSelectedUser, isPermanent)
+                        .then((updated) => {
+                          setBulkMessage(
+                            `${
+                              isPermanent ? "Permanently assigned" : "Assigned"
+                            } ${rules.length} rule${
+                              rules.length === 1 ? "" : "s"
+                            } to ${bulkSelectedUser} (${updated} exception${
+                              updated === 1 ? "" : "s"
+                            } updated).`
+                          );
+                          setBulkSelectedRules(new Set());
+                          setBulkSelectedUser("");
+                          setBulkIsPermanent(false);
+                          setRefreshTick((n) => n + 1);
+                        })
+                        .catch((err: unknown) => {
+                          const msg =
+                            err instanceof Error ? err.message : "unknown error";
+                          setBulkMessage(`Bulk assign failed: ${msg}`);
+                        })
+                        .finally(() => setBulkSubmitting(false));
+                    }}
+                  >
+                    {bulkSubmitting ? "Assigning…" : "Assign"}
+                  </button>
+                  {bulkMessage && (
+                    <span
+                      className="dq-bulk-panel-message"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {bulkMessage}
+                    </span>
                   )}
                 </div>
               </div>
