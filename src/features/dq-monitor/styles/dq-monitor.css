@@ -685,6 +685,59 @@
 .dq-bulk-panel-label {
   font-weight: 700;
 }
+
+/* Stacked variant used by the Bulk Status panel. Fields stack one per
+   row (flex-direction: column) and every label is forced to the same
+   fixed-width column via min-width, so every control (Rules combo,
+   Status select, Comments input, Update Status button) starts at the
+   same X position — the Rules dropdown and the Comments text box read
+   as vertically aligned. Bulk Assign keeps its single-row layout. */
+.dq-bulk-panel-body--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: 8px;
+}
+.dq-bulk-panel-body--stacked .dq-bulk-panel-field {
+  display: flex;
+  width: auto;
+}
+.dq-bulk-panel-body--stacked .dq-bulk-panel-label {
+  min-width: 70px;
+  text-align: left;
+}
+.dq-bulk-panel-body--stacked .dq-bulk-panel-assign-btn {
+  /* Line the Update Status button up with the controls above, not the
+     labels — the label column ate 70px + 6px gap, so shift the button
+     by the same amount when it lives directly under a label-less row. */
+  margin-left: 76px;
+}
+
+/* Horizontal group inside the stacked body — lets Status and Suppress
+   Date share one row while Rules / Comments / Update Status keep their
+   own rows above and below. The group itself becomes one row-item so
+   its left edge stays aligned with the label column above; each child
+   field is a normal flex item (label + control) inside. */
+.dq-bulk-panel-inline-row {
+  display: flex;
+  align-items: center;
+  column-gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Suppress Date input inside the Bulk Status panel. Matches the grid
+   .dq-row-suppress-date-input footprint so the two feel like the same
+   widget rendered in two places. */
+.dq-bulk-panel-suppress-date {
+  width: 160px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  box-sizing: border-box;
+}
 .dq-bulk-panel-select {
   min-width: 200px;
   max-width: 320px;
@@ -695,6 +748,23 @@
   background: #ffffff;
   color: #111827;
   font-size: 12px;
+}
+
+/* Bulk Status comments box. Same 320px canvas as the Exceptions grid's
+   Comments column (see INITIAL_WIDTHS.comments in ExceptionsTable) so
+   the two feel like the same widget in two places. Rest of the styling
+   inherits from the sibling .dq-bulk-panel-select for a consistent
+   panel look. */
+.dq-bulk-panel-comments {
+  width: 320px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  box-sizing: border-box;
 }
 
 /* Is Permanent checkbox that sits just left of the Assign button.

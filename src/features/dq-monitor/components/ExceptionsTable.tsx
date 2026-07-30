@@ -239,6 +239,20 @@ export default function ExceptionsTable({
       ),
     [data]
   );
+  // Assign To rows can legitimately be blank (an unassigned exception),
+  // and blank is a common thing to filter on. Fold empties into a
+  // visible "Unassigned" sentinel here and translate the same way when
+  // applying the filter so the checkbox label matches the row value.
+  const ASSIGN_TO_UNASSIGNED = "Unassigned";
+  const assignToKey = (v: string) =>
+    v && v.trim() !== "" ? v : ASSIGN_TO_UNASSIGNED;
+  const allAssignTos = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => assignToKey(r.assignTo)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
   const allIdBbGlobals = useMemo(
     () =>
       Array.from(new Set(data.map((r) => r.idBbGlobal).filter(Boolean))).sort(
@@ -250,6 +264,7 @@ export default function ExceptionsTable({
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
+  const [assignToFilter, setAssignToFilter] = useColumnFilter(allAssignTos);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   // Per-RESULT_DATA-key filters keyed by the JSON key.
@@ -319,6 +334,8 @@ export default function ExceptionsTable({
         if (assetIdFilter && !assetIdFilter.has(row.aladdin)) return false;
         if (idBbGlobalFilter && !idBbGlobalFilter.has(row.idBbGlobal ?? ""))
           return false;
+        if (assignToFilter && !assignToFilter.has(assignToKey(row.assignTo)))
+          return false;
         for (const [k, f] of Object.entries(resultDataFilters)) {
           if (!f) continue;
           if (!f.has(formatCell(row.resultData?.[k]))) return false;
@@ -331,6 +348,7 @@ export default function ExceptionsTable({
       priorityFilter,
       assetIdFilter,
       idBbGlobalFilter,
+      assignToFilter,
       resultDataFilters,
     ]
   );
@@ -728,7 +746,14 @@ export default function ExceptionsTable({
       case "assignTo":
         return (
           <SortableTh key={key} {...commonThProps("assignTo")}>
-            Assign To
+            <ColumnFilterHeader
+              label="Assign To"
+              allValues={allAssignTos}
+              filter={assignToFilter}
+              onChange={setAssignToFilter}
+              isOpen={openFilterId === "assignTo"}
+              onToggle={(open) => setOpenFilterId(open ? "assignTo" : null)}
+            />
           </SortableTh>
         );
       case "comments":

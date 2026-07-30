@@ -29,6 +29,7 @@ import { updateExceptionComments } from "../services/update-exception-comments";
 import { updateExceptionSuppressDate } from "../services/update-exception-suppress-date";
 import { updateExceptionAssignTo } from "../services/update-exception-assign-to";
 import { updateBulkAssign } from "../services/update-bulk-assign";
+import { updateBulkStatus } from "../services/update-bulk-status";
 import "../styles/dq-monitor.css";
 
 // Render an ISO YYYY-MM-DD as MM/DD/YYYY for the "DQM Date" dropdown.
@@ -296,6 +297,30 @@ export default function DqMonitorPage() {
   // viewMode !== "security"); the rule dropdown is multi-select via a
   // checkbox combo (same pattern as .dq-status-combo above).
   const [bulkPanelOpen, setBulkPanelOpen] = useState<boolean>(false);
+  // Bulk Status is the sibling of Bulk Assign — same gating rules,
+  // same "toggle a panel via the header button" pattern. Same
+  // multi-select rule combo as Bulk Assign; single-select STATUS
+  // dropdown driven by exceptionStatusOptions; free-text COMMENTS
+  // sized to match the grid's Comments column; Update Status button.
+  const [bulkStatusPanelOpen, setBulkStatusPanelOpen] =
+    useState<boolean>(false);
+  const [bulkStatusSelectedRules, setBulkStatusSelectedRules] = useState<
+    Set<string>
+  >(() => new Set<string>());
+  const [bulkStatusRuleComboOpen, setBulkStatusRuleComboOpen] =
+    useState<boolean>(false);
+  const bulkStatusRuleComboRef = useRef<HTMLDivElement | null>(null);
+  const [bulkStatusSelected, setBulkStatusSelected] = useState<string>("");
+  // Suppress Date follows the exact same commit rules as the grid's
+  // SuppressDateCell (see ExceptionsTable): min = today, max = today
+  // + 2 years, empty means "leave the field alone" — bulk has no
+  // clear affordance, so an empty submit is a no-op on this column.
+  const [bulkStatusSuppressDate, setBulkStatusSuppressDate] =
+    useState<string>("");
+  const [bulkStatusComments, setBulkStatusComments] = useState<string>("");
+  const [bulkStatusSubmitting, setBulkStatusSubmitting] =
+    useState<boolean>(false);
+  const [bulkStatusMessage, setBulkStatusMessage] = useState<string>("");
   const [bulkSelectedRules, setBulkSelectedRules] = useState<Set<string>>(
     () => new Set<string>()
   );
@@ -323,15 +348,18 @@ export default function DqMonitorPage() {
     }
   }, []);
 
-  // View by Security is only meaningful inside the Security Master rule
-  // group. If the user navigates away (picks a different group / catalog
-  // / rule), force the RHS back to the exceptions view so the header
-  // toggle can disappear cleanly.
+  // View by Security is only meaningful inside the Security Master or
+  // Security Master Benchmark rule groups. If the user navigates away
+  // (picks a different group / catalog / rule), force the RHS back to
+  // the exceptions view so the header toggle can disappear cleanly.
+  const viewBySecurityAllowedGroup =
+    viewByGroup === "Security Master" ||
+    viewByGroup === "Security Master Benchmark";
   useEffect(() => {
-    if (viewByGroup !== "Security Master" && viewMode === "security") {
+    if (!viewBySecurityAllowedGroup && viewMode === "security") {
       setViewMode("rule");
     }
-  }, [viewByGroup, viewMode]);
+  }, [viewBySecurityAllowedGroup, viewMode]);
 
   const selectedAladdinId =
     selectedRow !== null ? assets[selectedRow]?.aladdinId ?? "" : "";
@@ -926,19 +954,23 @@ export default function DqMonitorPage() {
       .map((s) => ({ status: s, count: counts.get(s) ?? 0 }));
   }, [showStatusPanel, exceptions, exceptionStatusOptions]);
 
-  // Bulk Assign is only meaningful inside the Security Master group,
-  // in the exception view (not the "View by Security" grid), AND
-  // against the current-day EXCEPTION table — historical EXCEPTION_HIST
-  // days must stay read-only (see ExceptionsTable readOnly wiring).
-  // Any other group / mode / historical-date hides the button and
-  // forces the panel closed.
+  // Bulk Assign is meaningful inside the Security Master or Security
+  // Master Benchmark rule groups, in the exception view (not the
+  // "View by Security" grid), AND against the current-day EXCEPTION
+  // table — historical EXCEPTION_HIST days must stay read-only (see
+  // ExceptionsTable readOnly wiring). Any other group / mode /
+  // historical-date hides the button and forces the panel closed.
   const showBulkAssign =
-    viewByGroup === "Security Master" &&
+    (viewByGroup === "Security Master" ||
+      viewByGroup === "Security Master Benchmark") &&
     viewMode !== "security" &&
     dqmDate === "";
   useEffect(() => {
     if (!showBulkAssign && bulkPanelOpen) setBulkPanelOpen(false);
   }, [showBulkAssign, bulkPanelOpen]);
+  useEffect(() => {
+    if (!showBulkAssign && bulkStatusPanelOpen) setBulkStatusPanelOpen(false);
+  }, [showBulkAssign, bulkStatusPanelOpen]);
 
   // Rule dropdown options for the Bulk processing panel. Follows the
   // tree selection:
@@ -994,6 +1026,38 @@ export default function DqMonitorPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [bulkRuleComboOpen]);
+
+  // Sibling outside-click handler for the Bulk Status rule combo.
+  useEffect(() => {
+    if (!bulkStatusRuleComboOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        bulkStatusRuleComboRef.current &&
+        !bulkStatusRuleComboRef.current.contains(e.target as Node)
+      ) {
+        setBulkStatusRuleComboOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [bulkStatusRuleComboOpen]);
+
+  // Drop any Bulk Status rule selections that fall out of scope when
+  // the tree selection narrows. Mirrors the equivalent effect for
+  // Bulk Assign a few lines below its bulkRuleOptions memo.
+  useEffect(() => {
+    setBulkStatusSelectedRules((prev) => {
+      const allowed = new Set(bulkRuleOptions);
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((r) => {
+        if (allowed.has(r)) next.add(r);
+        else changed = true;
+      });
+      if (!changed) return prev;
+      return next;
+    });
+  }, [bulkRuleOptions]);
 
   // Tree-selection actions extracted here so both the RuleTreeView and
   // the "Number of Exceptions" panel below invoke the same state
@@ -1176,6 +1240,14 @@ export default function DqMonitorPage() {
             ? exportAssetsToExcel(visibleAssets)
             : exportExceptionsToExcel(visibleExceptions)
         }
+        onBulkStatusClick={
+          showBulkAssign
+            ? () => setBulkStatusPanelOpen((v) => !v)
+            : undefined
+        }
+        bulkStatusLabel={
+          bulkStatusPanelOpen ? "Hide Bulk Status" : "Bulk Status"
+        }
         onBulkAssignClick={
           showBulkAssign ? () => setBulkPanelOpen((v) => !v) : undefined
         }
@@ -1188,7 +1260,7 @@ export default function DqMonitorPage() {
         // gap) so it lines up with the grid regardless of collapse /
         // user resize.
         modeToggleLabel={
-          viewByGroup === "Security Master"
+          viewBySecurityAllowedGroup
             ? viewMode === "security"
               ? "View Exceptions"
               : "View by Security"
@@ -2067,6 +2139,292 @@ export default function DqMonitorPage() {
                       aria-live="polite"
                     >
                       {bulkMessage}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {bulkStatusPanelOpen && showBulkAssign && (
+              <div className="dq-bulk-panel">
+                <div className="dq-bulk-panel-header">
+                  <h3 className="dq-bulk-panel-title">Bulk Status</h3>
+                  <button
+                    type="button"
+                    className="dq-bulk-panel-close"
+                    onClick={() => setBulkStatusPanelOpen(false)}
+                    aria-label="Close bulk status panel"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="dq-bulk-panel-body dq-bulk-panel-body--stacked">
+                  <div className="dq-bulk-panel-field">
+                    <span
+                      className="dq-bulk-panel-label"
+                      id="dq-bulk-status-rule-combo-label"
+                    >
+                      Rules:
+                    </span>
+                    <div
+                      className="dq-bulk-rule-combo"
+                      ref={bulkStatusRuleComboRef}
+                    >
+                      <button
+                        type="button"
+                        className="dq-bulk-rule-combo-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded={bulkStatusRuleComboOpen}
+                        aria-labelledby="dq-bulk-status-rule-combo-label"
+                        disabled={bulkRuleOptions.length === 0}
+                        onClick={() => setBulkStatusRuleComboOpen((v) => !v)}
+                      >
+                        <span className="dq-bulk-rule-combo-summary">
+                          {bulkRuleOptions.length === 0
+                            ? "No rules available"
+                            : bulkStatusSelectedRules.size === 0
+                            ? "None"
+                            : bulkStatusSelectedRules.size === 1
+                            ? Array.from(bulkStatusSelectedRules)[0]
+                            : `${bulkStatusSelectedRules.size} rules selected`}
+                        </span>
+                        <span className="dq-bulk-rule-combo-caret">▾</span>
+                      </button>
+                      {bulkStatusRuleComboOpen &&
+                        bulkRuleOptions.length > 0 && (
+                          <div
+                            className="dq-bulk-rule-combo-popover"
+                            role="group"
+                            aria-labelledby="dq-bulk-status-rule-combo-label"
+                          >
+                            <div className="dq-bulk-rule-combo-actions">
+                              <button
+                                type="button"
+                                className="dq-bulk-rule-combo-action"
+                                onClick={() =>
+                                  setBulkStatusSelectedRules(
+                                    new Set(bulkRuleOptions)
+                                  )
+                                }
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                className="dq-bulk-rule-combo-action"
+                                onClick={() =>
+                                  setBulkStatusSelectedRules(new Set())
+                                }
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div className="dq-bulk-rule-combo-list">
+                              {bulkRuleOptions.map((rule) => {
+                                const checked =
+                                  bulkStatusSelectedRules.has(rule);
+                                return (
+                                  <label
+                                    key={rule}
+                                    className="dq-bulk-rule-combo-item"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="dq-bulk-rule-combo-check"
+                                      checked={checked}
+                                      onChange={() => {
+                                        setBulkStatusSelectedRules((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(rule))
+                                            next.delete(rule);
+                                          else next.add(rule);
+                                          return next;
+                                        });
+                                      }}
+                                    />
+                                    <span>{rule}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                  {/* Status + Suppress Date share a row via
+                      .dq-bulk-panel-inline-row inside the stacked
+                      column layout — visually one horizontal group,
+                      structurally two flex items so labels + controls
+                      stay independent. */}
+                  <div className="dq-bulk-panel-inline-row">
+                    <div className="dq-bulk-panel-field">
+                      <label
+                        className="dq-bulk-panel-label"
+                        htmlFor="dq-bulk-status-select"
+                      >
+                        Status:
+                      </label>
+                      <select
+                        id="dq-bulk-status-select"
+                        className="dq-bulk-panel-select"
+                        value={bulkStatusSelected}
+                        onChange={(e) => setBulkStatusSelected(e.target.value)}
+                      >
+                        <option value="">Select status…</option>
+                        {exceptionStatusOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="dq-bulk-panel-field">
+                      <label
+                        className="dq-bulk-panel-label"
+                        htmlFor="dq-bulk-status-suppress-date"
+                      >
+                        Suppress Date:
+                      </label>
+                      {/* Same min/max rules as the grid's
+                          SuppressDateCell — today .. today+2 years —
+                          so the native picker greys out out-of-range
+                          dates identically. */}
+                      <input
+                        id="dq-bulk-status-suppress-date"
+                        type="date"
+                        className="dq-bulk-panel-suppress-date"
+                        value={bulkStatusSuppressDate}
+                        min={(() => {
+                          const t = new Date();
+                          return `${t.getFullYear()}-${String(
+                            t.getMonth() + 1
+                          ).padStart(2, "0")}-${String(t.getDate()).padStart(
+                            2,
+                            "0"
+                          )}`;
+                        })()}
+                        max={(() => {
+                          const t = new Date();
+                          t.setFullYear(t.getFullYear() + 2);
+                          return `${t.getFullYear()}-${String(
+                            t.getMonth() + 1
+                          ).padStart(2, "0")}-${String(t.getDate()).padStart(
+                            2,
+                            "0"
+                          )}`;
+                        })()}
+                        onChange={(e) =>
+                          setBulkStatusSuppressDate(e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="dq-bulk-panel-field">
+                    <label
+                      className="dq-bulk-panel-label"
+                      htmlFor="dq-bulk-status-comments"
+                    >
+                      Comments:
+                    </label>
+                    {/* Same 320px canvas as the Exceptions grid's
+                        Comments column (INITIAL_WIDTHS.comments in
+                        ExceptionsTable) so the two feel like the same
+                        widget rendered in two places. */}
+                    <input
+                      id="dq-bulk-status-comments"
+                      type="text"
+                      className="dq-bulk-panel-comments"
+                      maxLength={2048}
+                      value={bulkStatusComments}
+                      onChange={(e) => setBulkStatusComments(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="dq-bulk-panel-assign-btn"
+                    disabled={
+                      bulkStatusSubmitting ||
+                      bulkStatusSelectedRules.size === 0 ||
+                      bulkStatusSelected === "" ||
+                      // Mirror the per-row grid rule (see
+                      // ExceptionsTable status <select> onChange):
+                      // cannot move to Suppress without a date. Block
+                      // the button so the user notices the missing
+                      // input before clicking.
+                      (bulkStatusSelected === "Suppress" &&
+                        bulkStatusSuppressDate === "")
+                    }
+                    onClick={() => {
+                      if (
+                        bulkStatusSubmitting ||
+                        bulkStatusSelectedRules.size === 0 ||
+                        bulkStatusSelected === ""
+                      ) {
+                        return;
+                      }
+                      if (
+                        bulkStatusSelected === "Suppress" &&
+                        bulkStatusSuppressDate === ""
+                      ) {
+                        setBulkStatusMessage(
+                          "Please enter a Suppress Date before setting the status to Suppress."
+                        );
+                        return;
+                      }
+                      const rules = Array.from(bulkStatusSelectedRules);
+                      const status = bulkStatusSelected;
+                      // null (not "") when the field is blank so the
+                      // backend leaves existing comments untouched.
+                      // A user who wants to actively clear comments
+                      // has to enter something and clear it — Bulk
+                      // Status defaults to "don't touch."
+                      const comments =
+                        bulkStatusComments === ""
+                          ? null
+                          : bulkStatusComments;
+                      // Empty suppress-date string round-trips as "no
+                      // change" — the backend NULLIF('','')s it then
+                      // COALESCE'es to preserve the existing value.
+                      const suppressDate = bulkStatusSuppressDate;
+                      setBulkStatusSubmitting(true);
+                      setBulkStatusMessage("");
+                      updateBulkStatus(rules, status, comments, suppressDate)
+                        .then((updated) => {
+                          setBulkStatusMessage(
+                            `Set status "${status}" on ${rules.length} rule${
+                              rules.length === 1 ? "" : "s"
+                            } (${updated} exception${
+                              updated === 1 ? "" : "s"
+                            } updated).`
+                          );
+                          setBulkStatusSelectedRules(new Set());
+                          setBulkStatusSelected("");
+                          setBulkStatusSuppressDate("");
+                          setBulkStatusComments("");
+                          setRefreshTick((n) => n + 1);
+                        })
+                        .catch((err: unknown) => {
+                          const msg =
+                            err instanceof Error
+                              ? err.message
+                              : "unknown error";
+                          setBulkStatusMessage(
+                            `Bulk status update failed: ${msg}`
+                          );
+                        })
+                        .finally(() => setBulkStatusSubmitting(false));
+                    }}
+                  >
+                    {bulkStatusSubmitting ? "Updating…" : "Update Status"}
+                  </button>
+                  {bulkStatusMessage && (
+                    <span
+                      className="dq-bulk-panel-message"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {bulkStatusMessage}
                     </span>
                   )}
                 </div>
