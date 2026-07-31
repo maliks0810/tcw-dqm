@@ -8,11 +8,14 @@ export type RuleTreeSelection = {
 
 // Rule leaf shape: `name` is the identifier the tree passes back to the
 // parent (and the backend uses for queries / filters); `label` is what
-// the tree renders. label typically resolves to RULE_DESCRIPTION when
-// present, RULE_NAME otherwise — but that policy lives in the caller.
+// the tree renders — canonically RULE_NAME. `title`, when provided,
+// becomes the leaf's hover text (RULE_DESCRIPTION when non-empty).
+// Falls back to `label` for hover when omitted so leaves always show
+// something on hover instead of blank.
 export type RuleTreeRule = {
   name: string;
   label: string;
+  title?: string;
 };
 
 type Props = {
@@ -204,7 +207,7 @@ export default function RuleTreeView({
                             ? " dq-tree-node-selected"
                             : "")
                         }
-                        title={rule.label}
+                        title={rule.title ?? rule.label}
                         onClick={() =>
                           onSelectRule(group, type, rule.name, rule.label)
                         }

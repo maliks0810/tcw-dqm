@@ -750,6 +750,25 @@
   font-size: 12px;
 }
 
+/* "Clear Comments" checkbox that sits to the right of the Comments
+   text box in the Bulk Status panel. When ticked, the text box goes
+   disabled + blank and the submit sends an explicit empty string to
+   wipe COMMENTS on every matched row. */
+.dq-bulk-panel-clear-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+  user-select: none;
+}
+.dq-bulk-panel-clear-comments input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* Bulk Status comments box. Same 320px canvas as the Exceptions grid's
    Comments column (see INITIAL_WIDTHS.comments in ExceptionsTable) so
    the two feel like the same widget in two places. Rest of the styling

@@ -104,12 +104,12 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v5 bump: rd:* column order now mirrors the RESULT_DATA JSON key
-// order of the first row that carries a RESULT_DATA blob, so the grid
-// matches whatever order the SP emitted. Invalidates any v4 layout
-// that persisted an rd:* order derived from the old union-across-rows
-// scheme.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v5";
+// v6 bump: rd:RULE_NAME now canonically sits immediately after
+// Comments in every viewMode (not only group mode), and rd:ALADDIN_ID
+// is no longer force-promoted. Invalidates any v5 layout that
+// persisted the old rd:* order so users see the new position without
+// having to clear localStorage manually.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v6";
 
 // Keys that live in the fixed "left of the RESULT_DATA columns" section
 // of the Exceptions grid. Their canonical position is Status → Suppress

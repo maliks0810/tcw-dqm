@@ -32,6 +32,18 @@ import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
 import "../styles/dq-monitor.css";
 
+// Cap on how many EXCEPTION rows we render in the grid at once. Bigger
+// result sets short-circuit into the "refine your filters" hint so the
+// browser doesn't lock up rendering thousands of rows. Configured via
+// REACT_APP_EXCEPTION_LIMIT in the .env* files with a safe 5000
+// fallback for the pathological case where the env var is missing or
+// non-numeric — same default we ship in every env file.
+const EXCEPTION_LIMIT: number = (() => {
+  const raw = process.env.REACT_APP_EXCEPTION_LIMIT;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 5000;
+})();
+
 // Render an ISO YYYY-MM-DD as MM/DD/YYYY for the "DQM Date" dropdown.
 // Falls back to the raw string when it doesn't parse.
 function formatDqmDate(iso: string): string {
@@ -318,6 +330,11 @@ export default function DqMonitorPage() {
   const [bulkStatusSuppressDate, setBulkStatusSuppressDate] =
     useState<string>("");
   const [bulkStatusComments, setBulkStatusComments] = useState<string>("");
+  // "Clear Comments" checkbox — when true, submit sends comments=""
+  // regardless of the text-box value; when false + blank textbox,
+  // submit sends comments=null so existing comments stay intact.
+  const [bulkStatusClearComments, setBulkStatusClearComments] =
+    useState<boolean>(false);
   const [bulkStatusSubmitting, setBulkStatusSubmitting] =
     useState<boolean>(false);
   const [bulkStatusMessage, setBulkStatusMessage] = useState<string>("");
@@ -785,7 +802,7 @@ export default function DqMonitorPage() {
         );
     fetcher
       .then((rows) => {
-        if (rows.length > 2000) {
+        if (rows.length > EXCEPTION_LIMIT) {
           setExceptions([]);
           setExceptionsLimitExceeded(true);
         } else {
@@ -894,6 +911,16 @@ export default function DqMonitorPage() {
   const [ruleCatalogByRuleName, setRuleCatalogByRuleName] = useState<
     Record<string, string>
   >({});
+  // RULE_NAME → RULE_DESCRIPTION. Merged into (never replaced) as
+  // fetchRuleNames runs across the app — both the count-panel catalog
+  // effect below and the tree's getRules callback contribute. Powers
+  // the hover tooltip on the "Number of Exceptions" panel rows so the
+  // user sees the description for a rule without expanding the tree.
+  // Missing key → count-panel row falls back to showing the identifier
+  // as its own tooltip (matches the tree-leaf fallback).
+  const [ruleDescByName, setRuleDescByName] = useState<
+    Record<string, string>
+  >({});
   useEffect(() => {
     if (viewMode !== "group" || !viewByGroup || viewByGroup === "All") {
       setRuleCatalogByRuleName({});
@@ -904,15 +931,27 @@ export default function DqMonitorPage() {
       try {
         const types = await fetchRuleCatalogs(viewByGroup);
         const map: Record<string, string> = {};
+        const descMap: Record<string, string> = {};
         await Promise.all(
           types.map(async (typeName) => {
             const rules = await fetchRuleNames(typeName);
             for (const r of rules) {
-              if (r.rule_name) map[r.rule_name] = typeName;
+              if (r.rule_name) {
+                map[r.rule_name] = typeName;
+                const desc = (r.rule_description ?? "").trim();
+                if (desc !== "") descMap[r.rule_name] = desc;
+              }
             }
           })
         );
-        if (!cancelled) setRuleCatalogByRuleName(map);
+        if (!cancelled) {
+          setRuleCatalogByRuleName(map);
+          // Merge (don't replace) — the tree's getRules callback
+          // populates the same store from a different code path, and
+          // switching groups shouldn't wipe descriptions the user
+          // already has cached from a prior catalog fetch.
+          setRuleDescByName((prev) => ({ ...prev, ...descMap }));
+        }
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
         
@@ -1504,7 +1543,9 @@ export default function DqMonitorPage() {
                                 : undefined
                             }
                           >
-                            <td>{row.name}</td>
+                            <td title={ruleDescByName[row.name] ?? row.name}>
+                              {row.name}
+                            </td>
                             <td>{row.count}</td>
                           </tr>
                         );
@@ -1659,9 +1700,25 @@ export default function DqMonitorPage() {
             getTypes={(group) => fetchRuleCatalogs(group)}
             getRules={async (type) => {
               const rules = await fetchRuleNames(type);
+              // Piggyback: whenever the tree fetches rules for a
+              // catalog, capture their descriptions into
+              // ruleDescByName so the count-panel hover has data
+              // even for catalogs the group-mode effect above
+              // hasn't scanned (rule-mode / rule-catalog-mode).
+              const descMap: Record<string, string> = {};
+              for (const r of rules) {
+                const desc = (r.rule_description ?? "").trim();
+                if (r.rule_name && desc !== "") {
+                  descMap[r.rule_name] = desc;
+                }
+              }
+              if (Object.keys(descMap).length > 0) {
+                setRuleDescByName((prev) => ({ ...prev, ...descMap }));
+              }
               return rules.map((r) => ({
                 name: r.rule_name,
-                label: ruleDisplayLabel(r),
+                label: r.rule_name,
+                title: ruleDisplayLabel(r),
               }));
             }}
             selection={{
@@ -1872,7 +1929,7 @@ export default function DqMonitorPage() {
                 className="dq-section-subtitle"
                 style={{ color: "crimson", fontWeight: 700 }}
               >
-                More than 2000 exceptions — refine your filters
+                More than {EXCEPTION_LIMIT} exceptions — refine your filters
               </div>
             )}
 
@@ -2330,15 +2387,36 @@ export default function DqMonitorPage() {
                     {/* Same 320px canvas as the Exceptions grid's
                         Comments column (INITIAL_WIDTHS.comments in
                         ExceptionsTable) so the two feel like the same
-                        widget rendered in two places. */}
+                        widget rendered in two places. Disabled when
+                        "Clear Comments" is ticked — the text-box
+                        content is ignored in that mode; submit sends
+                        an explicit empty string to wipe COMMENTS on
+                        every matched row. */}
                     <input
                       id="dq-bulk-status-comments"
                       type="text"
                       className="dq-bulk-panel-comments"
                       maxLength={2048}
-                      value={bulkStatusComments}
+                      disabled={bulkStatusClearComments}
+                      value={
+                        bulkStatusClearComments ? "" : bulkStatusComments
+                      }
                       onChange={(e) => setBulkStatusComments(e.target.value)}
                     />
+                    <label
+                      className="dq-bulk-panel-clear-comments"
+                      htmlFor="dq-bulk-status-clear-comments"
+                    >
+                      <input
+                        id="dq-bulk-status-clear-comments"
+                        type="checkbox"
+                        checked={bulkStatusClearComments}
+                        onChange={(e) =>
+                          setBulkStatusClearComments(e.target.checked)
+                        }
+                      />
+                      Clear Comments
+                    </label>
                   </div>
                   <button
                     type="button"
@@ -2346,7 +2424,13 @@ export default function DqMonitorPage() {
                     disabled={
                       bulkStatusSubmitting ||
                       bulkStatusSelectedRules.size === 0 ||
-                      bulkStatusSelected === "" ||
+                      // Nothing to do: no status change AND no comment
+                      // change (blank textbox without Clear ticked).
+                      // Comment-only updates without status ARE
+                      // allowed; only both-blank is a no-op.
+                      (bulkStatusSelected === "" &&
+                        bulkStatusComments === "" &&
+                        !bulkStatusClearComments) ||
                       // Mirror the per-row grid rule (see
                       // ExceptionsTable status <select> onChange):
                       // cannot move to Suppress without a date. Block
@@ -2358,8 +2442,14 @@ export default function DqMonitorPage() {
                     onClick={() => {
                       if (
                         bulkStatusSubmitting ||
-                        bulkStatusSelectedRules.size === 0 ||
-                        bulkStatusSelected === ""
+                        bulkStatusSelectedRules.size === 0
+                      ) {
+                        return;
+                      }
+                      if (
+                        bulkStatusSelected === "" &&
+                        bulkStatusComments === "" &&
+                        !bulkStatusClearComments
                       ) {
                         return;
                       }
@@ -2374,13 +2464,18 @@ export default function DqMonitorPage() {
                       }
                       const rules = Array.from(bulkStatusSelectedRules);
                       const status = bulkStatusSelected;
-                      // null (not "") when the field is blank so the
-                      // backend leaves existing comments untouched.
-                      // A user who wants to actively clear comments
-                      // has to enter something and clear it — Bulk
-                      // Status defaults to "don't touch."
-                      const comments =
-                        bulkStatusComments === ""
+                      // Comment resolution:
+                      //   Clear ticked            → "" (backend wipes
+                      //                              COMMENTS on every
+                      //                              matched row)
+                      //   Clear off + blank text  → null (backend
+                      //                              leaves existing
+                      //                              COMMENTS alone)
+                      //   Clear off + typed text  → the typed value
+                      const comments: string | null =
+                        bulkStatusClearComments
+                          ? ""
+                          : bulkStatusComments === ""
                           ? null
                           : bulkStatusComments;
                       // Empty suppress-date string round-trips as "no
@@ -2391,8 +2486,24 @@ export default function DqMonitorPage() {
                       setBulkStatusMessage("");
                       updateBulkStatus(rules, status, comments, suppressDate)
                         .then((updated) => {
+                          // Describe exactly what changed — status,
+                          // comments, or both — rather than a fixed
+                          // "Set status …" phrase.
+                          const parts: string[] = [];
+                          if (status !== "") {
+                            parts.push(`set status "${status}"`);
+                          }
+                          if (bulkStatusClearComments) {
+                            parts.push("cleared comments");
+                          } else if (bulkStatusComments !== "") {
+                            parts.push("updated comments");
+                          }
+                          const desc =
+                            parts.length > 0
+                              ? parts.join(" and ")
+                              : "made no changes";
                           setBulkStatusMessage(
-                            `Set status "${status}" on ${rules.length} rule${
+                            `Bulk ${desc} on ${rules.length} rule${
                               rules.length === 1 ? "" : "s"
                             } (${updated} exception${
                               updated === 1 ? "" : "s"
@@ -2402,6 +2513,7 @@ export default function DqMonitorPage() {
                           setBulkStatusSelected("");
                           setBulkStatusSuppressDate("");
                           setBulkStatusComments("");
+                          setBulkStatusClearComments(false);
                           setRefreshTick((n) => n + 1);
                         })
                         .catch((err: unknown) => {
@@ -2416,7 +2528,9 @@ export default function DqMonitorPage() {
                         .finally(() => setBulkStatusSubmitting(false));
                     }}
                   >
-                    {bulkStatusSubmitting ? "Updating…" : "Update Status"}
+                    {bulkStatusSubmitting
+                      ? "Updating…"
+                      : "Update Status/Comments"}
                   </button>
                   {bulkStatusMessage && (
                     <span
@@ -2438,14 +2552,14 @@ export default function DqMonitorPage() {
                   : exceptions
               }
               showResultDataColumns={viewMode !== "security"}
-              // In group mode (e.g. Security Master selected) the grid
-              // spans catalogs whose RESULT_DATA differs; surface
-              // RULE_NAME + ALADDIN_ID right after Comments so mixed-
-              // catalog runs stay readable. Other modes keep the raw
-              // projection order.
-              priorityRdKeys={
-                viewMode === "group" ? ["RULE_NAME", "ALADDIN_ID"] : undefined
-              }
+              // RULE_NAME always sits immediately right of Comments,
+              // regardless of where it appears in the RESULT_DATA JSON
+              // key order — otherwise a rule-authored key order that
+              // buried RULE_NAME deep in the row makes the grid hard
+              // to scan. All other rd:* columns keep their natural
+              // JSON storage order (see canonicalKeys in
+              // ExceptionsTable).
+              priorityRdKeys={["RULE_NAME"]}
               // Any non-empty dqmDate means the grid is showing
               // EXCEPTION_HIST for a prior day. Historical rows must
               // stay read-only — mutating them would rewrite an
