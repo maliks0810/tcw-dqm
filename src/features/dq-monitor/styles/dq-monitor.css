@@ -1490,6 +1490,16 @@
   background: #fef3c7;
 }
 
+/* Widget cells inherit the row hover swatch so inputs / selects don't
+   punch white holes through the yellow row on hover. Same shape as the
+   .dq-table-row-complete widget overrides below. */
+.dq-table-row:hover .dq-row-status-select,
+.dq-table-row:hover .dq-assign-select,
+.dq-table-row:hover .dq-row-comments-input,
+.dq-table-row:hover .dq-row-suppress-date-input {
+  background: #fef3c7;
+}
+
 .dq-table-row-even {
   background: #ffffff;
 }
