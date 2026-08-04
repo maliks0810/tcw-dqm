@@ -886,6 +886,22 @@ export default function ExceptionsTable({
                   );
                   return;
                 }
+                // Guard: any transition away from "New" (Accept /
+                // Override / Hold / Suppress / Research / Challenge /
+                // …) must carry a comment. The Comments column already
+                // holds the row's stored comment; a blank value blocks
+                // the transition until the operator types one.
+                // Server-side SP_UPDATE_EXCEPTION_STATUS enforces the
+                // same rule as a safety net.
+                if (
+                  next !== "New" &&
+                  !(row.comments && row.comments.trim() !== "")
+                ) {
+                  setAlertMessage(
+                    `Please enter a comment before setting the status to ${next}.`
+                  );
+                  return;
+                }
                 onStatusChange?.(row.exceptionId, next);
               }}
             >

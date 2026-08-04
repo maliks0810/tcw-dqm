@@ -2437,7 +2437,18 @@ export default function DqMonitorPage() {
                       // the button so the user notices the missing
                       // input before clicking.
                       (bulkStatusSelected === "Suppress" &&
-                        bulkStatusSuppressDate === "")
+                        bulkStatusSuppressDate === "") ||
+                      // Any transition away from "New" (Accept /
+                      // Override / Hold / Suppress / Research /
+                      // Challenge / …) must carry a comment. The
+                      // typed comment counts; Clear-Comments (which
+                      // wipes existing comments) explicitly does not.
+                      // Server-side SP_UPDATE_BULK_STATUS enforces
+                      // the same rule.
+                      (bulkStatusSelected !== "" &&
+                        bulkStatusSelected !== "New" &&
+                        (bulkStatusClearComments ||
+                          bulkStatusComments.trim() === ""))
                     }
                     onClick={() => {
                       if (
@@ -2459,6 +2470,17 @@ export default function DqMonitorPage() {
                       ) {
                         setBulkStatusMessage(
                           "Please enter a Suppress Date before setting the status to Suppress."
+                        );
+                        return;
+                      }
+                      if (
+                        bulkStatusSelected !== "" &&
+                        bulkStatusSelected !== "New" &&
+                        (bulkStatusClearComments ||
+                          bulkStatusComments.trim() === "")
+                      ) {
+                        setBulkStatusMessage(
+                          `Please enter a comment before setting the status to ${bulkStatusSelected}.`
                         );
                         return;
                       }
