@@ -2480,7 +2480,7 @@ export default function DqMonitorPage() {
                           bulkStatusComments.trim() === "")
                       ) {
                         setBulkStatusMessage(
-                          `Please enter a comment before setting the status to ${bulkStatusSelected}.`
+                          "Please enter a comment before changing the status."
                         );
                         return;
                       }

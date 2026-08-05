@@ -1491,13 +1491,24 @@
 }
 
 /* Widget cells inherit the row hover swatch so inputs / selects don't
-   punch white holes through the yellow row on hover. Same shape as the
-   .dq-table-row-complete widget overrides below. */
+   punch white holes through the yellow row on hover. background-color
+   + !important is used (rather than the shorthand `background`) so
+   browser-default rendering on <select> / <input type="date"> can't
+   silently retain white — the shorthand override was insufficient in
+   Chrome and Edge. */
 .dq-table-row:hover .dq-row-status-select,
 .dq-table-row:hover .dq-assign-select,
 .dq-table-row:hover .dq-row-comments-input,
 .dq-table-row:hover .dq-row-suppress-date-input {
-  background: #fef3c7;
+  background-color: #fef3c7 !important;
+}
+/* <input type="date"> renders its own internal date-edit fields
+   (WebKit pseudo-elements) whose background sits on top of the input's
+   own background. Paint them explicitly so the whole cell shifts to
+   the hover swatch, not just the padding around the edit fields. */
+.dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit,
+.dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper {
+  background-color: #fef3c7 !important;
 }
 
 .dq-table-row-even {
@@ -1523,12 +1534,17 @@
 /* Widget cells on a completed row inherit the row's green swatch so
    inputs/selects don't punch white holes through the coloring. Includes
    the Status / Assign To dropdowns and the Comments + Suppress Date
-   inputs. Focus keeps the same green so editing doesn't flash white. */
+   inputs. Uses background-color + !important for the same reason as
+   the hover rule above (see .dq-table-row:hover widget rule). */
 .dq-table-row-complete .dq-row-status-select,
 .dq-table-row-complete .dq-assign-select,
 .dq-table-row-complete .dq-row-comments-input,
 .dq-table-row-complete .dq-row-suppress-date-input {
-  background: #dcfce7;
+  background-color: #dcfce7 !important;
+}
+.dq-table-row-complete .dq-row-suppress-date-input::-webkit-datetime-edit,
+.dq-table-row-complete .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper {
+  background-color: #dcfce7 !important;
 }
 
 .dq-table-row-high td {
