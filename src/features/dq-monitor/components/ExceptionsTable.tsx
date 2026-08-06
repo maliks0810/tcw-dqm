@@ -99,6 +99,17 @@ function getActionClass(action: string): string {
   }
 }
 
+// Formats an ISO date (YYYY-MM-DD, or a full RFC3339 timestamp) as
+// MM/DD/YYYY for grid display. Empty / malformed input returns "" so
+// blank cells stay blank instead of showing "//".
+function formatMdyDate(s: string): string {
+  if (!s) return "";
+  const iso = s.length >= 10 ? s.slice(0, 10) : s;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return "";
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
+
 function formatCell(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "string") return v;
@@ -113,12 +124,13 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v7 bump: canonicalKeys now optionally appends openDate + closeDate
-// at the far right when the parent passes showLifecycleColumns
-// (Security-Master-family rule groups). Invalidates any v6 layout so
-// the new columns land in the right slot rather than being appended
-// by the reconciler after a stale rd:* tail.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v7";
+// v8 bump: openDate + closeDate are now treated as "trailing statics"
+// via TRAILING_COLUMN_KEYS — pinStaticsToCanonicalOrder always shoves
+// them to the tail regardless of persisted or drag-reordered position,
+// mirroring how STATIC_COLUMN_KEYS pins Status/SuppressDate/AssignTo/
+// Comments to the head. Invalidates any v7 layout that might have
+// slotted them mid-grid.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v8";
 
 // Keys that live in the fixed "left of the RESULT_DATA columns" section
 // of the Exceptions grid. Their canonical position is Status → Suppress
@@ -132,25 +144,40 @@ const STATIC_COLUMN_KEYS = new Set([
   "comments",
 ]);
 
+// Lifecycle-date columns are conceptually "trailing statics" — they
+// belong at the far right of the grid whenever present, so drag-
+// reorder or a stale persisted layout can't slot them mid-grid.
+const TRAILING_COLUMN_KEYS = new Set(["openDate", "closeDate"]);
+
 // Rewrites `order` so that whichever static columns appear in it are
-// emitted first, in the exact position they hold in `canonical`. All
-// non-static keys retain their prior order and land after the static
-// block. This lets users freely drag RESULT_DATA columns around while
-// preventing a stale persisted state from ever shoving Comments (or
-// any other static) into the leading column.
+// emitted first (in the exact position they hold in `canonical`), the
+// non-static/non-trailing keys retain their prior order in the middle,
+// and any trailing keys land at the tail (also in `canonical` order).
+// This lets users freely drag RESULT_DATA columns around while
+// preventing a stale persisted state from ever shoving Comments to the
+// leading column or Open/Close Date into the middle.
 function pinStaticsToCanonicalOrder(
   order: string[],
   canonical: string[]
 ): string[] {
   const canonicalStatics = canonical.filter((k) => STATIC_COLUMN_KEYS.has(k));
+  const canonicalTrailing = canonical.filter((k) =>
+    TRAILING_COLUMN_KEYS.has(k)
+  );
   const seen = new Set<string>();
-  const nonStatics: string[] = [];
+  const middle: string[] = [];
   for (const k of order) {
-    if (STATIC_COLUMN_KEYS.has(k) || seen.has(k)) continue;
+    if (
+      STATIC_COLUMN_KEYS.has(k) ||
+      TRAILING_COLUMN_KEYS.has(k) ||
+      seen.has(k)
+    ) {
+      continue;
+    }
     seen.add(k);
-    nonStatics.push(k);
+    middle.push(k);
   }
-  return [...canonicalStatics, ...nonStatics];
+  return [...canonicalStatics, ...middle, ...canonicalTrailing];
 }
 
 // Seed widths for the three widget-cell columns so their content has
@@ -1177,7 +1204,7 @@ export default function ExceptionsTable({
             className={tdPinnedClass("openDate").trim()}
             style={tdPinnedStyle("openDate")}
           >
-            {row.openDate}
+            {formatMdyDate(row.openDate)}
           </td>
         );
       case "closeDate":
@@ -1187,7 +1214,7 @@ export default function ExceptionsTable({
             className={tdPinnedClass("closeDate").trim()}
             style={tdPinnedStyle("closeDate")}
           >
-            {row.closeDate}
+            {formatMdyDate(row.closeDate)}
           </td>
         );
       default:
@@ -1246,25 +1273,12 @@ export default function ExceptionsTable({
 
           <tbody>
             {sortedRows.map((row, index) => {
-              // A row picks up the "complete" visual style (muted green
-              // background from .dq-table-row-complete) when either its
-              // STATE is Complete OR its STATUS falls into the group of
-              // resolved statuses — Accept, Override, Suppress. These
-              // three status values represent user-actioned completion
-              // states even when the underlying STATE hasn't flipped to
-              // Complete yet.
-              const completeStatuses = new Set([
-                "accept",
-                "override",
-                "suppress",
-              ]);
-              const isComplete =
-                row.state === "Complete" ||
-                completeStatuses.has(row.status.toLowerCase());
-              const cls = [
-                "dq-table-row",
-                isComplete ? "dq-table-row-complete" : "dq-table-row-even",
-              ].join(" ");
+              // Every row uses the default even-row background — the
+              // green "complete" swatch (Accept / Override / Suppress /
+              // STATE=Complete) has been retired at user request;
+              // status is now conveyed only through the STATUS dropdown
+              // value, not row color.
+              const cls = "dq-table-row dq-table-row-even";
               return (
                 <tr key={`${row.ruleName}-${index}`} className={cls}>
                   {visibleKeys.map((k) => renderCell(k, row))}
