@@ -892,14 +892,27 @@ export default function ExceptionsTable({
                 // only comments all fail. Server-side
                 // SP_UPDATE_EXCEPTION_STATUS enforces the same rule as
                 // a safety net.
-                if (
-                  next !== "New" &&
-                  (row.comments == null || row.comments.trim() === "")
-                ) {
-                  setAlertMessage(
-                    "Please enter a comment before changing the status."
+                //
+                // CommentsCell keeps its draft in local state and only
+                // commits to the parent on blur (or Enter), so
+                // row.comments can lag behind what the operator just
+                // typed. Read the sibling <input> value from the same
+                // <tr> directly so a freshly-typed-but-not-yet-blurred
+                // comment counts as present.
+                if (next !== "New") {
+                  const trigger = e.currentTarget as HTMLElement;
+                  const tr = trigger.closest("tr");
+                  const commentInput = tr?.querySelector<HTMLInputElement>(
+                    ".dq-row-comments-input"
                   );
-                  return;
+                  const effectiveComments =
+                    commentInput?.value ?? row.comments ?? "";
+                  if (effectiveComments.trim() === "") {
+                    setAlertMessage(
+                      "Please enter a comment before changing the status."
+                    );
+                    return;
+                  }
                 }
                 onStatusChange?.(row.exceptionId, next);
               }}
@@ -998,9 +1011,24 @@ export default function ExceptionsTable({
                   initialValue={row.comments}
                   readOnly={readOnly}
                   onCommit={(next) => {
+                    // Non-New rows require a non-blank comment (mirrors
+                    // the per-row status-change guard above and the
+                    // server-side SP_UPDATE_EXCEPTION_STATUS rule).
+                    // Return false so CommentsCell reverts its local
+                    // draft to the last committed value.
+                    if (
+                      row.status !== "New" &&
+                      next.trim() === ""
+                    ) {
+                      setAlertMessage(
+                        "Please enter a comment before changing the status."
+                      );
+                      return false;
+                    }
                     if (next !== row.comments) {
                       onCommentsChange?.(row.exceptionId, next);
                     }
+                    return true;
                   }}
                 />
               </div>
@@ -1219,13 +1247,25 @@ function CommentsCell({
   readOnly = false,
 }: {
   initialValue: string;
-  onCommit: (next: string) => void;
+  // Returning false explicitly tells CommentsCell to reject the draft
+  // and revert to `initialValue`. Any other return (true / undefined)
+  // is treated as accepted. Used by the parent to enforce
+  // "non-blank comment required on non-New status" without hoisting
+  // the draft state.
+  onCommit: (next: string) => boolean | void;
   readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState<string>(initialValue);
   useEffect(() => {
     setDraft(initialValue);
   }, [initialValue]);
+  const commit = () => {
+    if (readOnly) return;
+    const result = onCommit(draft);
+    if (result === false) {
+      setDraft(initialValue);
+    }
+  };
   return (
     <input
       type="text"
@@ -1235,9 +1275,7 @@ function CommentsCell({
       title={draft}
       readOnly={readOnly}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (!readOnly) onCommit(draft);
-      }}
+      onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();

@@ -930,7 +930,7 @@
   cursor: pointer;
 }
 .dq-bulk-rule-combo-item:hover {
-  background: #fef3c7;
+  background: #eff6ff;
 }
 .dq-bulk-rule-combo-check {
   margin: 0;
@@ -1288,7 +1288,7 @@
 }
 
 .dq-status-combo-item:hover {
-  background: #fef3c7;
+  background: #eff6ff;
 }
 
 .dq-status-combo-check {
@@ -1487,20 +1487,21 @@
 
 .dq-table-row:hover,
 .dq-table-row:hover td {
-  background: #fef3c7;
+  background: #eff6ff;
 }
 
 /* Widget cells inherit the row hover swatch so inputs / selects don't
-   punch white holes through the yellow row on hover. background-color
-   + !important is used (rather than the shorthand `background`) so
+   punch a white hole through the row on hover. background-color +
+   !important is used (rather than the shorthand `background`) so
    browser-default rendering on <select> / <input type="date"> can't
    silently retain white — the shorthand override was insufficient in
-   Chrome and Edge. */
+   Chrome and Edge. Hover color #eff6ff (Tailwind blue-50) pairs with
+   the existing #dbeafe (blue-100) selected-row swatch. */
 .dq-table-row:hover .dq-row-status-select,
 .dq-table-row:hover .dq-assign-select,
 .dq-table-row:hover .dq-row-comments-input,
 .dq-table-row:hover .dq-row-suppress-date-input {
-  background-color: #fef3c7 !important;
+  background-color: #eff6ff !important;
 }
 /* <input type="date"> renders its own internal date-edit fields
    (WebKit pseudo-elements) whose background sits on top of the input's
@@ -1508,7 +1509,7 @@
    the hover swatch, not just the padding around the edit fields. */
 .dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit,
 .dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper {
-  background-color: #fef3c7 !important;
+  background-color: #eff6ff !important;
 }
 
 .dq-table-row-even {
@@ -1780,7 +1781,7 @@
 }
 
 .dq-combo-item:hover {
-  background: #fef3c7;
+  background: #eff6ff;
 }
 
 .dq-combo-empty {
