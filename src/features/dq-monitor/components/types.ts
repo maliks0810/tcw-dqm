@@ -19,6 +19,14 @@ export type ExceptionRow = {
   // Rendered as an <input type="date"> in the editable SUPPRESS_DATE column
   // when RULE_GROUP.FLAG_SUPPRESS_DATE is true for the current group.
   suppressDate: string;
+  // ISO YYYY-MM-DD (from EXCEPTION.OPEN_DATE), or "" when unset — the
+  // most recent date the row was in status 'New'. Rendered read-only at
+  // the end of the grid for Security-Master-family rule groups.
+  openDate: string;
+  // ISO YYYY-MM-DD (from EXCEPTION.CLOSE_DATE), or "" when unset — the
+  // most recent date the row moved to Accept / Research. Rendered
+  // read-only alongside openDate.
+  closeDate: string;
   // Parsed RESULT_DATA: every column from the rule's RULE_CATALOG_SOURCE row.
   // Keyed by column name as the rule SELECT emitted it. Undefined when the
   // exception's RESULT_DATA was null or didn't parse as a JSON object.

@@ -2352,24 +2352,30 @@ export default function DqMonitorPage() {
                         type="date"
                         className="dq-bulk-panel-suppress-date"
                         value={bulkStatusSuppressDate}
+                        // Backend SP_EXPIRE_SUPPRESS_DATES compares
+                        // SUPPRESS_DATE < CURRENT_DATE in UTC. If we
+                        // computed min in the operator's local time,
+                        // late-in-day picks (evening PST → next UTC
+                        // day already) would land as "already expired"
+                        // and the row would flip back to New on the
+                        // next grid refresh. Use UTC so the picker's
+                        // floor matches the SP's comparison exactly.
                         min={(() => {
                           const t = new Date();
-                          return `${t.getFullYear()}-${String(
-                            t.getMonth() + 1
-                          ).padStart(2, "0")}-${String(t.getDate()).padStart(
-                            2,
-                            "0"
-                          )}`;
+                          return `${t.getUTCFullYear()}-${String(
+                            t.getUTCMonth() + 1
+                          ).padStart(2, "0")}-${String(
+                            t.getUTCDate()
+                          ).padStart(2, "0")}`;
                         })()}
                         max={(() => {
                           const t = new Date();
-                          t.setFullYear(t.getFullYear() + 2);
-                          return `${t.getFullYear()}-${String(
-                            t.getMonth() + 1
-                          ).padStart(2, "0")}-${String(t.getDate()).padStart(
-                            2,
-                            "0"
-                          )}`;
+                          t.setUTCFullYear(t.getUTCFullYear() + 2);
+                          return `${t.getUTCFullYear()}-${String(
+                            t.getUTCMonth() + 1
+                          ).padStart(2, "0")}-${String(
+                            t.getUTCDate()
+                          ).padStart(2, "0")}`;
                         })()}
                         onChange={(e) =>
                           setBulkStatusSuppressDate(e.target.value)
@@ -2473,11 +2479,28 @@ export default function DqMonitorPage() {
                         );
                         return;
                       }
+                      // Split into two friendly messages: Clear-
+                      // Comments explicitly wipes the audit trail on
+                      // rows the operator is about to close, which is
+                      // a different mistake from just forgetting to
+                      // type a comment. Server-side SP_UPDATE_BULK_
+                      // STATUS returns 0 rows (or the handler 400s if
+                      // it reached that path) — this catches the
+                      // click before it leaves the browser.
                       if (
                         bulkStatusSelected !== "" &&
                         bulkStatusSelected !== "New" &&
-                        (bulkStatusClearComments ||
-                          bulkStatusComments.trim() === "")
+                        bulkStatusClearComments
+                      ) {
+                        setBulkStatusMessage(
+                          `Comments cannot be cleared when setting the status to "${bulkStatusSelected}". Uncheck "Clear Comments" and enter a comment.`
+                        );
+                        return;
+                      }
+                      if (
+                        bulkStatusSelected !== "" &&
+                        bulkStatusSelected !== "New" &&
+                        bulkStatusComments.trim() === ""
                       ) {
                         setBulkStatusMessage(
                           "Please enter a comment before changing the status."
@@ -2587,6 +2610,15 @@ export default function DqMonitorPage() {
               // stay read-only — mutating them would rewrite an
               // already-archived snapshot.
               readOnly={dqmDate !== ""}
+              // Open Date / Close Date columns render at the far
+              // right of the grid only for the Security-Master-family
+              // rule groups. Every other group keeps the grid focused
+              // on triage widgets + RESULT_DATA and doesn't surface
+              // the lifecycle dates.
+              showLifecycleColumns={
+                viewByGroup === "Security Master" ||
+                viewByGroup === "Security Benchmark Master"
+              }
               onVisibleRowsChange={setVisibleExceptions}
               statusOptions={
                 showStatusPanel ? exceptionStatusOptions : undefined

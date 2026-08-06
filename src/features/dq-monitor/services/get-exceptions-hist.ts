@@ -20,6 +20,8 @@ type ApiException = {
   issue_description?: string;
   result_data?: string;
   suppress_date?: string;
+  open_date?: string;
+  close_date?: string;
   assign_to_id?: number;
   assign_to?: string;
   result_type_id?: number;
@@ -87,6 +89,8 @@ function toExceptionRow(e: ApiException): ExceptionRow {
     status: e.exception_status ?? "",
     assignTo: e.assign_to ?? "",
     suppressDate: isoDate(e.suppress_date),
+    openDate: isoDate(e.open_date),
+    closeDate: isoDate(e.close_date),
     resultData: parseResultData(e.result_data),
   };
 }

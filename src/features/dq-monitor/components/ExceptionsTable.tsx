@@ -42,6 +42,10 @@ function getSortValue(row: ExceptionRow, key: string): string {
       return row.suppressDate;
     case "assignTo":
       return row.assignTo;
+    case "openDate":
+      return row.openDate;
+    case "closeDate":
+      return row.closeDate;
     default:
       return "";
   }
@@ -75,6 +79,11 @@ type ExceptionsTableProps = {
   // confusing / unsupported by the backend. Callbacks are still
   // wired but never fire while readOnly is on.
   readOnly?: boolean;
+  // When true, appends OPEN_DATE + CLOSE_DATE columns at the far
+  // right of the grid (after every rd:* column). Used only for
+  // Security-Master-family rule groups; other groups don't surface
+  // the lifecycle dates.
+  showLifecycleColumns?: boolean;
 };
 
 function getActionClass(action: string): string {
@@ -104,12 +113,12 @@ function formatCell(v: unknown): string {
 // localStorage key for this grid's persistent column layout (order,
 // pinned set, hidden set, per-column widths). Bump the vN suffix to
 // invalidate every browser's cached blob when the schema drifts.
-// v6 bump: rd:RULE_NAME now canonically sits immediately after
-// Comments in every viewMode (not only group mode), and rd:ALADDIN_ID
-// is no longer force-promoted. Invalidates any v5 layout that
-// persisted the old rd:* order so users see the new position without
-// having to clear localStorage manually.
-const STORAGE_KEY = "dqm.exceptionsTable.layout.v6";
+// v7 bump: canonicalKeys now optionally appends openDate + closeDate
+// at the far right when the parent passes showLifecycleColumns
+// (Security-Master-family rule groups). Invalidates any v6 layout so
+// the new columns land in the right slot rather than being appended
+// by the reconciler after a stale rd:* tail.
+const STORAGE_KEY = "dqm.exceptionsTable.layout.v7";
 
 // Keys that live in the fixed "left of the RESULT_DATA columns" section
 // of the Exceptions grid. Their canonical position is Status → Suppress
@@ -166,6 +175,8 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   issue: 320,
   aladdin: 140,
   idBbGlobal: 140,
+  openDate: 120,
+  closeDate: 120,
   vendor: 120,
   action: 120,
 };
@@ -185,6 +196,7 @@ export default function ExceptionsTable({
   onAssignToChange,
   priorityRdKeys,
   readOnly = false,
+  showLifecycleColumns = false,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -498,6 +510,13 @@ export default function ExceptionsTable({
       if (prioritySet.has(k)) continue;
       keys.push(`rd:${k}`);
     }
+    // Lifecycle dates (OPEN_DATE / CLOSE_DATE) land at the far right,
+    // after every RESULT_DATA column, when the parent opts in via
+    // showLifecycleColumns (Security-Master-family rule groups only).
+    if (showLifecycleColumns) {
+      keys.push("openDate");
+      keys.push("closeDate");
+    }
     return keys;
   }, [
     showResultDataColumns,
@@ -507,6 +526,7 @@ export default function ExceptionsTable({
     extraKeys,
     showCommentsColumn,
     priorityRdKeys,
+    showLifecycleColumns,
   ]);
 
   // Drag-reordered column order. Starts from any persisted layout if the
@@ -838,6 +858,18 @@ export default function ExceptionsTable({
             Action
           </SortableTh>
         );
+      case "openDate":
+        return (
+          <SortableTh key={key} {...commonThProps("openDate")}>
+            Open Date
+          </SortableTh>
+        );
+      case "closeDate":
+        return (
+          <SortableTh key={key} {...commonThProps("closeDate")}>
+            Close Date
+          </SortableTh>
+        );
       default:
         return null;
     }
@@ -877,14 +909,27 @@ export default function ExceptionsTable({
               onChange={(e) => {
                 const next = e.target.value;
                 // Guard: can't move a row into "Suppress" without a
-                // Suppress Date. Alert and keep the select on its previous
-                // value — parent state stays untouched because we never
-                // call onStatusChange.
-                if (next === "Suppress" && !row.suppressDate) {
-                  setAlertMessage(
-                    "Please enter a Suppress Date before setting the status to Suppress."
+                // Suppress Date. SuppressDateCell keeps its draft in
+                // local state and only commits to the parent via an
+                // async backend round-trip, so row.suppressDate lags
+                // behind what the operator just picked. Read the
+                // sibling <input> value from the same <tr> directly so
+                // a freshly-picked date counts as present. Alert only
+                // if the DOM value is also blank.
+                if (next === "Suppress") {
+                  const trigger = e.currentTarget as HTMLElement;
+                  const tr = trigger.closest("tr");
+                  const dateInput = tr?.querySelector<HTMLInputElement>(
+                    ".dq-row-suppress-date-input"
                   );
-                  return;
+                  const effectiveSuppress =
+                    dateInput?.value ?? row.suppressDate ?? "";
+                  if (!effectiveSuppress) {
+                    setAlertMessage(
+                      "Please enter a Suppress Date before setting the status to Suppress."
+                    );
+                    return;
+                  }
                 }
                 // Guard: any transition away from "New" (Accept /
                 // Override / Hold / Suppress / Research / Challenge /
@@ -1125,6 +1170,26 @@ export default function ExceptionsTable({
             <span className={getActionClass(row.action)}>{row.action}</span>
           </td>
         );
+      case "openDate":
+        return (
+          <td
+            key={key}
+            className={tdPinnedClass("openDate").trim()}
+            style={tdPinnedStyle("openDate")}
+          >
+            {row.openDate}
+          </td>
+        );
+      case "closeDate":
+        return (
+          <td
+            key={key}
+            className={tdPinnedClass("closeDate").trim()}
+            style={tdPinnedStyle("closeDate")}
+          >
+            {row.closeDate}
+          </td>
+        );
       default:
         return null;
     }
@@ -1308,16 +1373,22 @@ function SuppressDateCell({
   useEffect(() => {
     setDraft(initialValue);
   }, [initialValue]);
+  // Compute min/max in UTC to match the backend. SP_EXPIRE_SUPPRESS_
+  // DATES compares SUPPRESS_DATE < CURRENT_DATE in UTC on every
+  // GetExceptions call — computing min in local time would let a
+  // late-evening operator pick a date that UTC already considers
+  // yesterday, and the row would flip back to New on the next grid
+  // refresh. Using UTC lines the picker's floor up with the SP.
   const iso = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   };
   const today = new Date();
   const minDate = iso(today);
   const capDate = new Date(today);
-  capDate.setFullYear(capDate.getFullYear() + 2);
+  capDate.setUTCFullYear(capDate.getUTCFullYear() + 2);
   const maxDate = iso(capDate);
   const withinRange = (v: string) => v === "" || (v >= minDate && v <= maxDate);
   return (
