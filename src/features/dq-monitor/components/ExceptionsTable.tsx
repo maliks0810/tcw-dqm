@@ -56,7 +56,17 @@ type ExceptionsTableProps = {
   showResultDataColumns?: boolean;
   onVisibleRowsChange?: (rows: ExceptionRow[]) => void;
   statusOptions?: string[];
-  onStatusChange?: (exceptionId: number, status: string) => void;
+  // status may be accompanied by comments + suppressDate the operator
+  // typed but hasn't committed via the per-cell endpoints yet. The
+  // callback must forward both to updateExceptionStatus so the backend
+  // SP can apply them atomically alongside the STATUS_ID update.
+  // Empty string on either extra means "leave alone".
+  onStatusChange?: (
+    exceptionId: number,
+    status: string,
+    comments: string,
+    suppressDate: string
+  ) => void;
   showCommentsColumn?: boolean;
   onCommentsChange?: (exceptionId: number, comments: string) => void;
   showSuppressDateColumn?: boolean;
@@ -935,58 +945,55 @@ export default function ExceptionsTable({
               disabled={readOnly}
               onChange={(e) => {
                 const next = e.target.value;
+                // Read the sibling COMMENTS + SUPPRESS_DATE input
+                // values from the same <tr> once. Their cells hold
+                // draft state locally and only commit to the parent
+                // via async round-trips, so row.comments /
+                // row.suppressDate can lag behind what the operator
+                // just typed. Reading the live DOM lets a freshly-
+                // typed-but-not-yet-blurred value both (a) satisfy the
+                // client-side guards below and (b) get bundled into
+                // the status-change request so the backend applies
+                // all three columns atomically inside SP_UPDATE_
+                // EXCEPTION_STATUS — no race between the per-cell
+                // commit and the status change.
+                const trigger = e.currentTarget as HTMLElement;
+                const tr = trigger.closest("tr");
+                const commentInput = tr?.querySelector<HTMLInputElement>(
+                  ".dq-row-comments-input"
+                );
+                const dateInput = tr?.querySelector<HTMLInputElement>(
+                  ".dq-row-suppress-date-input"
+                );
+                const effectiveComments =
+                  commentInput?.value ?? row.comments ?? "";
+                const effectiveSuppress =
+                  dateInput?.value ?? row.suppressDate ?? "";
                 // Guard: can't move a row into "Suppress" without a
-                // Suppress Date. SuppressDateCell keeps its draft in
-                // local state and only commits to the parent via an
-                // async backend round-trip, so row.suppressDate lags
-                // behind what the operator just picked. Read the
-                // sibling <input> value from the same <tr> directly so
-                // a freshly-picked date counts as present. Alert only
-                // if the DOM value is also blank.
-                if (next === "Suppress") {
-                  const trigger = e.currentTarget as HTMLElement;
-                  const tr = trigger.closest("tr");
-                  const dateInput = tr?.querySelector<HTMLInputElement>(
-                    ".dq-row-suppress-date-input"
+                // Suppress Date. Alert if the DOM value is blank too.
+                if (next === "Suppress" && !effectiveSuppress) {
+                  setAlertMessage(
+                    "Please enter a Suppress Date before setting the status to Suppress."
                   );
-                  const effectiveSuppress =
-                    dateInput?.value ?? row.suppressDate ?? "";
-                  if (!effectiveSuppress) {
-                    setAlertMessage(
-                      "Please enter a Suppress Date before setting the status to Suppress."
-                    );
-                    return;
-                  }
+                  return;
                 }
                 // Guard: any transition away from "New" (Accept /
                 // Override / Hold / Suppress / Research / Challenge /
                 // …) must carry a comment. Blank / null / whitespace-
-                // only comments all fail. Server-side
-                // SP_UPDATE_EXCEPTION_STATUS enforces the same rule as
-                // a safety net.
-                //
-                // CommentsCell keeps its draft in local state and only
-                // commits to the parent on blur (or Enter), so
-                // row.comments can lag behind what the operator just
-                // typed. Read the sibling <input> value from the same
-                // <tr> directly so a freshly-typed-but-not-yet-blurred
-                // comment counts as present.
-                if (next !== "New") {
-                  const trigger = e.currentTarget as HTMLElement;
-                  const tr = trigger.closest("tr");
-                  const commentInput = tr?.querySelector<HTMLInputElement>(
-                    ".dq-row-comments-input"
+                // only comments all fail. Server-side SP enforces the
+                // same rule as a safety net.
+                if (next !== "New" && effectiveComments.trim() === "") {
+                  setAlertMessage(
+                    "Please enter a comment before changing the status."
                   );
-                  const effectiveComments =
-                    commentInput?.value ?? row.comments ?? "";
-                  if (effectiveComments.trim() === "") {
-                    setAlertMessage(
-                      "Please enter a comment before changing the status."
-                    );
-                    return;
-                  }
+                  return;
                 }
-                onStatusChange?.(row.exceptionId, next);
+                onStatusChange?.(
+                  row.exceptionId,
+                  next,
+                  effectiveComments,
+                  effectiveSuppress
+                );
               }}
             >
               {(statusOptions ?? []).map((s) => (

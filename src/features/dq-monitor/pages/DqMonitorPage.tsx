@@ -2629,8 +2629,13 @@ export default function DqMonitorPage() {
               }
               onStatusChange={
                 showStatusPanel
-                  ? (exceptionId, status) =>
-                      updateExceptionStatus(exceptionId, status)
+                  ? (exceptionId, status, comments, suppressDate) =>
+                      updateExceptionStatus(
+                        exceptionId,
+                        status,
+                        comments,
+                        suppressDate
+                      )
                         .then(() => setRefreshTick((n) => n + 1))
                         .catch((err) => {
                           // eslint-disable-next-line no-console
