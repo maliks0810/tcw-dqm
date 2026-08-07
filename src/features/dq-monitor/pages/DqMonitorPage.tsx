@@ -243,17 +243,15 @@ export default function DqMonitorPage() {
   //   dqmDate = "YYYY-MM-DD" → read from EXCEPTION_HIST for that day's
   //                            LATEST BATCH_ID within the tree scope.
   // histDates is the sorted-DESC list of ISO dates from SP_GET_EXCEPTION_
-  // HIST_DATES (last 60 days). todayIsoDate is the "Current" option's
-  // display label (matches the EXCEPTION table's EXCEPTION_DATE).
+  // histDates is populated by SP_GET_EXCEPTION_HIST_DATES, which now
+  // unions MAX(EXCEPTION.EXCEPTION_DATE) with distinct
+  // EXCEPTION_HIST.EXCEPTION_DATE — so index 0 is the current live
+  // date (top of the dropdown label, submits value="" to fetch from
+  // the live EXCEPTION table), and the rest are prior HIST dates.
+  // No client-side UTC calculation — the labels come straight from
+  // what the two tables actually contain.
   const [dqmDate, setDqmDate] = useState<string>("");
   const [histDates, setHistDates] = useState<string[]>([]);
-  const todayIsoDate = useMemo<string>(() => {
-    const d = new Date();
-    const yyyy = d.getUTCFullYear();
-    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-    const dd = String(d.getUTCDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }, []);
   // Rule groups with FLAG_STATUS_VISIBLE = true (from SP_GET_RULE_GROUPS).
   // Drives the STATUS filter panel + STATUS column in the Exceptions grid.
   const [statusVisibleGroups, setStatusVisibleGroups] = useState<Set<string>>(
@@ -1620,19 +1618,25 @@ export default function DqMonitorPage() {
                     value={dqmDate}
                     onChange={(e) => setDqmDate(e.target.value)}
                   >
-                    {/* Empty value = live EXCEPTION table. Display label
-                        shows today's ISO date so the user sees the same
-                        EXCEPTION_DATE that's in the current EXCEPTION rows. */}
+                    {/* histDates[0] is MAX(EXCEPTION.EXCEPTION_DATE)
+                        from the backend union — the "current" label
+                        the operator sees at the top of the dropdown.
+                        Submitting value="" still routes to the live
+                        EXCEPTION table via fetchExceptions (no date
+                        param), which the SP defaults to today. When
+                        EXCEPTION is empty (no live rows), the top
+                        entry falls back to "Current" so the option
+                        isn't blank. */}
                     <option value="">
-                      {formatDqmDate(todayIsoDate)}
+                      {histDates.length > 0
+                        ? formatDqmDate(histDates[0])
+                        : "Current"}
                     </option>
-                    {histDates
-                      .filter((d) => d !== todayIsoDate)
-                      .map((d) => (
-                        <option key={d} value={d}>
-                          {formatDqmDate(d)}
-                        </option>
-                      ))}
+                    {histDates.slice(1).map((d) => (
+                      <option key={d} value={d}>
+                        {formatDqmDate(d)}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
