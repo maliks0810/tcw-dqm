@@ -15,7 +15,8 @@ import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionState } from "../services/get-exception-state";
 import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
-import { fetchRuleGroups } from "../services/get-rule-groups";
+import { fetchDMRole } from "../services/get-dm-role";
+import { fetchRuleGroupsForUser } from "../services/get-rule-groups-for-user";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRuleNames, ruleDisplayLabel } from "../services/get-rule-names";
 import { subscribeToEvents } from "../services/stream-events";
@@ -225,6 +226,16 @@ export default function DqMonitorPage() {
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("All");
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
+  // Current operator's DM_USER.USER value. Hard-coded pre-Okta —
+  // once integration lands, replace with whatever the auth context's
+  // getUser() exposes. Powers the getDMRole call below.
+  const currentDmUser = "Joann Banks";
+  // dmRole gates the Bulk Assign / Bulk Status buttons (only visible
+  // to DM_ADMIN) and the per-row Assign To column's editability (also
+  // DM_ADMIN only). Empty string is the least-privileged default —
+  // hides the buttons and locks Assign To — used until the fetch
+  // returns and if the operator's user isn't in DM_USER.
+  const [dmRole, setDmRole] = useState<string>("");
   const [exceptionState, setExceptionState] = useState<string>("Pending");
   const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
   const [exceptionStatus, setExceptionStatus] = useState<string>("All");
@@ -443,16 +454,43 @@ export default function DqMonitorPage() {
   useEffect(() => {
     const controller = new AbortController();
     fetchDMUsers(controller.signal)
-      .then((users) => setDmUserOptions(users))
+      // getDMUsers now returns {user, role, email} tuples; the
+      // per-row Assign To dropdown, the assignee filter, and the
+      // Bulk Assign panel all only need the display name. Strip to
+      // string[] here so every downstream consumer stays untouched.
+      // (Role / email are still available on the wire when someone
+      // needs them — see get-dm-users.ts's DMUser type.)
+      .then((users) => setDmUserOptions(users.map((u) => u.user)))
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
   }, []);
 
+  // Fetch the current operator's DM role once on mount. Empty string
+  // (unknown user / fetch failure) leaves the UI in the least-
+  // privileged state — Bulk Assign / Bulk Status buttons stay hidden
+  // and the per-row Assign To column stays read-only.
   useEffect(() => {
     const controller = new AbortController();
-    fetchRuleGroups(controller.signal)
+    fetchDMRole(currentDmUser, controller.signal)
+      .then((role) => setDmRole(role))
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+        setDmRole("");
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // Hard-coded pre-Okta. Once Okta integration lands, replace this
+    // constant with the resolved operator identity (DM_USER."USER"
+    // that maps to the Okta email in RULE_GROUP_AUTHORIZATION.ACCESS_
+    // LIST). Backend rejects an empty user with 400, so the tree
+    // stays gated even if this string is ever cleared.
+    const currentUser = "Joann Banks";
+    fetchRuleGroupsForUser(currentUser, controller.signal)
       .then((groups) => {
         setRuleGroupOptions(groups.map((g) => g.name).filter(Boolean));
         setStatusVisibleGroups(
@@ -972,6 +1010,35 @@ export default function DqMonitorPage() {
     return exceptions.filter((r) => statusFilter.has(r.status));
   }, [exceptions, showStatusPanel, statusFilter]);
 
+  // Rows fed to <ExceptionsTable>. Starts from statusFilteredExceptions
+  // (Status panel filter, if any) and then narrows further to the rules
+  // ticked in an open Bulk panel. Closing the panel — or unticking every
+  // rule — removes the narrowing automatically, so the grid reverts to
+  // whatever the LHS tree / Status panel already had.
+  //
+  // Bulk Assign and Bulk Status are separate panels but both drive off
+  // the same "rule name → filter" pattern, so both feed in here. If
+  // both panels are open at once (uncommon — usually one is toggled at
+  // a time) the union wins: any rule ticked in either panel keeps its
+  // rows visible.
+  const tableExceptions = useMemo<ExceptionRow[]>(() => {
+    const bulkRules = new Set<string>();
+    if (bulkPanelOpen) {
+      bulkSelectedRules.forEach((r) => bulkRules.add(r));
+    }
+    if (bulkStatusPanelOpen) {
+      bulkStatusSelectedRules.forEach((r) => bulkRules.add(r));
+    }
+    if (bulkRules.size === 0) return statusFilteredExceptions;
+    return statusFilteredExceptions.filter((r) => bulkRules.has(r.ruleName));
+  }, [
+    statusFilteredExceptions,
+    bulkPanelOpen,
+    bulkSelectedRules,
+    bulkStatusPanelOpen,
+    bulkStatusSelectedRules,
+  ]);
+
   // "New: 45  Accept: 3  Suppress: 30 ..." breakdown shown above the
   // Exceptions grid for groups that expose the Status column
   // (RULE_GROUP.FLAG_STATUS_VISIBLE — Security Master today). Counts
@@ -991,15 +1058,20 @@ export default function DqMonitorPage() {
       .map((s) => ({ status: s, count: counts.get(s) ?? 0 }));
   }, [showStatusPanel, exceptions, exceptionStatusOptions]);
 
-  // Bulk Assign is meaningful inside the Security Master or Security
-  // Master Benchmark rule groups, in the exception view (not the
-  // "View by Security" grid), AND against the current-day EXCEPTION
-  // table — historical EXCEPTION_HIST days must stay read-only (see
-  // ExceptionsTable readOnly wiring). Any other group / mode /
-  // historical-date hides the button and forces the panel closed.
+  // Bulk Assign / Bulk Status are meaningful inside the Security
+  // Master, Security Master Benchmark, and TOD SOD rule groups, in
+  // the exception view (not the "View by Security" grid), AND against
+  // the current-day EXCEPTION table — historical EXCEPTION_HIST days
+  // must stay read-only (see ExceptionsTable readOnly wiring). On
+  // top of all that, both buttons are DM_ADMIN-only: operators with
+  // any other role (or unknown) never see them regardless of scope.
+  // Any failing criterion hides both buttons and forces both panels
+  // closed.
   const showBulkAssign =
+    dmRole === "DM_ADMIN" &&
     (viewByGroup === "Security Master" ||
-      viewByGroup === "Security Master Benchmark") &&
+      viewByGroup === "Security Master Benchmark" ||
+      viewByGroup === "TOD SOD") &&
     viewMode !== "security" &&
     dqmDate === "";
   useEffect(() => {
@@ -2595,11 +2667,7 @@ export default function DqMonitorPage() {
             )}
 
             <ExceptionsTable
-              data={
-                showStatusPanel
-                  ? exceptions.filter((r) => statusFilter.has(r.status))
-                  : exceptions
-              }
+              data={tableExceptions}
               showResultDataColumns={viewMode !== "security"}
               // RULE_NAME always sits immediately right of Comments,
               // regardless of where it appears in the RESULT_DATA JSON
@@ -2688,6 +2756,11 @@ export default function DqMonitorPage() {
                   : undefined
               }
               showAssignToColumn={showAssignToColumn}
+              // Only DM_ADMIN operators can reassign; every other
+              // role sees the current assignee as read-only text.
+              // The column itself still renders — the widget just
+              // downgrades to a plain <td>.
+              assignToReadOnly={dmRole !== "DM_ADMIN"}
               assignToOptions={
                 showAssignToColumn ? dmUserOptions : undefined
               }

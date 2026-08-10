@@ -79,16 +79,24 @@ export default function ColumnFilterHeader({
         onToggle(false);
       }
     };
-    const onScrollOrResize = () => onToggle(false);
-    document.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("resize", onScrollOrResize);
+    const onResize = () => onToggle(false);
     // Capture phase so scrolls inside nested containers (table grids)
     // are caught and we close the popover rather than leaving it stranded.
-    window.addEventListener("scroll", onScrollOrResize, true);
+    // BUT: ignore scrolls originating inside the popover itself — the
+    // list is scrollable and dragging its scrollbar (or wheeling over
+    // it) fires scroll events that used to close the popover mid-drag.
+    const onScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && popoverRef.current && popoverRef.current.contains(t)) return;
+      onToggle(false);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("resize", onScrollOrResize);
-      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [isOpen, onToggle]);
 

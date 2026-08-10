@@ -74,6 +74,13 @@ type ExceptionsTableProps = {
   showAssignToColumn?: boolean;
   assignToOptions?: string[];
   onAssignToChange?: (exceptionId: number, assignTo: string) => void;
+  // When true, the Assign To column stays visible but the per-row
+  // <select> collapses to a plain text cell — no dropdown, no
+  // change event. Set by DqMonitorPage when the current operator's
+  // DM role is anything other than DM_ADMIN. Independent of the
+  // whole-grid `readOnly` prop (that one also freezes Status /
+  // Comments / Suppress Date for historical-date views).
+  assignToReadOnly?: boolean;
   // RESULT_DATA keys the parent wants surfaced first in the RD section
   // of canonicalKeys (right after Comments, before the rest of the
   // RD columns). Used e.g. in view-by-group mode to keep RULE_NAME +
@@ -231,6 +238,7 @@ export default function ExceptionsTable({
   showAssignToColumn: showAssignToColumnProp = false,
   assignToOptions,
   onAssignToChange,
+  assignToReadOnly = false,
   priorityRdKeys,
   readOnly = false,
   showLifecycleColumns = false,
@@ -1029,6 +1037,21 @@ export default function ExceptionsTable({
           </td>
         );
       case "assignTo":
+        // assignToReadOnly (non-admin operator) or the whole-grid
+        // readOnly (historical date view) collapse the dropdown to
+        // a plain text cell. Empty string renders as "Unassigned"
+        // for parity with the widget's empty option label.
+        if (assignToReadOnly || readOnly) {
+          return (
+            <td
+              key={key}
+              className={tdPinnedClass("assignTo").trim()}
+              style={tdPinnedStyle("assignTo")}
+            >
+              {row.assignTo || "Unassigned"}
+            </td>
+          );
+        }
         return (
           <td
             key={key}
@@ -1038,7 +1061,6 @@ export default function ExceptionsTable({
             <select
               className="dq-assign-select"
               value={row.assignTo}
-              disabled={readOnly}
               onChange={(e) => {
                 const next = e.target.value;
                 if (next !== row.assignTo) {
