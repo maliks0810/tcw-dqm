@@ -723,6 +723,18 @@ export default function ExceptionsTable({
     });
   }, [visibleRows, sort]);
 
+  // Per-row pending STATUS selection. The dropdown holds the operator's
+  // pick locally until row-blur (focus leaves the <tr>), at which point
+  // commitRowStatusChange runs the client-side validation guards and
+  // fires onStatusChange bundled with the current comment + suppress
+  // date. Deferring the guard means the operator can pick "Accept"
+  // and *then* type a comment without the alert firing on the
+  // selection itself — the alert only fires on tab-out / click-away
+  // if the comment / suppress-date is still missing.
+  const [pendingRowStatus, setPendingRowStatus] = useState<
+    Record<number, string>
+  >({});
+
   // Custom in-app alert replacement so the message doesn't come with a
   // browser-injected "localhost:3000 says" prefix. Declared above the
   // early return below so hook order stays consistent.
@@ -741,6 +753,71 @@ export default function ExceptionsTable({
   useEffect(() => {
     onVisibleRowsChange?.(sortedRows);
   }, [sortedRows, onVisibleRowsChange]);
+
+  // Commit a row's pending status change when focus leaves the <tr>.
+  // Runs the same validation the old inline-onChange guards ran, but
+  // deferred to row-blur so operators can pick a status and *then*
+  // enter a comment / suppress date in the same row without the alert
+  // firing on the selection itself. On failure, alerts and reverts
+  // the dropdown by clearing the pending entry. On success, fires
+  // onStatusChange bundled with the sibling comment + suppress date
+  // (read from the DOM so a freshly-typed-but-not-yet-blurred value
+  // still counts). Row-blur is detected via <tr onBlur> with a
+  // relatedTarget check — tabbing between cells inside the same row
+  // is not a commit.
+  const commitRowStatusChange = useCallback(
+    (row: ExceptionRow, trEl: HTMLElement) => {
+      const next = pendingRowStatus[row.exceptionId];
+      if (next == null || next === row.status) return;
+
+      const commentInput = trEl.querySelector<HTMLInputElement>(
+        ".dq-row-comments-input"
+      );
+      const dateInput = trEl.querySelector<HTMLInputElement>(
+        ".dq-row-suppress-date-input"
+      );
+      const effectiveComments =
+        commentInput?.value ?? row.comments ?? "";
+      const effectiveSuppress =
+        dateInput?.value ?? row.suppressDate ?? "";
+
+      if (next === "Suppress" && !effectiveSuppress) {
+        setAlertMessage(
+          "Please enter a Suppress Date before setting the status to Suppress."
+        );
+        setPendingRowStatus((prev) => {
+          const copy = { ...prev };
+          delete copy[row.exceptionId];
+          return copy;
+        });
+        return;
+      }
+      if (next !== "New" && effectiveComments.trim() === "") {
+        setAlertMessage(
+          "Please enter a comment before changing the status."
+        );
+        setPendingRowStatus((prev) => {
+          const copy = { ...prev };
+          delete copy[row.exceptionId];
+          return copy;
+        });
+        return;
+      }
+
+      onStatusChange?.(
+        row.exceptionId,
+        next,
+        effectiveComments,
+        effectiveSuppress
+      );
+      setPendingRowStatus((prev) => {
+        const copy = { ...prev };
+        delete copy[row.exceptionId];
+        return copy;
+      });
+    },
+    [pendingRowStatus, onStatusChange]
+  );
 
   if (data.length === 0) {
     return (
@@ -949,59 +1026,19 @@ export default function ExceptionsTable({
           >
             <select
               className="dq-row-status-select"
-              value={row.status}
+              value={pendingRowStatus[row.exceptionId] ?? row.status}
               disabled={readOnly}
               onChange={(e) => {
+                // Deferred commit: hold the pick in pendingRowStatus
+                // and let commitRowStatusChange fire (with validation
+                // + comment/suppress-date bundling) when focus leaves
+                // the row. See the pendingRowStatus / <tr onBlur>
+                // wiring for the full flow.
                 const next = e.target.value;
-                // Read the sibling COMMENTS + SUPPRESS_DATE input
-                // values from the same <tr> once. Their cells hold
-                // draft state locally and only commit to the parent
-                // via async round-trips, so row.comments /
-                // row.suppressDate can lag behind what the operator
-                // just typed. Reading the live DOM lets a freshly-
-                // typed-but-not-yet-blurred value both (a) satisfy the
-                // client-side guards below and (b) get bundled into
-                // the status-change request so the backend applies
-                // all three columns atomically inside SP_UPDATE_
-                // EXCEPTION_STATUS — no race between the per-cell
-                // commit and the status change.
-                const trigger = e.currentTarget as HTMLElement;
-                const tr = trigger.closest("tr");
-                const commentInput = tr?.querySelector<HTMLInputElement>(
-                  ".dq-row-comments-input"
-                );
-                const dateInput = tr?.querySelector<HTMLInputElement>(
-                  ".dq-row-suppress-date-input"
-                );
-                const effectiveComments =
-                  commentInput?.value ?? row.comments ?? "";
-                const effectiveSuppress =
-                  dateInput?.value ?? row.suppressDate ?? "";
-                // Guard: can't move a row into "Suppress" without a
-                // Suppress Date. Alert if the DOM value is blank too.
-                if (next === "Suppress" && !effectiveSuppress) {
-                  setAlertMessage(
-                    "Please enter a Suppress Date before setting the status to Suppress."
-                  );
-                  return;
-                }
-                // Guard: any transition away from "New" (Accept /
-                // Override / Hold / Suppress / Research / Challenge /
-                // …) must carry a comment. Blank / null / whitespace-
-                // only comments all fail. Server-side SP enforces the
-                // same rule as a safety net.
-                if (next !== "New" && effectiveComments.trim() === "") {
-                  setAlertMessage(
-                    "Please enter a comment before changing the status."
-                  );
-                  return;
-                }
-                onStatusChange?.(
-                  row.exceptionId,
-                  next,
-                  effectiveComments,
-                  effectiveSuppress
-                );
+                setPendingRowStatus((prev) => ({
+                  ...prev,
+                  [row.exceptionId]: next,
+                }));
               }}
             >
               {(statusOptions ?? []).map((s) => (
@@ -1309,7 +1346,25 @@ export default function ExceptionsTable({
               // value, not row color.
               const cls = "dq-table-row dq-table-row-even";
               return (
-                <tr key={`${row.ruleName}-${index}`} className={cls}>
+                <tr
+                  key={`${row.ruleName}-${index}`}
+                  className={cls}
+                  onBlur={(e) => {
+                    // React's synthetic onBlur bubbles from any child
+                    // field. If focus stays inside this same <tr>
+                    // (tabbing between STATUS, SUPPRESS DATE, ASSIGN
+                    // TO, COMMENTS in the same row) it is not a row-
+                    // blur — skip. Once focus lands outside the row
+                    // (another row, another panel, or <body>), run
+                    // the deferred commit so any pending STATUS pick
+                    // gets validated + bundled with the sibling
+                    // comment / suppress-date DOM values.
+                    const tr = e.currentTarget;
+                    const nextFocus = e.relatedTarget as Node | null;
+                    if (nextFocus && tr.contains(nextFocus)) return;
+                    commitRowStatusChange(row, tr);
+                  }}
+                >
                   {visibleKeys.map((k) => renderCell(k, row))}
                 </tr>
               );

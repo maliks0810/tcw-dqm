@@ -222,7 +222,13 @@ export default function DqMonitorPage() {
 
   const [severity, setSeverity] = useState<string>("All");
   const [severityOptions, setSeverityOptions] = useState<string[]>([]);
-  const [dqmType, setDqmType] = useState<string>("Security Setup");
+  // Empty string = "no filter" — the exceptions fetcher omits the
+  // URL param when this is falsy, so the backend SP treats it as
+  // NULL. Only View by Security mode renders the Type dropdown, and
+  // fetchExceptionTypes below only fires when that mode is first
+  // entered — so in View Exceptions mode this stays empty and the
+  // exceptions fetch never applies a bogus type filter.
+  const [dqmType, setDqmType] = useState<string>("");
   const [exceptionTypes, setExceptionTypes] = useState<string[]>([]);
   const [priority, setPriority] = useState<string>("All");
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
@@ -397,23 +403,33 @@ export default function DqMonitorPage() {
     selectedAladdinRef.current = selectedAladdinId;
   }, [selectedAladdinId]);
 
+  // The four filter dropdowns below (Type / Severity / Priority /
+  // Exception State) only render inside `viewMode === "security"` —
+  // no point paying for their SPs on mount when the user is in View
+  // Exceptions. Each fetch is guarded to fire on first entry to
+  // security mode and short-circuits once its options array is
+  // populated, so switching between modes doesn't re-fetch.
   useEffect(() => {
+    if (viewMode !== "security") return;
+    if (exceptionTypes.length > 0) return;
     const controller = new AbortController();
     fetchExceptionTypes(controller.signal)
       .then((codes) => {
         setExceptionTypes(codes);
         if (codes.length === 0) return;
         setDqmType((current) =>
-          codes.includes(current) ? current : codes[0]
+          current && codes.includes(current) ? current : codes[0]
         );
       })
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [viewMode, exceptionTypes.length]);
 
   useEffect(() => {
+    if (viewMode !== "security") return;
+    if (severityOptions.length > 0) return;
     const controller = new AbortController();
     fetchSeverityTypes(controller.signal)
       .then((codes) => setSeverityOptions(codes))
@@ -421,9 +437,11 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [viewMode, severityOptions.length]);
 
   useEffect(() => {
+    if (viewMode !== "security") return;
+    if (priorityOptions.length > 0) return;
     const controller = new AbortController();
     fetchPriorityTypes(controller.signal)
       .then((codes) => setPriorityOptions(codes))
@@ -431,9 +449,11 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [viewMode, priorityOptions.length]);
 
   useEffect(() => {
+    if (viewMode !== "security") return;
+    if (exceptionStateOptions.length > 0) return;
     const controller = new AbortController();
     fetchExceptionState(controller.signal)
       .then((codes) => setExceptionStateOptions(codes))
@@ -441,7 +461,7 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [viewMode, exceptionStateOptions.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -722,6 +742,12 @@ export default function DqMonitorPage() {
   };
 
   useEffect(() => {
+    // Assets grid is only rendered inside View by Security mode —
+    // don't pay for SP_GET_ASSETS (a 10-way JOIN over EXCEPTION) in
+    // View Exceptions mode where nothing consumes the result.
+    // Refetches on mode-switch back to security since viewMode is a
+    // dep of this effect.
+    if (viewMode !== "security") return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -741,7 +767,7 @@ export default function DqMonitorPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionState, assignToFilter, viewByGroup]);
+  }, [viewMode, refreshTick, dqmType, severity, priority, viewByRuleCatalog, viewByRule, exceptionState, assignToFilter, viewByGroup]);
 
   const handleAssignToChange = (index: number, value: string) => {
     const target = assets[index];
