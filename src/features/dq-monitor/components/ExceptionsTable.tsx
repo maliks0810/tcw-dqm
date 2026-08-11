@@ -61,19 +61,32 @@ type ExceptionsTableProps = {
   // callback must forward both to updateExceptionStatus so the backend
   // SP can apply them atomically alongside the STATUS_ID update.
   // Empty string on either extra means "leave alone".
+  // Returns void OR a Promise the caller can await. When a Promise
+  // is returned, the child paints a wait cursor over the grid from
+  // the moment the change fires until the Promise settles — so the
+  // operator sees the async round-trip actually running instead of
+  // an apparently-frozen grid.
   onStatusChange?: (
     exceptionId: number,
     status: string,
     comments: string,
     suppressDate: string
-  ) => void;
+  ) => void | Promise<void>;
   showCommentsColumn?: boolean;
   onCommentsChange?: (exceptionId: number, comments: string) => void;
   showSuppressDateColumn?: boolean;
   onSuppressDateChange?: (exceptionId: number, suppressDate: string) => void;
   showAssignToColumn?: boolean;
   assignToOptions?: string[];
-  onAssignToChange?: (exceptionId: number, assignTo: string) => void;
+  // Returns void OR a Promise the caller can await. Same wait-cursor
+  // and sticky-highlight treatment as onStatusChange: when a Promise
+  // is returned, the child paints the wait cursor from the moment the
+  // change fires until the Promise settles, and marks the row as the
+  // last-changed row for a persistent hover swatch after the refetch.
+  onAssignToChange?: (
+    exceptionId: number,
+    assignTo: string
+  ) => void | Promise<void>;
   // When true, the Assign To column stays visible but the per-row
   // <select> collapses to a plain text cell — no dropdown, no
   // change event. Set by DqMonitorPage when the current operator's
@@ -735,6 +748,41 @@ export default function ExceptionsTable({
     Record<number, string>
   >({});
 
+  // Sticky highlight for the last row whose status was successfully
+  // committed. Paints the row in the same swatch the mouse-hover
+  // rule uses so the operator can see "which row did I just change?"
+  // after the async refetch snaps the table back to its data. Cleared
+  // when the operator hovers any other row (see <tr onMouseEnter>).
+  const [lastChangedRowId, setLastChangedRowId] = useState<number | null>(
+    null
+  );
+
+  // isCommittingRow goes true from the moment a valid per-row commit
+  // (STATUS or ASSIGN TO) fires its callback until the returned
+  // Promise settles. When true, the grid picks up a wait cursor via
+  // .dq-table-committing so the async round-trip is visible to the
+  // operator instead of an apparently-frozen grid. Void returns leave
+  // isCommittingRow false — no observable in-flight window.
+  const [isCommittingRow, setIsCommittingRow] = useState<boolean>(false);
+
+  // Shared side-effect for any per-row commit (STATUS + ASSIGN TO).
+  // Sets the sticky-highlight marker to this row so the operator can
+  // spot it after the refetch, and tracks the returned Promise so
+  // .dq-table-committing paints a wait cursor until the async chain
+  // settles. Promise.resolve() normalizes void / Promise<void>.
+  const trackRowCommit = useCallback(
+    (rowId: number, maybePromise: void | Promise<void>) => {
+      setLastChangedRowId(rowId);
+      if (maybePromise) {
+        setIsCommittingRow(true);
+        Promise.resolve(maybePromise).finally(() => {
+          setIsCommittingRow(false);
+        });
+      }
+    },
+    []
+  );
+
   // Custom in-app alert replacement so the message doesn't come with a
   // browser-injected "localhost:3000 says" prefix. Declared above the
   // early return below so hook order stays consistent.
@@ -804,7 +852,7 @@ export default function ExceptionsTable({
         return;
       }
 
-      onStatusChange?.(
+      const maybePromise = onStatusChange?.(
         row.exceptionId,
         next,
         effectiveComments,
@@ -815,8 +863,9 @@ export default function ExceptionsTable({
         delete copy[row.exceptionId];
         return copy;
       });
+      trackRowCommit(row.exceptionId, maybePromise ?? undefined);
     },
-    [pendingRowStatus, onStatusChange]
+    [pendingRowStatus, onStatusChange, trackRowCommit]
   );
 
   if (data.length === 0) {
@@ -1101,7 +1150,16 @@ export default function ExceptionsTable({
               onChange={(e) => {
                 const next = e.target.value;
                 if (next !== row.assignTo) {
-                  onAssignToChange?.(row.exceptionId, next);
+                  // Same treatment as commitRowStatusChange:
+                  // trackRowCommit marks the row as last-changed
+                  // (sticky hover) AND, if the callback returns a
+                  // Promise, paints a wait cursor over the grid
+                  // until settlement.
+                  const maybePromise = onAssignToChange?.(
+                    row.exceptionId,
+                    next
+                  );
+                  trackRowCommit(row.exceptionId, maybePromise ?? undefined);
                 }
               }}
             >
@@ -1331,7 +1389,12 @@ export default function ExceptionsTable({
           )}
         </div>
       )}
-      <div className="dq-table-container">
+      <div
+        className={
+          "dq-table-container" +
+          (isCommittingRow ? " dq-table-committing" : "")
+        }
+      >
         <table className="dq-table">
           <thead>
             <tr>{visibleKeys.map((k) => renderHeader(k))}</tr>
@@ -1344,11 +1407,27 @@ export default function ExceptionsTable({
               // STATE=Complete) has been retired at user request;
               // status is now conveyed only through the STATUS dropdown
               // value, not row color.
-              const cls = "dq-table-row dq-table-row-even";
+              const isLastChanged = row.exceptionId === lastChangedRowId;
+              const cls =
+                "dq-table-row dq-table-row-even" +
+                (isLastChanged ? " dq-table-row-just-changed" : "");
               return (
                 <tr
                   key={`${row.ruleName}-${index}`}
                   className={cls}
+                  onMouseEnter={() => {
+                    // Clear the sticky highlight the moment the
+                    // operator moves the mouse to a different row —
+                    // the highlight has done its job (told the eye
+                    // where the just-committed change lives) and
+                    // shouldn't shadow-track hovers after that.
+                    if (
+                      lastChangedRowId !== null &&
+                      lastChangedRowId !== row.exceptionId
+                    ) {
+                      setLastChangedRowId(null);
+                    }
+                  }}
                   onBlur={(e) => {
                     // React's synthetic onBlur bubbles from any child
                     // field. If focus stays inside this same <tr>

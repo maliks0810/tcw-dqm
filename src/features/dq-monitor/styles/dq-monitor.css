@@ -986,6 +986,19 @@
   border-radius: 6px;
 }
 
+/* Applied while a per-row status commit is round-tripping to the
+   backend + triggering the refetch. Paints a wait cursor over the
+   entire grid area (including selects / inputs — the `!important` +
+   deep selector beat the widget-cell hover rules that would
+   otherwise re-assert their own cursor) so the operator can see the
+   async update actually running instead of an apparently-frozen
+   grid. Cleared by ExceptionsTable when the returned Promise
+   settles. */
+.dq-table-committing,
+.dq-table-committing * {
+  cursor: wait !important;
+}
+
 .dq-table {
   width: 100%;
   border-collapse: collapse;
@@ -1486,7 +1499,9 @@
 }
 
 .dq-table-row:hover,
-.dq-table-row:hover td {
+.dq-table-row:hover td,
+.dq-table-row-just-changed,
+.dq-table-row-just-changed td {
   background: #eff6ff;
 }
 
@@ -1500,7 +1515,11 @@
 .dq-table-row:hover .dq-row-status-select,
 .dq-table-row:hover .dq-assign-select,
 .dq-table-row:hover .dq-row-comments-input,
-.dq-table-row:hover .dq-row-suppress-date-input {
+.dq-table-row:hover .dq-row-suppress-date-input,
+.dq-table-row-just-changed .dq-row-status-select,
+.dq-table-row-just-changed .dq-assign-select,
+.dq-table-row-just-changed .dq-row-comments-input,
+.dq-table-row-just-changed .dq-row-suppress-date-input {
   background-color: #eff6ff !important;
 }
 /* <input type="date"> renders its own internal date-edit fields
@@ -1508,7 +1527,9 @@
    own background. Paint them explicitly so the whole cell shifts to
    the hover swatch, not just the padding around the edit fields. */
 .dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit,
-.dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper {
+.dq-table-row:hover .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper,
+.dq-table-row-just-changed .dq-row-suppress-date-input::-webkit-datetime-edit,
+.dq-table-row-just-changed .dq-row-suppress-date-input::-webkit-datetime-edit-fields-wrapper {
   background-color: #eff6ff !important;
 }
 

@@ -190,6 +190,37 @@ export default function DqMonitorPage() {
   }, []);
 
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
+
+  // Optimistic patch: after a successful per-row update (STATUS / ASSIGN
+  // TO / COMMENTS / SUPPRESS DATE), merge the fields we know changed
+  // straight into local state — no SP_GET_EXCEPTIONS refetch, no
+  // full-grid rebuild. Derived fields the SP computes server-side
+  // (OPEN_DATE / CLOSE_DATE ratchets) are replicated here so the grid
+  // matches what the backend will show on the next natural refetch.
+  // On backend failure the callers fall back to setRefreshTick so any
+  // drift reconciles from source of truth.
+  const patchExceptionRow = useCallback(
+    (exceptionId: number, patch: Partial<ExceptionRow>) => {
+      setExceptions((prev) =>
+        prev.map((r) =>
+          r.exceptionId === exceptionId ? { ...r, ...patch } : r
+        )
+      );
+    },
+    []
+  );
+
+  // Today's date in ISO YYYY-MM-DD (UTC), matching how the backend
+  // stamps OPEN_DATE / CLOSE_DATE inside SP_UPDATE_EXCEPTION_STATUS
+  // (CURRENT_DATE at UTC via CONVERT_TIMEZONE). Small helper because
+  // both derivations below (open / close) need the same value.
+  const isoTodayUtc = (): string => {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  };
   // Exceptions grid post-column-filter rows, mirrored up so the header's
   // Export to Excel can hand them to exportExceptionsToExcel.
   const [visibleExceptions, setVisibleExceptions] = useState<ExceptionRow[]>(
@@ -2754,10 +2785,58 @@ export default function DqMonitorPage() {
                         comments,
                         suppressDate
                       )
-                        .then(() => setRefreshTick((n) => n + 1))
+                        .then(() => {
+                          // Optimistic patch — no full-grid refetch.
+                          // Replicates SP_UPDATE_EXCEPTION_STATUS's
+                          // derived-column logic client-side:
+                          //   SUPPRESS_DATE — kept when new status is
+                          //     Suppress, blanked otherwise.
+                          //   OPEN_DATE — ratchets to today when
+                          //     transitioning INTO 'New'; else preserved.
+                          //   CLOSE_DATE — set to today for
+                          //     'Accept' / 'Research'; cleared for
+                          //     'New' / 'Suppress' / 'Challenge'; else
+                          //     preserved (Override, Hold, Complete
+                          //     etc. keep their prior CLOSE_DATE).
+                          setExceptions((prev) =>
+                            prev.map((r) => {
+                              if (r.exceptionId !== exceptionId) return r;
+                              const today = isoTodayUtc();
+                              const nextSuppress =
+                                status === "Suppress" ? suppressDate : "";
+                              const nextOpen =
+                                status === "New" ? today : r.openDate;
+                              let nextClose = r.closeDate;
+                              if (
+                                status === "Accept" ||
+                                status === "Research"
+                              ) {
+                                nextClose = today;
+                              } else if (
+                                status === "New" ||
+                                status === "Suppress" ||
+                                status === "Challenge"
+                              ) {
+                                nextClose = "";
+                              }
+                              return {
+                                ...r,
+                                status,
+                                comments,
+                                suppressDate: nextSuppress,
+                                openDate: nextOpen,
+                                closeDate: nextClose,
+                              };
+                            })
+                          );
+                        })
                         .catch((err) => {
                           // eslint-disable-next-line no-console
                           console.error("updateExceptionStatus failed", err);
+                          // Reconcile: any locally-guessed derived
+                          // field could be stale, so pull authoritative
+                          // state on failure.
+                          setRefreshTick((n) => n + 1);
                         })
                   : undefined
               }
@@ -2765,15 +2844,20 @@ export default function DqMonitorPage() {
               onCommentsChange={
                 showCommentsColumn
                   ? (exceptionId, comments) =>
-                      updateExceptionComments(exceptionId, comments).catch(
-                        (err) => {
+                      updateExceptionComments(exceptionId, comments)
+                        .then(() => {
+                          // Optimistic patch — comment updates don't
+                          // touch derived columns server-side.
+                          patchExceptionRow(exceptionId, { comments });
+                        })
+                        .catch((err) => {
                           // eslint-disable-next-line no-console
                           console.error(
                             "updateExceptionComments failed",
                             err
                           );
-                        }
-                      )
+                          setRefreshTick((n) => n + 1);
+                        })
                   : undefined
               }
               showSuppressDateColumn={showSuppressDateColumn}
@@ -2794,13 +2878,31 @@ export default function DqMonitorPage() {
                         ? updateExceptionStatus(exceptionId, "Suppress")
                         : Promise.resolve(0);
                       return Promise.all([p1, p2])
-                        .then(() => setRefreshTick((n) => n + 1))
+                        .then(() => {
+                          // Optimistic patch — no full refetch. When
+                          // a suppress date is set the row also flips
+                          // to Suppress (which clears CLOSE_DATE per
+                          // SP_UPDATE_EXCEPTION_STATUS's CASE);
+                          // clearing the date leaves status alone.
+                          if (suppressDate) {
+                            patchExceptionRow(exceptionId, {
+                              suppressDate,
+                              status: "Suppress",
+                              closeDate: "",
+                            });
+                          } else {
+                            patchExceptionRow(exceptionId, {
+                              suppressDate,
+                            });
+                          }
+                        })
                         .catch((err) => {
                           // eslint-disable-next-line no-console
                           console.error(
                             "updateExceptionSuppressDate/Status failed",
                             err
                           );
+                          setRefreshTick((n) => n + 1);
                         });
                     }
                   : undefined
@@ -2818,13 +2920,18 @@ export default function DqMonitorPage() {
                 showAssignToColumn
                   ? (exceptionId, assignTo) =>
                       updateExceptionAssignTo(exceptionId, assignTo)
-                        .then(() => setRefreshTick((n) => n + 1))
+                        .then(() => {
+                          // Optimistic patch — assign-to updates don't
+                          // touch derived columns server-side.
+                          patchExceptionRow(exceptionId, { assignTo });
+                        })
                         .catch((err) => {
                           // eslint-disable-next-line no-console
                           console.error(
                             "updateExceptionAssignTo failed",
                             err
                           );
+                          setRefreshTick((n) => n + 1);
                         })
                   : undefined
               }
