@@ -19,6 +19,8 @@ import { fetchDMRole } from "../services/get-dm-role";
 import { fetchRuleGroupsForUser } from "../services/get-rule-groups-for-user";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRuleNames, ruleDisplayLabel } from "../services/get-rule-names";
+import { fetchRulesForGroup } from "../services/get-rules-for-group";
+import { fetchExceptionCountsByGroup } from "../services/get-exception-counts-by-group";
 import { subscribeToEvents } from "../services/stream-events";
 import {
   exportAssetsToExcel,
@@ -892,27 +894,30 @@ export default function DqMonitorPage() {
     const controller = new AbortController();
     (async () => {
       try {
-        const entries = await Promise.all(
-          ruleGroupOptions.map(async (g) => {
-            const rows = await fetchExceptions(
-              "",
-              controller.signal,
-              dqmType,
-              severity,
-              priority,
-              undefined,
-              "All",
-              g,
-              exceptionState,
-              assignToFilter,
-              ""
-            );
-            return [g, rows.length] as const;
-          })
+        // Single aggregation call replaces the earlier per-group
+        // fetchExceptions fanout — server groups by RULE_GROUP.NAME
+        // and returns counts in one round-trip. Status filter is
+        // intentionally not passed (see the "unfiltered summary"
+        // comment above).
+        const rows = await fetchExceptionCountsByGroup(
+          {
+            exceptionType: dqmType,
+            severity,
+            priority,
+            exceptionState,
+            assignTo: assignToFilter,
+          },
+          controller.signal
         );
         if (!cancelled) {
           const next: Record<string, number> = {};
-          for (const [g, n] of entries) next[g] = n;
+          // Seed authorized groups to 0 so a group with zero rows
+          // still shows in the panel (SP returns nothing for empty
+          // groups since it aggregates over EXCEPTION).
+          for (const g of ruleGroupOptions) next[g] = 0;
+          for (const { ruleGroup, count } of rows) {
+            if (ruleGroup) next[ruleGroup] = count;
+          }
           setGroupCounts(next);
         }
       } catch (e) {
@@ -959,39 +964,42 @@ export default function DqMonitorPage() {
   >({});
   useEffect(() => {
     if (viewMode !== "group" || !viewByGroup || viewByGroup === "All") {
-      setRuleCatalogByRuleName({});
+      // Intentionally NOT clearing ruleCatalogByRuleName here — it's
+      // a merge-not-replace cache now, so a prior group's entries
+      // stay hot when the user drills into 'All' or a different
+      // group and comes back. Fresh entries just merge in on the
+      // next resolution below.
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const types = await fetchRuleCatalogs(viewByGroup);
+        // Single call replaces the earlier fetchRuleCatalogs(group)
+        // + N × fetchRuleNames(catalog) fanout. Backend runs one
+        // three-way JOIN and returns every active rule under the
+        // group with its catalog + description in one round-trip.
+        const rules = await fetchRulesForGroup(viewByGroup);
         const map: Record<string, string> = {};
         const descMap: Record<string, string> = {};
-        await Promise.all(
-          types.map(async (typeName) => {
-            const rules = await fetchRuleNames(typeName);
-            for (const r of rules) {
-              if (r.rule_name) {
-                map[r.rule_name] = typeName;
-                const desc = (r.rule_description ?? "").trim();
-                if (desc !== "") descMap[r.rule_name] = desc;
-              }
-            }
-          })
-        );
+        for (const r of rules) {
+          if (r.rule_name) {
+            map[r.rule_name] = r.catalog_name || "Unknown";
+            const desc = (r.rule_description ?? "").trim();
+            if (desc !== "") descMap[r.rule_name] = desc;
+          }
+        }
         if (!cancelled) {
-          setRuleCatalogByRuleName(map);
-          // Merge (don't replace) — the tree's getRules callback
-          // populates the same store from a different code path, and
-          // switching groups shouldn't wipe descriptions the user
-          // already has cached from a prior catalog fetch.
+          // Merge, don't replace — entries fetched for a prior
+          // group stay live so re-selecting an old group is
+          // instant. Same policy applies to ruleDescByName which
+          // is fed from multiple call sites.
+          setRuleCatalogByRuleName((prev) => ({ ...prev, ...map }));
           setRuleDescByName((prev) => ({ ...prev, ...descMap }));
         }
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
-        
-        console.error("rule-type lookup failed", e);
+
+        console.error("rules-for-group lookup failed", e);
       }
     })();
     return () => {
@@ -2250,7 +2258,16 @@ export default function DqMonitorPage() {
                               updated === 1 ? "" : "s"
                             } updated).`
                           );
-                          setBulkSelectedRules(new Set());
+                          // Deliberately NOT clearing bulkSelectedRules
+                          // so the grid stays narrowed to the rules
+                          // the user just acted on — they can inspect
+                          // the result without hunting for the same
+                          // rows again. The tree-scope prune-effect
+                          // (bulkRuleOptions dep) will drop these
+                          // selections whenever the user picks a
+                          // different node on the LHS tree or the
+                          // Number of Exceptions panel, so scope
+                          // changes still reset the filter naturally.
                           setBulkSelectedUser("");
                           setBulkIsPermanent(false);
                           setRefreshTick((n) => n + 1);
@@ -2630,7 +2647,14 @@ export default function DqMonitorPage() {
                               updated === 1 ? "" : "s"
                             } updated).`
                           );
-                          setBulkStatusSelectedRules(new Set());
+                          // Deliberately NOT clearing
+                          // bulkStatusSelectedRules — the grid stays
+                          // narrowed to the rules the user just acted
+                          // on so they can inspect the result. Scope
+                          // changes on the LHS tree / Number of
+                          // Exceptions panel will drop these
+                          // selections via the bulkRuleOptions
+                          // prune-effect (same policy as Bulk Assign).
                           setBulkStatusSelected("");
                           setBulkStatusSuppressDate("");
                           setBulkStatusComments("");
