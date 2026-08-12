@@ -330,13 +330,20 @@ export default function DqMonitorPage() {
     viewMode !== "security" && suppressDateVisibleGroups.has(viewByGroup);
   const showAssignToColumn =
     viewMode !== "security" && assignToVisibleGroups.has(viewByGroup);
-  const DEFAULT_STATUS_FILTER = useMemo(
-    () => new Set<string>(["New", "Challenge", "Override"]),
-    []
-  );
+  // Status filter starts empty and gets seeded with EVERY status
+  // returned by SP_GET_EXCEPTION_STATUS as soon as that fetch lands
+  // (see the seed effect right below the fetchExceptionStatus
+  // callsite). Empty here means "not yet seeded" rather than "hide
+  // all" — the statusFilteredExceptions memo below guards on
+  // statusFilter.size === 0 to avoid a first-render flash where the
+  // grid would appear empty for the ~200ms until options arrive.
   const [statusFilter, setStatusFilter] = useState<Set<string>>(
-    () => new Set<string>(["New", "Challenge", "Override"])
+    () => new Set<string>()
   );
+  // Set true once the "seed statusFilter from exceptionStatusOptions"
+  // effect has run so it never re-fires after the user has customized
+  // the filter (e.g., deliberately unticked everything).
+  const statusFilterSeededRef = useRef<boolean>(false);
   const [statusComboOpen, setStatusComboOpen] = useState<boolean>(false);
   const statusComboRef = useRef<HTMLDivElement | null>(null);
   const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
@@ -503,6 +510,17 @@ export default function DqMonitorPage() {
       });
     return () => controller.abort();
   }, []);
+
+  // Seed the status filter with EVERY status the backend returned,
+  // one time only. Runs the first time exceptionStatusOptions
+  // becomes non-empty; the seededRef gate prevents this from ever
+  // wiping a user's later customization (e.g., unticking rows).
+  useEffect(() => {
+    if (statusFilterSeededRef.current) return;
+    if (exceptionStatusOptions.length === 0) return;
+    setStatusFilter(new Set(exceptionStatusOptions));
+    statusFilterSeededRef.current = true;
+  }, [exceptionStatusOptions]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1072,6 +1090,14 @@ export default function DqMonitorPage() {
   // panel is off, no additional filtering — every row loaded counts.
   const statusFilteredExceptions = useMemo<ExceptionRow[]>(() => {
     if (!showStatusPanel) return exceptions;
+    // Empty statusFilter means the seed effect hasn't run yet
+    // (options haven't landed) — pass rows through so the grid
+    // doesn't flash empty for the ~200 ms window before seeding.
+    // Once seeded, an empty set is a legitimate user choice ("hide
+    // all") which we honor.
+    if (statusFilter.size === 0 && !statusFilterSeededRef.current) {
+      return exceptions;
+    }
     return exceptions.filter((r) => statusFilter.has(r.status));
   }, [exceptions, showStatusPanel, statusFilter]);
 
