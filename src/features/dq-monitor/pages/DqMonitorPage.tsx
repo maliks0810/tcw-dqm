@@ -34,6 +34,7 @@ import { updateExceptionAssignTo } from "../services/update-exception-assign-to"
 import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
 import { updateUserPreferences } from "../services/update-user-preferences";
+import { fetchUserPreferences } from "../services/get-user-preferences";
 import "../styles/dq-monitor.css";
 
 // Cap on how many EXCEPTION rows we render in the grid at once. Bigger
@@ -287,6 +288,28 @@ export default function DqMonitorPage() {
   }>({ hasReordered: false, visibleLabels: [] });
   const [savingColumnOrder, setSavingColumnOrder] = useState<boolean>(false);
   const [saveColumnOrderMessage, setSaveColumnOrderMessage] = useState<string>("");
+  // Modal shown after Save Column Order completes. `message` is what
+  // the operator sees; `success` gates the side effect on OK — a
+  // successful save bumps saveOrderResetSignal, which the child
+  // ExceptionsTable observes to flip its internal hasReordered back
+  // to false and thereby retract the Save Column Order button.
+  const [saveColumnOrderPopup, setSaveColumnOrderPopup] = useState<{
+    message: string;
+    success: boolean;
+  } | null>(null);
+  const [saveOrderResetSignal, setSaveOrderResetSignal] =
+    useState<number>(0);
+  const saveColumnOrderOkRef = useRef<HTMLButtonElement | null>(null);
+  // Server-loaded column layout for the current (currentDmUser,
+  // viewByGroup, viewByRuleCatalog) scope. Fetched via
+  // fetchUserPreferences whenever any of those change (see the
+  // effect below). undefined = not yet fetched for this scope; null
+  // = fetched, no saved layout; string[] = ordered labels to apply
+  // to the grid. Passed straight to ExceptionsTable's
+  // preferredColumnOrder prop.
+  const [preferredColumnOrder, setPreferredColumnOrder] = useState<
+    string[] | null | undefined
+  >(undefined);
   const [exceptionState, setExceptionState] = useState<string>("Pending");
   const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
   const [exceptionStatus, setExceptionStatus] = useState<string>("All");
@@ -1202,12 +1225,61 @@ export default function DqMonitorPage() {
     inSaveColumnOrderScope && columnLayout.hasReordered;
 
   // Auto-dismiss the transient "Column order saved" toast after a
-  // few seconds so it doesn't clutter the header row.
+  // few seconds so it doesn't clutter the header row. Rarely fires
+  // now that the save flow uses the modal below, but kept in case
+  // some future code path still needs the inline toast.
   useEffect(() => {
     if (!saveColumnOrderMessage) return;
     const t = window.setTimeout(() => setSaveColumnOrderMessage(""), 4000);
     return () => window.clearTimeout(t);
   }, [saveColumnOrderMessage]);
+
+  // Save-order modal focus + Escape handling — mirrors the alert
+  // dialog inside ExceptionsTable so both modals feel identical to
+  // the operator (Enter/Space on OK, Escape to dismiss).
+  useEffect(() => {
+    if (!saveColumnOrderPopup) return;
+    saveColumnOrderOkRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSaveColumnOrderPopup(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [saveColumnOrderPopup]);
+
+  // Load the operator's saved column layout for the current
+  // (user, group, catalog) scope on every LHS scope change. When
+  // viewByRuleCatalog is "All" (LHS at the group root) we pass ""
+  // so the backend matches the RULE_CATALOG_ID-IS-NULL row. Result
+  // becomes the preferredColumnOrder prop on ExceptionsTable,
+  // which applies it as the new committed baseline. When
+  // viewByGroup is "All" we clear the preference — no scoped
+  // layout applies at the tree root.
+  useEffect(() => {
+    if (!viewByGroup || viewByGroup === "All") {
+      setPreferredColumnOrder(null);
+      return;
+    }
+    const controller = new AbortController();
+    const catalogArg =
+      viewByRuleCatalog && viewByRuleCatalog !== "All"
+        ? viewByRuleCatalog
+        : "";
+    fetchUserPreferences(
+      currentDmUser,
+      viewByGroup,
+      catalogArg,
+      controller.signal
+    )
+      .then((order) => setPreferredColumnOrder(order))
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+        // eslint-disable-next-line no-console
+        console.error("fetchUserPreferences failed", e);
+        setPreferredColumnOrder(null);
+      });
+    return () => controller.abort();
+  }, [currentDmUser, viewByGroup, viewByRuleCatalog]);
 
   // Persist the current column layout to USER_PREFERENCES. Catalog
   // scope resolves from the LHS tree: no catalog drilled into
@@ -1232,16 +1304,33 @@ export default function DqMonitorPage() {
         catalogArg,
         columnLayout.visibleLabels
       );
+      // Surface the outcome as a modal (parity with the "Please
+      // enter a comment" alert), not a transient toast — the OK
+      // click is what triggers the button-hide side effect on
+      // success. 0 = SP no-op (unknown user/scope), 1 = inserted,
+      // 2 = updated.
       if (status === 1) {
-        setSaveColumnOrderMessage("Column order saved.");
+        setSaveColumnOrderPopup({
+          message: "Column order saved.",
+          success: true,
+        });
       } else if (status === 2) {
-        setSaveColumnOrderMessage("Column order updated.");
+        setSaveColumnOrderPopup({
+          message: "Column order updated.",
+          success: true,
+        });
       } else {
-        setSaveColumnOrderMessage("Could not save (unknown user or scope).");
+        setSaveColumnOrderPopup({
+          message: "Could not save (unknown user or scope).",
+          success: false,
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "unknown error";
-      setSaveColumnOrderMessage(`Save failed: ${msg}`);
+      setSaveColumnOrderPopup({
+        message: `Save failed: ${msg}`,
+        success: false,
+      });
     } finally {
       setSavingColumnOrder(false);
     }
@@ -2866,6 +2955,16 @@ export default function DqMonitorPage() {
             <ExceptionsTable
               data={tableExceptions}
               showResultDataColumns={viewMode !== "security"}
+              // Nonce bumped by the Save Column Order modal's OK
+              // handler on a successful save — child observes the
+              // increment and flips its hasReordered back to false,
+              // retracting the Save Column Order button until the
+              // operator drag-reorders again.
+              resetReorderSignal={saveOrderResetSignal}
+              // Server-loaded column layout for the current
+              // (user, group, catalog) scope — see the
+              // fetchUserPreferences effect above.
+              preferredColumnOrder={preferredColumnOrder}
               // RULE_NAME always sits immediately right of Comments,
               // regardless of where it appears in the RESULT_DATA JSON
               // key order — otherwise a rule-authored key order that
@@ -3079,6 +3178,44 @@ export default function DqMonitorPage() {
             : `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
           : ""}
       </div>
+
+      {/* Save Column Order outcome modal. Uses the same dq-alert-*
+          styling as the "Please enter a comment" dialog inside
+          ExceptionsTable so both feel identical to the operator.
+          OK dismisses; on a successful save, OK also bumps
+          saveOrderResetSignal, which the child ExceptionsTable
+          observes to flip its internal hasReordered back to false
+          and hide the Save Column Order button. */}
+      {saveColumnOrderPopup && (
+        <div className="dq-alert-overlay">
+          <div
+            className="dq-alert-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dq-save-order-msg"
+          >
+            <div id="dq-save-order-msg" className="dq-alert-dialog-msg">
+              {saveColumnOrderPopup.message}
+            </div>
+            <div className="dq-alert-dialog-actions">
+              <button
+                ref={saveColumnOrderOkRef}
+                type="button"
+                className="dq-alert-dialog-ok"
+                onClick={() => {
+                  const wasSuccess = saveColumnOrderPopup.success;
+                  setSaveColumnOrderPopup(null);
+                  if (wasSuccess) {
+                    setSaveOrderResetSignal((n) => n + 1);
+                  }
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

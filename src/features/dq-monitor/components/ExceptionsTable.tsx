@@ -126,6 +126,27 @@ type ExceptionsTableProps = {
     hasReordered: boolean;
     visibleLabels: string[];
   }) => void;
+  // Increment-only nonce the parent bumps when it wants the grid to
+  // treat the current column layout as the new "committed" baseline
+  // — flips hasReordered back to false so the Save Column Order
+  // button retracts. Used by the post-save modal's OK handler.
+  resetReorderSignal?: number;
+  // Server-loaded column layout for the current (user, group,
+  // catalog) scope. Passed as an ordered array of user-visible
+  // labels — same encoding onColumnLayoutChange emits. Semantics:
+  //   undefined — parent hasn't fetched yet; grid uses canonical
+  //               default order.
+  //   null      — fetch resolved to "no saved layout"; grid uses
+  //               canonical default order (identical to undefined
+  //               today, but retained so callers can express the
+  //               distinction).
+  //   string[]  — fetched layout to apply verbatim. Unknown labels
+  //               are dropped (via keyForLabel + availableKeys); any
+  //               canonical key not in the saved list is appended at
+  //               the tail so a schema addition since the save
+  //               doesn't hide new columns. hasReordered is reset to
+  //               false — this array IS the committed baseline.
+  preferredColumnOrder?: string[] | null;
 };
 
 function getActionClass(action: string): string {
@@ -219,6 +240,25 @@ function labelForKey(key: string): string {
   return KEY_LABELS[key] ?? key;
 }
 
+// Inverse of labelForKey — translates a saved label back to an
+// internal column key. Consults availableKeys so a stale saved label
+// that no longer corresponds to any real column (e.g., a RESULT_DATA
+// key from a different catalog) is dropped rather than silently
+// creating a phantom column entry. Static labels map directly via
+// KEY_LABELS; anything else is assumed to be a raw RESULT_DATA JSON
+// key and returned as "rd:<label>" iff the grid actually carries it.
+// Returns "" when the label can't be resolved to a live key.
+const LABEL_TO_KEY: Record<string, string> = Object.fromEntries(
+  Object.entries(KEY_LABELS).map(([k, v]) => [v, k])
+);
+function keyForLabel(label: string, availableKeys: Set<string>): string {
+  const direct = LABEL_TO_KEY[label];
+  if (direct && availableKeys.has(direct)) return direct;
+  const rdKey = `rd:${label}`;
+  if (availableKeys.has(rdKey)) return rdKey;
+  return "";
+}
+
 // Rewrites `order` so that whichever static columns appear in it are
 // emitted first (in the exact position they hold in `canonical`), the
 // non-static/non-trailing keys retain their prior order in the middle,
@@ -296,6 +336,8 @@ export default function ExceptionsTable({
   readOnly = false,
   showLifecycleColumns = false,
   onColumnLayoutChange,
+  resetReorderSignal,
+  preferredColumnOrder,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -657,6 +699,49 @@ export default function ExceptionsTable({
   // hidden until the user actively drags.
   const [hasReordered, setHasReordered] = useState<boolean>(false);
 
+  // Parent bumps resetReorderSignal after a successful column-order
+  // save (see the OK handler of the save modal in DqMonitorPage) —
+  // treat the current layout as the new committed baseline and drop
+  // the "dirty" flag so the Save Column Order button retracts.
+  // Undefined signal is the initial mount value; the ref lets us
+  // observe strict increments only.
+  const lastResetReorderSignal = useRef<number | undefined>(
+    resetReorderSignal
+  );
+  useEffect(() => {
+    if (resetReorderSignal === lastResetReorderSignal.current) return;
+    lastResetReorderSignal.current = resetReorderSignal;
+    setHasReordered(false);
+  }, [resetReorderSignal]);
+
+  // Apply a server-loaded column layout when it arrives (or changes,
+  // e.g., operator picked a different LHS scope). Translates the
+  // saved labels back to internal keys via keyForLabel, drops labels
+  // that don't correspond to any live column in the current
+  // canonicalKeys, and appends any canonical keys the saved layout
+  // didn't cover (schema-additions since the save) at the tail so
+  // new columns never silently disappear. hasReordered is reset to
+  // false — the loaded layout is the new committed baseline.
+  useEffect(() => {
+    if (!Array.isArray(preferredColumnOrder)) return;
+    if (preferredColumnOrder.length === 0) return;
+    const available = new Set(canonicalKeys);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const label of preferredColumnOrder) {
+      const k = keyForLabel(label, available);
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        out.push(k);
+      }
+    }
+    for (const k of canonicalKeys) {
+      if (!seen.has(k)) out.push(k);
+    }
+    setColumnOrder(out);
+    setHasReordered(false);
+  }, [preferredColumnOrder, canonicalKeys]);
+
   // Full reset: strip every user override (hidden, pinned, resized,
   // reordered) back to the session's baseline. Column order is
   // restored to the mount-time snapshot, reconciled against the current
@@ -677,10 +762,16 @@ export default function ExceptionsTable({
       const set = new Set(canonicalKeys);
       const kept = prev.filter((k) => set.has(k));
       const missing = canonicalKeys.filter((k) => !kept.includes(k));
-      // pinStaticsToCanonicalOrder guarantees the four static columns
-      // stay in canonical order at the front regardless of how
-      // extraKeys arriving async might have shuffled prev.
-      const next = pinStaticsToCanonicalOrder([...kept, ...missing], canonicalKeys);
+      // Do NOT re-pin statics here — the operator (or a loaded
+      // server preference) may have deliberately placed Status /
+      // Suppress Date / Assign To / Comments / Open Date / Close
+      // Date somewhere non-default, and the reconcile path must not
+      // wipe that. Initial-hydrate below still passes through
+      // pinStaticsToCanonicalOrder for the "no history" case; the
+      // drag path already accepts any drop; and the save/load
+      // round-trip persists whatever the operator committed. New
+      // keys arriving async (extraKeys) just append at the tail.
+      const next = [...kept, ...missing];
       if (
         next.length === prev.length &&
         next.every((k, i) => k === prev[i])
