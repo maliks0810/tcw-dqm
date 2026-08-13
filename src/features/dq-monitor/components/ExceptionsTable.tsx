@@ -683,18 +683,8 @@ export default function ExceptionsTable({
     return pinStaticsToCanonicalOrder(persisted ?? canonicalKeys, canonicalKeys);
   });
 
-  // Mount-time snapshot of columnOrder. Used both to compute
-  // "reordered THIS SESSION" (so the Reset button doesn't appear
-  // just because a persisted layout differs from canonical), and as
-  // the target when the user clicks Reset. Frozen — no updates after
-  // first render.
-  const [initialColumnOrder] = useState<string[]>(() => {
-    const persisted = loadColumnLayout(STORAGE_KEY)?.columnOrder;
-    return pinStaticsToCanonicalOrder(persisted ?? canonicalKeys, canonicalKeys);
-  });
-
   // True after the user drops a column onto another in the current
-  // session. Cleared by Reset. Persistence layer never touches it, so
+  // session. Persistence layer never touches it, so
   // a fresh page load always starts false — the Reset chip stays
   // hidden until the user actively drags.
   const [hasReordered, setHasReordered] = useState<boolean>(false);
@@ -722,7 +712,20 @@ export default function ExceptionsTable({
   // didn't cover (schema-additions since the save) at the tail so
   // new columns never silently disappear. hasReordered is reset to
   // false — the loaded layout is the new committed baseline.
+  //
+  // Gated on preferredColumnOrder identity (via lastAppliedPreferred-
+  // Ref), NOT on canonicalKeys — otherwise every data refresh
+  // re-derives canonicalKeys and would re-clobber any in-session
+  // drag with the server layout. The canonicalKeys-reconcile effect
+  // above handles new keys appearing async by appending them at the
+  // tail; this effect just seeds/re-seeds the layout when the parent
+  // literally hands us a different preferredColumnOrder value.
+  const lastAppliedPreferredRef = useRef<
+    string[] | null | undefined
+  >(undefined);
   useEffect(() => {
+    if (preferredColumnOrder === lastAppliedPreferredRef.current) return;
+    lastAppliedPreferredRef.current = preferredColumnOrder;
     if (!Array.isArray(preferredColumnOrder)) return;
     if (preferredColumnOrder.length === 0) return;
     const available = new Set(canonicalKeys);
@@ -742,21 +745,6 @@ export default function ExceptionsTable({
     setHasReordered(false);
   }, [preferredColumnOrder, canonicalKeys]);
 
-  // Full reset: strip every user override (hidden, pinned, resized,
-  // reordered) back to the session's baseline. Column order is
-  // restored to the mount-time snapshot, reconciled against the current
-  // canonical (so keys that appeared since mount stay visible, appended
-  // at the tail).
-  const resetColumns = useCallback(() => {
-    setHiddenCols(new Set());
-    setPinnedCols(new Set());
-    setColWidths({ ...INITIAL_WIDTHS });
-    const set = new Set(canonicalKeys);
-    const kept = initialColumnOrder.filter((k) => set.has(k));
-    const missing = canonicalKeys.filter((k) => !kept.includes(k));
-    setColumnOrder([...kept, ...missing]);
-    setHasReordered(false);
-  }, [canonicalKeys, initialColumnOrder]);
   useEffect(() => {
     setColumnOrder((prev) => {
       const set = new Set(canonicalKeys);
@@ -1562,45 +1550,30 @@ export default function ExceptionsTable({
 
   const visibleKeys = columnOrder.filter((k) => !isHidden(k));
 
-  // "Reset column order" appears only when the user has dragged a
-  // column in the current session. Hide + pin + resize each have their
-  // own in-grid affordance (Show all / Unpin / drag the resize handle),
-  // and a persisted layout from a previous session is treated as the
-  // baseline — not as an override waiting to be reset.
-  const showTopBar = hiddenCols.size > 0 || hasReordered;
+  // Top bar surfaces only the "N columns hidden" chip + Show all
+  // affordance. The reordered-state indicator + Reset button were
+  // removed at user request — operators can freely drag statics and
+  // rd:* columns to any position (default canonical order applies
+  // only on a fresh session with no saved USER_PREFERENCES row),
+  // and the header Save Column Order button already surfaces the
+  // "you have uncommitted drags" state.
+  const showTopBar = hiddenCols.size > 0;
 
   return (
     <div className="dq-exceptions-wrap">
       {showTopBar && (
         <div className="dq-hidden-cols-bar">
           <span>
-            {hiddenCols.size > 0 && (
-              <>
-                {hiddenCols.size} column
-                {hiddenCols.size === 1 ? "" : "s"} hidden
-              </>
-            )}
-            {hiddenCols.size > 0 && hasReordered && ", "}
-            {hasReordered && "columns reordered"}
+            {hiddenCols.size} column
+            {hiddenCols.size === 1 ? "" : "s"} hidden
           </span>
-          {hiddenCols.size > 0 && (
-            <button
-              type="button"
-              className="dq-hidden-cols-restore"
-              onClick={showAllCols}
-            >
-              Show all
-            </button>
-          )}
-          {hasReordered && (
-            <button
-              type="button"
-              className="dq-hidden-cols-restore"
-              onClick={resetColumns}
-            >
-              Reset column order
-            </button>
-          )}
+          <button
+            type="button"
+            className="dq-hidden-cols-restore"
+            onClick={showAllCols}
+          >
+            Show all
+          </button>
         </div>
       )}
       <div
