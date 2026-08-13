@@ -704,28 +704,25 @@ export default function ExceptionsTable({
     setHasReordered(false);
   }, [resetReorderSignal]);
 
-  // Apply a server-loaded column layout when it arrives (or changes,
-  // e.g., operator picked a different LHS scope). Translates the
-  // saved labels back to internal keys via keyForLabel, drops labels
-  // that don't correspond to any live column in the current
-  // canonicalKeys, and appends any canonical keys the saved layout
-  // didn't cover (schema-additions since the save) at the tail so
-  // new columns never silently disappear. hasReordered is reset to
-  // false — the loaded layout is the new committed baseline.
+  // Apply a server-loaded column layout, re-applying whenever either
+  // preferredColumnOrder OR canonicalKeys shifts — as long as the
+  // operator hasn't drag-customized since the last apply. The
+  // canonicalKeys dep matters because on first navigation to a
+  // scope the exceptions fetch is async: preferredColumnOrder can
+  // resolve BEFORE the exception rows arrive, so at that moment
+  // canonicalKeys has no rd:* keys yet and any saved rd:* label
+  // (e.g., "RULE_NAME") would be dropped by keyForLabel and later
+  // shoved to the tail by the reconcile-append. Re-applying when
+  // canonicalKeys grows picks up the missing keys and slots them
+  // back into their saved position.
   //
-  // Gated on preferredColumnOrder identity (via lastAppliedPreferred-
-  // Ref), NOT on canonicalKeys — otherwise every data refresh
-  // re-derives canonicalKeys and would re-clobber any in-session
-  // drag with the server layout. The canonicalKeys-reconcile effect
-  // above handles new keys appearing async by appending them at the
-  // tail; this effect just seeds/re-seeds the layout when the parent
-  // literally hands us a different preferredColumnOrder value.
-  const lastAppliedPreferredRef = useRef<
-    string[] | null | undefined
-  >(undefined);
+  // hasReordered=true short-circuits — the operator's in-session
+  // drag order wins and is never clobbered by a re-apply. Save
+  // Column Order → OK → resetReorderSignal effect flips hasReordered
+  // false, and the next canonicalKeys shift will re-apply the
+  // latest saved layout cleanly.
   useEffect(() => {
-    if (preferredColumnOrder === lastAppliedPreferredRef.current) return;
-    lastAppliedPreferredRef.current = preferredColumnOrder;
+    if (hasReordered) return;
 
     // undefined = parent hasn't resolved a fetch for this scope yet
     // (still loading). Leave columnOrder alone — either the initial
@@ -733,72 +730,60 @@ export default function ExceptionsTable({
     // until the fetch settles.
     if (preferredColumnOrder === undefined) return;
 
-    // null = fetched and no saved layout for this scope. Reset to
-    // canonical default with static pinning so switching from a
-    // scope with a saved layout to a scope without one doesn't
-    // leave the prior scope's order lingering on the grid.
-    if (preferredColumnOrder === null) {
-      // eslint-disable-next-line no-console
-      console.log(
-        "[ExceptionsTable] no saved layout — applying canonical default",
-        { canonicalKeys }
+    // null / empty = fetched and no saved layout for this scope.
+    // Reset to canonical default with static pinning so switching
+    // from a scope with a saved layout to a scope without one
+    // doesn't leave the prior scope's order lingering.
+    if (
+      preferredColumnOrder === null ||
+      preferredColumnOrder.length === 0
+    ) {
+      const canonical = pinStaticsToCanonicalOrder(
+        [...canonicalKeys],
+        canonicalKeys
       );
-      setColumnOrder(
-        pinStaticsToCanonicalOrder([...canonicalKeys], canonicalKeys)
-      );
-      setHasReordered(false);
+      setColumnOrder((prev) => {
+        if (
+          prev.length === canonical.length &&
+          prev.every((k, i) => k === canonical[i])
+        ) {
+          return prev;
+        }
+        return canonical;
+      });
       return;
     }
 
-    // Empty array — treat as "no preference" (shouldn't happen since
-    // the service returns null for empty strings, but defensively
-    // handle it the same way).
-    if (preferredColumnOrder.length === 0) {
-      setColumnOrder(
-        pinStaticsToCanonicalOrder([...canonicalKeys], canonicalKeys)
-      );
-      setHasReordered(false);
-      return;
-    }
-
-    // Saved layout exists — apply it STRICTLY in the JSON order. No
-    // static pinning; the operator's ordering wins verbatim. Any
+    // Saved layout exists — apply it STRICTLY in the JSON order.
+    // No static pinning; the operator's ordering wins verbatim. Any
     // canonical key the saved layout doesn't cover (schema addition
-    // since the save) is appended at the tail so new columns never
-    // vanish. hasReordered is reset — the loaded layout IS the new
-    // committed baseline.
+    // since the save, or an rd:* key that arrives later once
+    // extraKeys populates) is appended at the tail — subsequent
+    // canonicalKeys shifts will re-run this effect and re-slot the
+    // key into its saved position.
     const available = new Set(canonicalKeys);
     const seen = new Set<string>();
     const out: string[] = [];
-    const dropped: string[] = [];
     for (const label of preferredColumnOrder) {
       const k = keyForLabel(label, available);
-      if (!k) {
-        dropped.push(label);
-        continue;
-      }
+      if (!k) continue;
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(k);
     }
-    const appended: string[] = [];
     for (const k of canonicalKeys) {
-      if (!seen.has(k)) {
-        appended.push(k);
-        out.push(k);
-      }
+      if (!seen.has(k)) out.push(k);
     }
-    // eslint-disable-next-line no-console
-    console.log("[ExceptionsTable] applying saved layout", {
-      savedLabels: preferredColumnOrder,
-      appliedOrder: out,
-      appendedTail: appended,
-      droppedUnknownLabels: dropped,
-      canonicalKeys,
+    setColumnOrder((prev) => {
+      if (
+        prev.length === out.length &&
+        prev.every((k, i) => k === out[i])
+      ) {
+        return prev;
+      }
+      return out;
     });
-    setColumnOrder(out);
-    setHasReordered(false);
-  }, [preferredColumnOrder, canonicalKeys]);
+  }, [preferredColumnOrder, canonicalKeys, hasReordered]);
 
   useEffect(() => {
     setColumnOrder((prev) => {
