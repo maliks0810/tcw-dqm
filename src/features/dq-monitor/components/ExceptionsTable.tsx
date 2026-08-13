@@ -738,6 +738,11 @@ export default function ExceptionsTable({
     // scope with a saved layout to a scope without one doesn't
     // leave the prior scope's order lingering on the grid.
     if (preferredColumnOrder === null) {
+      // eslint-disable-next-line no-console
+      console.log(
+        "[ExceptionsTable] no saved layout — applying canonical default",
+        { canonicalKeys }
+      );
       setColumnOrder(
         pinStaticsToCanonicalOrder([...canonicalKeys], canonicalKeys)
       );
@@ -765,16 +770,32 @@ export default function ExceptionsTable({
     const available = new Set(canonicalKeys);
     const seen = new Set<string>();
     const out: string[] = [];
+    const dropped: string[] = [];
     for (const label of preferredColumnOrder) {
       const k = keyForLabel(label, available);
-      if (k && !seen.has(k)) {
-        seen.add(k);
+      if (!k) {
+        dropped.push(label);
+        continue;
+      }
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(k);
+    }
+    const appended: string[] = [];
+    for (const k of canonicalKeys) {
+      if (!seen.has(k)) {
+        appended.push(k);
         out.push(k);
       }
     }
-    for (const k of canonicalKeys) {
-      if (!seen.has(k)) out.push(k);
-    }
+    // eslint-disable-next-line no-console
+    console.log("[ExceptionsTable] applying saved layout", {
+      savedLabels: preferredColumnOrder,
+      appliedOrder: out,
+      appendedTail: appended,
+      droppedUnknownLabels: dropped,
+      canonicalKeys,
+    });
     setColumnOrder(out);
     setHasReordered(false);
   }, [preferredColumnOrder, canonicalKeys]);
