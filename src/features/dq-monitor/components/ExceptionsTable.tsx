@@ -726,8 +726,42 @@ export default function ExceptionsTable({
   useEffect(() => {
     if (preferredColumnOrder === lastAppliedPreferredRef.current) return;
     lastAppliedPreferredRef.current = preferredColumnOrder;
-    if (!Array.isArray(preferredColumnOrder)) return;
-    if (preferredColumnOrder.length === 0) return;
+
+    // undefined = parent hasn't resolved a fetch for this scope yet
+    // (still loading). Leave columnOrder alone — either the initial
+    // hydrate value or the previously-applied preference stays put
+    // until the fetch settles.
+    if (preferredColumnOrder === undefined) return;
+
+    // null = fetched and no saved layout for this scope. Reset to
+    // canonical default with static pinning so switching from a
+    // scope with a saved layout to a scope without one doesn't
+    // leave the prior scope's order lingering on the grid.
+    if (preferredColumnOrder === null) {
+      setColumnOrder(
+        pinStaticsToCanonicalOrder([...canonicalKeys], canonicalKeys)
+      );
+      setHasReordered(false);
+      return;
+    }
+
+    // Empty array — treat as "no preference" (shouldn't happen since
+    // the service returns null for empty strings, but defensively
+    // handle it the same way).
+    if (preferredColumnOrder.length === 0) {
+      setColumnOrder(
+        pinStaticsToCanonicalOrder([...canonicalKeys], canonicalKeys)
+      );
+      setHasReordered(false);
+      return;
+    }
+
+    // Saved layout exists — apply it STRICTLY in the JSON order. No
+    // static pinning; the operator's ordering wins verbatim. Any
+    // canonical key the saved layout doesn't cover (schema addition
+    // since the save) is appended at the tail so new columns never
+    // vanish. hasReordered is reset — the loaded layout IS the new
+    // committed baseline.
     const available = new Set(canonicalKeys);
     const seen = new Set<string>();
     const out: string[] = [];
