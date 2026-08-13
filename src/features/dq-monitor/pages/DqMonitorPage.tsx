@@ -33,6 +33,7 @@ import { updateExceptionSuppressDate } from "../services/update-exception-suppre
 import { updateExceptionAssignTo } from "../services/update-exception-assign-to";
 import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
+import { updateUserPreferences } from "../services/update-user-preferences";
 import "../styles/dq-monitor.css";
 
 // Cap on how many EXCEPTION rows we render in the grid at once. Bigger
@@ -275,6 +276,17 @@ export default function DqMonitorPage() {
   // hides the buttons and locks Assign To — used until the fetch
   // returns and if the operator's user isn't in DM_USER.
   const [dmRole, setDmRole] = useState<string>("");
+  // Live snapshot of the ExceptionsTable's column layout — fed by
+  // its onColumnLayoutChange callback. hasReordered gates the Save
+  // Column Order button; visibleLabels is what we persist when the
+  // button fires. Empty initial state so the button stays hidden
+  // until the child mounts and reports.
+  const [columnLayout, setColumnLayout] = useState<{
+    hasReordered: boolean;
+    visibleLabels: string[];
+  }>({ hasReordered: false, visibleLabels: [] });
+  const [savingColumnOrder, setSavingColumnOrder] = useState<boolean>(false);
+  const [saveColumnOrderMessage, setSaveColumnOrderMessage] = useState<string>("");
   const [exceptionState, setExceptionState] = useState<string>("Pending");
   const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
   const [exceptionStatus, setExceptionStatus] = useState<string>("All");
@@ -1172,6 +1184,76 @@ export default function DqMonitorPage() {
     if (!showBulkAssign && bulkStatusPanelOpen) setBulkStatusPanelOpen(false);
   }, [showBulkAssign, bulkStatusPanelOpen]);
 
+  // Save Column Order surfaces next to Bulk Status in the header when
+  // the operator has drag-reordered the Exceptions grid inside one of
+  // the Security-Master-family rule groups (or anything drilled into
+  // them — viewByGroup stays at the group name for catalog / rule
+  // drill-downs). Deliberately NOT gated on dmRole — column layout
+  // is a per-user preference, not a privileged action, so every
+  // operator can save their own arrangement. Historical (dqmDate!="")
+  // and security-view modes are excluded because the grid isn't the
+  // Exceptions grid there.
+  const inSaveColumnOrderScope =
+    (viewByGroup === "Security Master" ||
+      viewByGroup === "Security Master Benchmark" ||
+      viewByGroup === "TOD SOD") &&
+    viewMode !== "security";
+  const showSaveColumnOrder =
+    inSaveColumnOrderScope && columnLayout.hasReordered;
+
+  // Auto-dismiss the transient "Column order saved" toast after a
+  // few seconds so it doesn't clutter the header row.
+  useEffect(() => {
+    if (!saveColumnOrderMessage) return;
+    const t = window.setTimeout(() => setSaveColumnOrderMessage(""), 4000);
+    return () => window.clearTimeout(t);
+  }, [saveColumnOrderMessage]);
+
+  // Persist the current column layout to USER_PREFERENCES. Catalog
+  // scope resolves from the LHS tree: no catalog drilled into
+  // (viewByRuleCatalog blank or "All") ⇒ pass "" so the SP stores
+  // RULE_CATALOG_ID as NULL and the preferences row is scoped to
+  // the whole group. Otherwise pass the catalog name and the SP
+  // scopes the row per catalog.
+  const saveColumnOrder = useCallback(async () => {
+    if (savingColumnOrder) return;
+    if (!inSaveColumnOrderScope) return;
+    if (columnLayout.visibleLabels.length === 0) return;
+    const catalogArg =
+      viewByRuleCatalog && viewByRuleCatalog !== "All"
+        ? viewByRuleCatalog
+        : "";
+    setSavingColumnOrder(true);
+    setSaveColumnOrderMessage("");
+    try {
+      const status = await updateUserPreferences(
+        currentDmUser,
+        viewByGroup,
+        catalogArg,
+        columnLayout.visibleLabels
+      );
+      if (status === 1) {
+        setSaveColumnOrderMessage("Column order saved.");
+      } else if (status === 2) {
+        setSaveColumnOrderMessage("Column order updated.");
+      } else {
+        setSaveColumnOrderMessage("Could not save (unknown user or scope).");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "unknown error";
+      setSaveColumnOrderMessage(`Save failed: ${msg}`);
+    } finally {
+      setSavingColumnOrder(false);
+    }
+  }, [
+    savingColumnOrder,
+    inSaveColumnOrderScope,
+    columnLayout.visibleLabels,
+    viewByGroup,
+    viewByRuleCatalog,
+    currentDmUser,
+  ]);
+
   // Rule dropdown options for the Bulk processing panel. Follows the
   // tree selection:
   //   - a specific rule selected     → just that rule
@@ -1448,6 +1530,14 @@ export default function DqMonitorPage() {
         bulkStatusLabel={
           bulkStatusPanelOpen ? "Hide Bulk Status" : "Bulk Status"
         }
+        onSaveColumnOrderClick={
+          showSaveColumnOrder ? saveColumnOrder : undefined
+        }
+        saveColumnOrderLabel={
+          savingColumnOrder ? "Saving…" : "Save Column Order"
+        }
+        saveColumnOrderSaving={savingColumnOrder}
+        saveColumnOrderMessage={saveColumnOrderMessage}
         onBulkAssignClick={
           showBulkAssign ? () => setBulkPanelOpen((v) => !v) : undefined
         }
@@ -2799,6 +2889,7 @@ export default function DqMonitorPage() {
                 viewByGroup === "Security Benchmark Master"
               }
               onVisibleRowsChange={setVisibleExceptions}
+              onColumnLayoutChange={setColumnLayout}
               statusOptions={
                 showStatusPanel ? exceptionStatusOptions : undefined
               }

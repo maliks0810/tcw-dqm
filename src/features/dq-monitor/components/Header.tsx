@@ -10,6 +10,20 @@ type HeaderProps = {
   bulkStatusLabel?: string;
   onBulkAssignClick?: () => void;
   bulkAssignLabel?: string;
+  // Save Column Order sits between Bulk Status and Bulk Assign in
+  // the header. Rendered only when a callback is supplied — the
+  // parent decides visibility (today: SM / SM Benchmark / TOD SOD
+  // rule groups, and only after the operator has drag-reordered
+  // the grid). Optional label + saving-in-flight signal so the
+  // parent can flip the copy while the POST is in flight.
+  onSaveColumnOrderClick?: () => void;
+  saveColumnOrderLabel?: string;
+  saveColumnOrderSaving?: boolean;
+  // Transient success / error message rendered inline right of the
+  // Save Column Order button. Parent auto-clears it after a few
+  // seconds so the header row doesn't stay noisy. Not shown when
+  // the button itself isn't rendered.
+  saveColumnOrderMessage?: string;
   breakdown?: React.ReactNode;
   breakdownLeftOffset?: number;
 };
@@ -22,6 +36,10 @@ export default function Header({
   bulkStatusLabel,
   onBulkAssignClick,
   bulkAssignLabel,
+  onSaveColumnOrderClick,
+  saveColumnOrderLabel,
+  saveColumnOrderSaving,
+  saveColumnOrderMessage,
   breakdown,
   breakdownLeftOffset,
 }: HeaderProps = {}) {
@@ -81,6 +99,25 @@ export default function Header({
           >
             {bulkStatusLabel ?? "Bulk Status"}
           </button>
+        )}
+        {onSaveColumnOrderClick && (
+          <button
+            className="dq-export-btn"
+            type="button"
+            onClick={onSaveColumnOrderClick}
+            disabled={saveColumnOrderSaving}
+          >
+            {saveColumnOrderLabel ?? "Save Column Order"}
+          </button>
+        )}
+        {onSaveColumnOrderClick && saveColumnOrderMessage && (
+          <span
+            className="dq-header-inline-message"
+            role="status"
+            aria-live="polite"
+          >
+            {saveColumnOrderMessage}
+          </span>
         )}
         {onBulkAssignClick && (
           <button

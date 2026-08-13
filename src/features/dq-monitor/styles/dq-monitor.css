@@ -839,6 +839,17 @@
   padding-left: 4px;
 }
 
+/* Inline status message next to the Save Column Order button in the
+   header. Same shape as .dq-bulk-panel-message but sized to sit
+   inside the header row's flex gap. Auto-dismissed by the parent
+   after a few seconds so it never lingers. */
+.dq-header-inline-message {
+  font-size: 12px;
+  color: #111827;
+  padding-left: 4px;
+  align-self: center;
+}
+
 /* Multi-select rule combo inside the Bulk Assign panel. Same shape as
    .dq-status-combo (trigger button + absolute popover with a checkbox
    list) but wider so long rule names fit. */

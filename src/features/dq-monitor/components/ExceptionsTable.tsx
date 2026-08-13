@@ -114,6 +114,18 @@ type ExceptionsTableProps = {
   // Security-Master-family rule groups; other groups don't surface
   // the lifecycle dates.
   showLifecycleColumns?: boolean;
+  // Fires whenever the visible column layout shifts — the user
+  // drag-reorders (hasReordered flips), hides/shows a column, or
+  // the underlying RD keys change with new data. Parent uses this
+  // to (a) know when to surface the "Save Column Order" affordance
+  // (hasReordered) and (b) grab the current display labels to
+  // persist. Labels are the user-visible names ("Rule Name",
+  // "Suppress Date", the raw JSON key for rd:* columns), not the
+  // internal grid keys.
+  onColumnLayoutChange?: (info: {
+    hasReordered: boolean;
+    visibleLabels: string[];
+  }) => void;
 };
 
 function getActionClass(action: string): string {
@@ -178,6 +190,34 @@ const STATIC_COLUMN_KEYS = new Set([
 // belong at the far right of the grid whenever present, so drag-
 // reorder or a stale persisted layout can't slot them mid-grid.
 const TRAILING_COLUMN_KEYS = new Set(["openDate", "closeDate"]);
+
+// Internal-key → display-label map for every non-rd:* column the
+// grid can render. Kept in sync with renderHeader's switch below.
+// rd:* keys use their raw JSON key as the label — that's what the
+// header actually shows via <ColumnFilterHeader label={k} />.
+// Used by labelForKey when the parent asks for the current column
+// layout as user-visible names (Save Column Order flow).
+const KEY_LABELS: Record<string, string> = {
+  status: "Status",
+  suppressDate: "Suppress Date",
+  assignTo: "Assign To",
+  comments: "Comments",
+  dateTime: "Date/Time",
+  priority: "Priority",
+  ruleName: "Rule Name",
+  issue: "Issue",
+  aladdin: "Asset Id",
+  idBbGlobal: "ID BB Global",
+  vendor: "Vendor",
+  action: "Action",
+  openDate: "Open Date",
+  closeDate: "Close Date",
+};
+
+function labelForKey(key: string): string {
+  if (key.startsWith("rd:")) return key.slice(3);
+  return KEY_LABELS[key] ?? key;
+}
 
 // Rewrites `order` so that whichever static columns appear in it are
 // emitted first (in the exact position they hold in `canonical`), the
@@ -255,6 +295,7 @@ export default function ExceptionsTable({
   priorityRdKeys,
   readOnly = false,
   showLifecycleColumns = false,
+  onColumnLayoutChange,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -802,6 +843,19 @@ export default function ExceptionsTable({
     onVisibleRowsChange?.(sortedRows);
   }, [sortedRows, onVisibleRowsChange]);
 
+  // Notify parent when the visible column layout shifts — parent
+  // uses this to gate the Save Column Order button (hasReordered)
+  // and to grab the current display labels for persistence. Fires
+  // on every columnOrder / hiddenCols / hasReordered change and
+  // once on mount so the parent sees the initial layout.
+  useEffect(() => {
+    if (!onColumnLayoutChange) return;
+    const labels = columnOrder
+      .filter((k) => !hiddenCols.has(k))
+      .map(labelForKey);
+    onColumnLayoutChange({ hasReordered, visibleLabels: labels });
+  }, [columnOrder, hiddenCols, hasReordered, onColumnLayoutChange]);
+
   // Commit a row's pending status change when focus leaves the <tr>.
   // Runs the same validation the old inline-onChange guards ran, but
   // deferred to row-blur so operators can pick a status and *then*
@@ -851,6 +905,64 @@ export default function ExceptionsTable({
         });
         return;
       }
+
+      const maybePromise = onStatusChange?.(
+        row.exceptionId,
+        next,
+        effectiveComments,
+        effectiveSuppress
+      );
+      setPendingRowStatus((prev) => {
+        const copy = { ...prev };
+        delete copy[row.exceptionId];
+        return copy;
+      });
+      trackRowCommit(row.exceptionId, maybePromise ?? undefined);
+    },
+    [pendingRowStatus, onStatusChange, trackRowCommit]
+  );
+
+  // Early-commit variant fired when a supporting field (Comments,
+  // Suppress Date) blurs WHILE focus stays inside the row. Silent —
+  // no alerts on failed validation; the intent is "commit as soon as
+  // enough data is present, else defer to row-blur which handles the
+  // alert path." sourceField gates the trigger on the just-blurred
+  // field being populated (per user requirement: only commit on
+  // Comments-blur when comments non-blank; only on SuppressDate-blur
+  // when date populated).
+  const tryCommitRowStatusChange = useCallback(
+    (
+      row: ExceptionRow,
+      trEl: HTMLElement,
+      sourceField: "comments" | "suppressDate"
+    ) => {
+      const next = pendingRowStatus[row.exceptionId];
+      if (next == null || next === row.status) return;
+
+      const commentInput = trEl.querySelector<HTMLInputElement>(
+        ".dq-row-comments-input"
+      );
+      const dateInput = trEl.querySelector<HTMLInputElement>(
+        ".dq-row-suppress-date-input"
+      );
+      const effectiveComments =
+        commentInput?.value ?? row.comments ?? "";
+      const effectiveSuppress =
+        dateInput?.value ?? row.suppressDate ?? "";
+
+      // Source-field readiness — required by the user's spec.
+      if (sourceField === "comments" && effectiveComments.trim() === "") {
+        return;
+      }
+      if (sourceField === "suppressDate" && !effectiveSuppress) {
+        return;
+      }
+
+      // Full validation, silent: don't alert here — row-blur runs
+      // commitRowStatusChange which surfaces the alert if the row
+      // never becomes valid.
+      if (next === "Suppress" && !effectiveSuppress) return;
+      if (next !== "New" && effectiveComments.trim() === "") return;
 
       const maybePromise = onStatusChange?.(
         row.exceptionId,
@@ -1115,6 +1227,14 @@ export default function ExceptionsTable({
               initialValue={row.suppressDate}
               readOnly={readOnly}
               onCommit={(next) => {
+                // If a status pick is pending, the row-level
+                // tryCommitRowStatusChange (fired on this same blur
+                // via <tr onBlur>) will bundle the new suppress date
+                // into a single SP_UPDATE_EXCEPTION_STATUS PATCH.
+                // Skip the standalone SP_UPDATE_EXCEPTION_SUPPRESS_
+                // DATE round-trip here to avoid a doubled backend
+                // call for the same field-blur.
+                if (pendingRowStatus[row.exceptionId] != null) return;
                 if (next !== row.suppressDate) {
                   onSuppressDateChange?.(row.exceptionId, next);
                 }
@@ -1207,19 +1327,22 @@ export default function ExceptionsTable({
                   initialValue={row.comments}
                   readOnly={readOnly}
                   onCommit={(next) => {
-                    // Non-New rows require a non-blank comment (mirrors
-                    // the per-row status-change guard above and the
-                    // server-side SP_UPDATE_EXCEPTION_STATUS rule).
-                    // Return false so CommentsCell reverts its local
-                    // draft to the last committed value.
-                    if (
-                      row.status !== "New" &&
-                      next.trim() === ""
-                    ) {
-                      setAlertMessage(
-                        "Please enter a comment before changing the status."
-                      );
-                      return false;
+                    // If a status pick is pending, the row-level
+                    // tryCommitRowStatusChange (fired on this same
+                    // blur via <tr onBlur>) will bundle the new
+                    // comment into a single SP_UPDATE_EXCEPTION_
+                    // STATUS PATCH. Skip the standalone SP_UPDATE_
+                    // EXCEPTION_COMMENTS round-trip to avoid a
+                    // doubled backend call. The status-commit path
+                    // is the sole enforcer of "non-New status
+                    // requires comment" — CommentsCell no longer
+                    // second-guesses blank edits, so blanking a
+                    // comment on a row whose committed status is
+                    // non-New goes through unchallenged (matches
+                    // user expectation: editing a comment on a New
+                    // row must never alert).
+                    if (pendingRowStatus[row.exceptionId] != null) {
+                      return true;
                     }
                     if (next !== row.comments) {
                       onCommentsChange?.(row.exceptionId, next);
@@ -1430,18 +1553,42 @@ export default function ExceptionsTable({
                   }}
                   onBlur={(e) => {
                     // React's synthetic onBlur bubbles from any child
-                    // field. If focus stays inside this same <tr>
-                    // (tabbing between STATUS, SUPPRESS DATE, ASSIGN
-                    // TO, COMMENTS in the same row) it is not a row-
-                    // blur — skip. Once focus lands outside the row
-                    // (another row, another panel, or <body>), run
-                    // the deferred commit so any pending STATUS pick
-                    // gets validated + bundled with the sibling
-                    // comment / suppress-date DOM values.
+                    // field. Two commit paths depending on where focus
+                    // lands next:
+                    //   1. Focus leaves the row entirely → run the
+                    //      full commit (alerts on failed validation).
+                    //   2. Focus stays in the row AND the just-blurred
+                    //      field is Comments or Suppress Date → run
+                    //      the silent early-commit (fires only when
+                    //      the source field is populated and full
+                    //      validation passes). Lets the operator tab
+                    //      status → comment → next cell and see the
+                    //      status commit AT the comment-blur boundary
+                    //      instead of waiting for the row-blur.
                     const tr = e.currentTarget;
                     const nextFocus = e.relatedTarget as Node | null;
-                    if (nextFocus && tr.contains(nextFocus)) return;
-                    commitRowStatusChange(row, tr);
+                    const leftRow =
+                      !nextFocus || !tr.contains(nextFocus);
+                    if (leftRow) {
+                      commitRowStatusChange(row, tr);
+                      return;
+                    }
+                    const source = e.target as HTMLElement;
+                    if (
+                      source &&
+                      source.classList &&
+                      source.classList.contains("dq-row-comments-input")
+                    ) {
+                      tryCommitRowStatusChange(row, tr, "comments");
+                    } else if (
+                      source &&
+                      source.classList &&
+                      source.classList.contains(
+                        "dq-row-suppress-date-input"
+                      )
+                    ) {
+                      tryCommitRowStatusChange(row, tr, "suppressDate");
+                    }
                   }}
                 >
                   {visibleKeys.map((k) => renderCell(k, row))}
