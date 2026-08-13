@@ -162,13 +162,29 @@ export default function ColumnFilterHeader({
           "dq-col-filter-btn" + (active ? " dq-col-filter-btn-active" : "")
         }
         title={active ? "Filter applied" : "Filter"}
+        aria-label={active ? "Filter applied" : "Filter"}
         onClick={(e) => {
           e.stopPropagation();
           if (isOpen) onToggle(false);
           else open();
         }}
       >
-        ▽
+        {/* Excel-style filter funnel. currentColor lets the existing
+            dq-col-filter-btn / dq-col-filter-btn-active CSS drive the
+            fill for hover / applied-filter states — no color logic
+            baked into the SVG itself. */}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M2 3h12l-4.5 5v5h-3v-5z"
+            fill="currentColor"
+          />
+        </svg>
       </button>
       {isOpen && coords && createPortal(
         <div

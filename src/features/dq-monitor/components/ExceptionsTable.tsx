@@ -413,11 +413,43 @@ export default function ExceptionsTable({
       ),
     [data]
   );
+  // Date-column filter option sets. Blank cells collapse into a
+  // single "(none)" sentinel — Excel's filter dropdown behaves the
+  // same way when the column has empty cells. The sentinel is
+  // applied both when building the option list and when matching
+  // rows, keeping the checkbox label consistent with the row value.
+  const DATE_NONE = "(none)";
+  const dateKey = (v: string) => (v && v.trim() !== "" ? v : DATE_NONE);
+  const allSuppressDates = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => dateKey(r.suppressDate)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+  const allOpenDates = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => dateKey(r.openDate)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
+  const allCloseDates = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => dateKey(r.closeDate)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
   const [ruleNameFilter, setRuleNameFilter] = useColumnFilter(allRuleNames);
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
   const [assignToFilter, setAssignToFilter] = useColumnFilter(allAssignTos);
+  const [suppressDateFilter, setSuppressDateFilter] =
+    useColumnFilter(allSuppressDates);
+  const [openDateFilter, setOpenDateFilter] = useColumnFilter(allOpenDates);
+  const [closeDateFilter, setCloseDateFilter] = useColumnFilter(allCloseDates);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   // Per-RESULT_DATA-key filters keyed by the JSON key.
@@ -489,6 +521,15 @@ export default function ExceptionsTable({
           return false;
         if (assignToFilter && !assignToFilter.has(assignToKey(row.assignTo)))
           return false;
+        if (
+          suppressDateFilter &&
+          !suppressDateFilter.has(dateKey(row.suppressDate))
+        )
+          return false;
+        if (openDateFilter && !openDateFilter.has(dateKey(row.openDate)))
+          return false;
+        if (closeDateFilter && !closeDateFilter.has(dateKey(row.closeDate)))
+          return false;
         for (const [k, f] of Object.entries(resultDataFilters)) {
           if (!f) continue;
           if (!f.has(formatCell(row.resultData?.[k]))) return false;
@@ -502,6 +543,9 @@ export default function ExceptionsTable({
       assetIdFilter,
       idBbGlobalFilter,
       assignToFilter,
+      suppressDateFilter,
+      openDateFilter,
+      closeDateFilter,
       resultDataFilters,
     ]
   );
@@ -1162,7 +1206,16 @@ export default function ExceptionsTable({
       case "suppressDate":
         return (
           <SortableTh key={key} {...commonThProps("suppressDate")}>
-            Suppress Date
+            <ColumnFilterHeader
+              label="Suppress Date"
+              allValues={allSuppressDates}
+              filter={suppressDateFilter}
+              onChange={setSuppressDateFilter}
+              isOpen={openFilterId === "suppressDate"}
+              onToggle={(open) =>
+                setOpenFilterId(open ? "suppressDate" : null)
+              }
+            />
           </SortableTh>
         );
       case "assignTo":
@@ -1263,13 +1316,31 @@ export default function ExceptionsTable({
       case "openDate":
         return (
           <SortableTh key={key} {...commonThProps("openDate")}>
-            Open Date
+            <ColumnFilterHeader
+              label="Open Date"
+              allValues={allOpenDates}
+              filter={openDateFilter}
+              onChange={setOpenDateFilter}
+              isOpen={openFilterId === "openDate"}
+              onToggle={(open) =>
+                setOpenFilterId(open ? "openDate" : null)
+              }
+            />
           </SortableTh>
         );
       case "closeDate":
         return (
           <SortableTh key={key} {...commonThProps("closeDate")}>
-            Close Date
+            <ColumnFilterHeader
+              label="Close Date"
+              allValues={allCloseDates}
+              filter={closeDateFilter}
+              onChange={setCloseDateFilter}
+              isOpen={openFilterId === "closeDate"}
+              onToggle={(open) =>
+                setOpenFilterId(open ? "closeDate" : null)
+              }
+            />
           </SortableTh>
         );
       default:
