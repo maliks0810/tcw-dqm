@@ -11,11 +11,27 @@
 }
 
 .dq-page {
-  /* Fill the host container (own viewport when standalone, the iframe's
-     box when embedded) rather than the global viewport, so it adapts to
-     whatever space the parent app gives it. */
+  /* Height strategy — cover every host layout without depending on
+     the host to cooperate:
+       1. Standalone (npm start): html/body/#root are height:100%
+          and the "height: 100%" below resolves against them.
+       2. Embedded in a flex-column parent that DOES declare
+          display:flex on the wrapper: "flex: 1 1 auto" plus
+          "min-height: 0" lets us grow inside it.
+       3. Embedded in a parent whose height is content-driven /
+          only sets min-height (TIME-Next's RootLayout wraps
+          <Outlet /> in a <Box sx={{minHeight:'calc(100vh - 70px)'}}>
+          that isn't display:flex): neither CSS lever works, so the
+          JS effect in DqMonitorPage sets an inline height =
+          window.innerHeight - element.top on mount / resize /
+          body-size-change. Inline style wins by specificity, so
+          in that case this CSS block acts only as a fallback until
+          the effect runs.
+     min-height keeps the page usable on very short viewports
+     during the JS-driven flow. */
   height: 100%;
-  min-height: 600px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   background: #f8f9fa;
   color: #1a1a2e;

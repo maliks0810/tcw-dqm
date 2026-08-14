@@ -1603,8 +1603,38 @@ export default function DqMonitorPage() {
     groupCounts,
   ]);
 
+  // Guarantee the page fills the visible viewport from its top edge
+  // downward, regardless of how the host wraps us. When the host is
+  // a proper flex-column with a resolved height, the CSS chain
+  // (height: 100% / flex: 1 1 auto on .dq-page) already fills — but
+  // hosts that only set min-height on the wrapper (TIME-Next today)
+  // leave the CSS chain broken because % heights need a definite
+  // parent height and flex-grow needs a flex parent. Setting an
+  // inline height here from JavaScript covers those cases: measure
+  // our top offset relative to the viewport and stretch to the
+  // remaining space. Re-measure on window resize AND on body size
+  // changes so header/footer/navbar reflows propagate.
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+    const fill = () => {
+      const top = el.getBoundingClientRect().top;
+      const h = Math.max(0, Math.round(window.innerHeight - top));
+      el.style.height = `${h}px`;
+    };
+    fill();
+    window.addEventListener("resize", fill);
+    const ro = new ResizeObserver(fill);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", fill);
+      ro.disconnect();
+    };
+  }, []);
+
   return (
-    <div className="dq-page">
+    <div ref={pageRef} className="dq-page">
       <Header
         onExportClick={() =>
           viewMode === "security"
