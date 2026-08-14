@@ -87,17 +87,89 @@ const EXCEPTION_HEADER_OVERRIDES: Record<string, string> = {
   idBbGlobal: "ID BB Global",
 };
 
-// Flattens the visible exception rows into CSV-friendly records: static
-// grid columns (dateTime, priority, ruleName, issue, aladdin, idBbGlobal,
-// vendor, action, comments, status) followed by every dynamic RESULT_DATA
-// key the grid would surface as a trailing column (union across rows,
-// minus keys already covered by the core columns).
+// Resolve one exception row's value for a grid column key. Mirrors the
+// switch in ExceptionsTable's renderCell / getSortValue — anything the
+// grid can show, the export can read. rd:* keys look up the raw JSON
+// key inside resultData.
+function valueForKey(row: ExceptionRow, key: string): unknown {
+  if (key.startsWith("rd:")) {
+    return row.resultData?.[key.slice(3)] ?? "";
+  }
+  switch (key) {
+    case "status":
+      return row.status;
+    case "suppressDate":
+      return row.suppressDate;
+    case "assignTo":
+      return row.assignTo;
+    case "comments":
+      return row.comments;
+    case "dateTime":
+      return row.dateTime;
+    case "priority":
+      return row.priority;
+    case "ruleName":
+      return row.ruleName;
+    case "issue":
+      return row.issue;
+    case "aladdin":
+      return row.aladdin;
+    case "idBbGlobal":
+      return row.idBbGlobal;
+    case "vendor":
+      return row.vendor;
+    case "action":
+      return row.action;
+    case "openDate":
+      return row.openDate;
+    case "closeDate":
+      return row.closeDate;
+    case "state":
+      return row.state;
+    default:
+      return "";
+  }
+}
+
+// Flattens the visible exception rows into CSV-friendly records. Column
+// selection + order:
+//   - columns (preferred, passed by DqMonitorPage): the exact left-to-right
+//     order and header labels the operator currently sees in the grid,
+//     including any drag-reorders / hide-shows / rd:* trailing columns.
+//   - fallback (no columns): a hardcoded static-grid layout followed by
+//     an alphabetically-sorted union of RESULT_DATA keys — the historic
+//     behaviour, kept so pre-integration callers don't break.
 export function exportExceptionsToExcel(
   rows: ExceptionRow[],
-  filename?: string
+  filename?: string,
+  columns?: { key: string; label: string }[]
 ) {
   if (rows.length === 0) return;
 
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+  if (columns && columns.length > 0) {
+    // Ordered path: one CSV column per grid column, in the grid's
+    // current order, with the grid's own header labels.
+    const flat = rows.map((r) => {
+      const rec: Record<string, unknown> = {};
+      for (const c of columns) {
+        rec[c.key] = valueForKey(r, c.key);
+      }
+      return rec;
+    });
+    const headerOverrides: Record<string, string> = {};
+    for (const c of columns) headerOverrides[c.key] = c.label;
+    exportRowsToExcel(
+      flat,
+      filename ?? `exceptions-${stamp}.csv`,
+      headerOverrides
+    );
+    return;
+  }
+
+  // Legacy fallback — kept intact so callers that don't yet pass the
+  // grid layout still export something sensible.
   const extraKeys = Array.from(
     rows.reduce<Set<string>>((acc, r) => {
       if (!r.resultData) return acc;
@@ -127,7 +199,6 @@ export function exportExceptionsToExcel(
     return base;
   });
 
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   exportRowsToExcel(
     flat,
     filename ?? `exceptions-${stamp}.csv`,

@@ -1699,9 +1699,13 @@
   color: #ffffff;
 }
 
+/* Filter-applied state — gold funnel so it's visible against the dark
+   header row and reads as "this column is filtered right now" at a
+   glance. currentColor drives the SVG fill, so the icon inherits this
+   color without touching the SVG markup. */
 .dq-col-filter-btn-active,
 .dq-col-filter-btn-active:hover {
-  color: #93c5fd;
+  color: #fbbf24;
 }
 
 .dq-col-filter-popover {

@@ -122,9 +122,16 @@ type ExceptionsTableProps = {
   // persist. Labels are the user-visible names ("Rule Name",
   // "Suppress Date", the raw JSON key for rd:* columns), not the
   // internal grid keys.
+  // visibleColumns pairs each visible key with the header label the
+  // user sees, in the exact left-to-right order the grid renders.
+  // Consumers that need both — Save Column Order (labels), Export to
+  // Excel (needs the key to look up row values AND the label for the
+  // CSV header) — use it directly. visibleLabels is a convenience
+  // slice of the same list for callers that only need the labels.
   onColumnLayoutChange?: (info: {
     hasReordered: boolean;
     visibleLabels: string[];
+    visibleColumns: { key: string; label: string }[];
   }) => void;
   // Increment-only nonce the parent bumps when it wants the grid to
   // treat the current column layout as the new "committed" baseline
@@ -420,6 +427,17 @@ export default function ExceptionsTable({
   // rows, keeping the checkbox label consistent with the row value.
   const DATE_NONE = "(none)";
   const dateKey = (v: string) => (v && v.trim() !== "" ? v : DATE_NONE);
+  // Status column filter — collapse blanks into a "(none)" sentinel
+  // so a Status of "" is visible in the checklist (Excel-style).
+  const STATUS_NONE = "(none)";
+  const statusKey = (v: string) => (v && v.trim() !== "" ? v : STATUS_NONE);
+  const allStatuses = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => statusKey(r.status)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
   const allSuppressDates = useMemo(
     () =>
       Array.from(new Set(data.map((r) => dateKey(r.suppressDate)))).sort(
@@ -446,6 +464,7 @@ export default function ExceptionsTable({
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [idBbGlobalFilter, setIdBbGlobalFilter] = useColumnFilter(allIdBbGlobals);
   const [assignToFilter, setAssignToFilter] = useColumnFilter(allAssignTos);
+  const [statusFilter, setStatusFilter] = useColumnFilter(allStatuses);
   const [suppressDateFilter, setSuppressDateFilter] =
     useColumnFilter(allSuppressDates);
   const [openDateFilter, setOpenDateFilter] = useColumnFilter(allOpenDates);
@@ -521,6 +540,8 @@ export default function ExceptionsTable({
           return false;
         if (assignToFilter && !assignToFilter.has(assignToKey(row.assignTo)))
           return false;
+        if (statusFilter && !statusFilter.has(statusKey(row.status)))
+          return false;
         if (
           suppressDateFilter &&
           !suppressDateFilter.has(dateKey(row.suppressDate))
@@ -543,6 +564,7 @@ export default function ExceptionsTable({
       assetIdFilter,
       idBbGlobalFilter,
       assignToFilter,
+      statusFilter,
       suppressDateFilter,
       openDateFilter,
       closeDateFilter,
@@ -1013,10 +1035,14 @@ export default function ExceptionsTable({
   // once on mount so the parent sees the initial layout.
   useEffect(() => {
     if (!onColumnLayoutChange) return;
-    const labels = columnOrder
+    const columns = columnOrder
       .filter((k) => !hiddenCols.has(k))
-      .map(labelForKey);
-    onColumnLayoutChange({ hasReordered, visibleLabels: labels });
+      .map((k) => ({ key: k, label: labelForKey(k) }));
+    onColumnLayoutChange({
+      hasReordered,
+      visibleLabels: columns.map((c) => c.label),
+      visibleColumns: columns,
+    });
   }, [columnOrder, hiddenCols, hasReordered, onColumnLayoutChange]);
 
   // Commit a row's pending status change when focus leaves the <tr>.
@@ -1200,7 +1226,14 @@ export default function ExceptionsTable({
       case "status":
         return (
           <SortableTh key={key} {...commonThProps("status")}>
-            Status
+            <ColumnFilterHeader
+              label="Status"
+              allValues={allStatuses}
+              filter={statusFilter}
+              onChange={setStatusFilter}
+              isOpen={openFilterId === "status"}
+              onToggle={(open) => setOpenFilterId(open ? "status" : null)}
+            />
           </SortableTh>
         );
       case "suppressDate":

@@ -285,7 +285,8 @@ export default function DqMonitorPage() {
   const [columnLayout, setColumnLayout] = useState<{
     hasReordered: boolean;
     visibleLabels: string[];
-  }>({ hasReordered: false, visibleLabels: [] });
+    visibleColumns: { key: string; label: string }[];
+  }>({ hasReordered: false, visibleLabels: [], visibleColumns: [] });
   const [savingColumnOrder, setSavingColumnOrder] = useState<boolean>(false);
   const [saveColumnOrderMessage, setSaveColumnOrderMessage] = useState<string>("");
   // Modal shown after Save Column Order completes. `message` is what
@@ -1639,7 +1640,16 @@ export default function DqMonitorPage() {
         onExportClick={() =>
           viewMode === "security"
             ? exportAssetsToExcel(visibleAssets)
-            : exportExceptionsToExcel(visibleExceptions)
+            : exportExceptionsToExcel(
+                visibleExceptions,
+                undefined,
+                // Fall back to the exporter's legacy layout when the
+                // grid hasn't reported yet (very first render, before
+                // the effect fires). undefined triggers that fallback.
+                columnLayout.visibleColumns.length > 0
+                  ? columnLayout.visibleColumns
+                  : undefined
+              )
         }
         onBulkStatusClick={
           showBulkAssign
