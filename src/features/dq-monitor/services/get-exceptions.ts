@@ -109,7 +109,13 @@ export async function fetchExceptions(
   ruleGroup?: string,
   exceptionState?: string,
   assignTo?: string,
-  ruleNamePattern?: string
+  ruleNamePattern?: string,
+  // ISO YYYY-MM-DD. Passed as the "?exception_date=" query param.
+  // Empty / omitted → server uses today (UTC) as the default. Callers
+  // pass the top of the LHS Exception-date dropdown (histDates[0])
+  // so the live grid stays correct on holidays / delayed ETL days
+  // when EXCEPTION.EXCEPTION_DATE hasn't caught up to today.
+  exceptionDate?: string
 ): Promise<ExceptionRow[]> {
   const params = new URLSearchParams();
   if (assetId) params.set("asset_id", assetId);
@@ -129,6 +135,9 @@ export async function fetchExceptions(
         ? trimmed
         : `%${trimmed}%`;
     params.set("rule_name_pattern", pattern);
+  }
+  if (exceptionDate && exceptionDate.trim() !== "") {
+    params.set("exception_date", exceptionDate.trim());
   }
   const qs = params.toString();
   const url = qs ? `${EXCEPTIONS_ENDPOINT}?${qs}` : EXCEPTIONS_ENDPOINT;

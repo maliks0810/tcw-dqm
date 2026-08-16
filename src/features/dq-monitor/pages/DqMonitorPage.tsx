@@ -947,7 +947,16 @@ export default function DqMonitorPage() {
           ruleGroupArg,
           exceptionState,
           assignToFilter,
-          ruleNameSearchApplied
+          ruleNameSearchApplied,
+          // "Current" tab data source: histDates[0] is
+          // MAX(EXCEPTION.EXCEPTION_DATE), i.e. the latest date the
+          // server actually has live rows for. Passing it explicitly
+          // keeps the grid correct on holidays / delayed ETL days
+          // when today (UTC) would return 0 rows. Empty string on
+          // first render (before histDates loads) → server falls
+          // back to today UTC and the effect re-fires once
+          // histDates resolves.
+          histDates[0] ?? ""
         );
     fetcher
       .then((rows) => {
@@ -981,6 +990,10 @@ export default function DqMonitorPage() {
     ruleNameSearchApplied,
     treeSelected,
     dqmDate,
+    // Track histDates[0] so a late-arriving MAX(EXCEPTION_DATE) (e.g.
+    // on holidays when the LHS dropdown resolves after the initial
+    // exceptions fetch) triggers a re-fetch with the corrected date.
+    histDates[0],
   ]);
 
   // When 'All' is selected on the tree, the Number of Exceptions panel
