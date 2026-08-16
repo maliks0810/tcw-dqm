@@ -18,9 +18,10 @@ type ApiRuleGroup = {
 // swap between the two without reshaping. Unknown user / no email /
 // no auth row → empty array (least-privileged tree).
 //
-// user is required; the LHS tree currently hard-codes "Joann Banks"
-// pre-Okta and will pass the Okta-resolved identity once integration
-// lands.
+// user is required; the LHS tree resolves it via useCurrentDmUser()
+// in DqMonitorPage — STANDALONE_APP=true hardcodes "Joann Banks",
+// STANDALONE_APP=false uses the name TIME-Next injects via
+// <CurrentUserProvider>.
 export async function fetchRuleGroupsForUser(
   user: string,
   signal?: AbortSignal

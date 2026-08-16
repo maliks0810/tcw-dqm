@@ -89,10 +89,11 @@ type ExceptionsTableProps = {
   ) => void | Promise<void>;
   // When true, the Assign To column stays visible but the per-row
   // <select> collapses to a plain text cell — no dropdown, no
-  // change event. Set by DqMonitorPage when the current operator's
-  // DM role is anything other than DM_ADMIN. Independent of the
-  // whole-grid `readOnly` prop (that one also freezes Status /
-  // Comments / Suppress Date for historical-date views).
+  // change event. Set by DqMonitorPage when the operator's DM role
+  // is not a privileged one (DM_ADMIN / IT_SUPPORT via
+  // isPrivilegedRole). Independent of the whole-grid `readOnly`
+  // prop (that one also freezes Status / Comments / Suppress Date
+  // for historical-date views).
   assignToReadOnly?: boolean;
   // RESULT_DATA keys the parent wants surfaced first in the RD section
   // of canonicalKeys (right after Comments, before the rest of the

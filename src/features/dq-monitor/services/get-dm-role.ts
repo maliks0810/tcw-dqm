@@ -3,14 +3,15 @@ const DATA_QUALITY_SERVICE_URL =
 const ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/getDMRole`;
 
 // Fetches DM_USER.ROLE for the given operator display name and
-// returns it as a string ("DM_ADMIN", "DM_USER", …). Unknown user
-// resolves to "" which the caller treats as the least-privileged
-// default — Bulk Assign / Bulk Status stay hidden and per-row
-// Assign To stays read-only.
+// returns it as a string ("DM_ADMIN", "IT_SUPPORT", "DM_USER", …).
+// DM_ADMIN and IT_SUPPORT both unlock the elevated UI surfaces via
+// isPrivilegedRole; anything else — DM_USER, "", unknown user —
+// leaves the operator in the least-privileged state (Bulk Assign
+// / Bulk Status hidden, per-row Assign To read-only).
 //
-// The operator name is currently hard-coded to "Joann Banks" in
-// DqMonitorPage. Once Okta integration lands, replace that call
-// site with whatever getUser() returns from the Okta auth context.
+// The operator name comes from useCurrentDmUser() in DqMonitorPage —
+// STANDALONE_APP=true hardcodes "Joann Banks"; STANDALONE_APP=false
+// reads the value TIME-Next injects via <CurrentUserProvider>.
 export async function fetchDMRole(
   user: string,
   signal?: AbortSignal

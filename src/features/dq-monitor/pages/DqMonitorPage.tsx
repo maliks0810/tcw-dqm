@@ -35,6 +35,7 @@ import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
 import { updateUserPreferences } from "../services/update-user-preferences";
 import { fetchUserPreferences } from "../services/get-user-preferences";
+import { useCurrentDmUser, isPrivilegedRole } from "../hooks/use-current-dm-user";
 import "../styles/dq-monitor.css";
 
 // Cap on how many EXCEPTION rows we render in the grid at once. Bigger
@@ -267,15 +268,18 @@ export default function DqMonitorPage() {
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("All");
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
-  // Current operator's DM_USER.USER value. Hard-coded pre-Okta —
-  // once integration lands, replace with whatever the auth context's
-  // getUser() exposes. Powers the getDMRole call below.
-  const currentDmUser = "Joann Banks";
-  // dmRole gates the Bulk Assign / Bulk Status buttons (only visible
-  // to DM_ADMIN) and the per-row Assign To column's editability (also
-  // DM_ADMIN only). Empty string is the least-privileged default —
-  // hides the buttons and locks Assign To — used until the fetch
-  // returns and if the operator's user isn't in DM_USER.
+  // Current operator's DM_USER.USER value. Resolution rules live in
+  // useCurrentDmUser: STANDALONE_APP=true (default in this repo)
+  // hardcodes "Joann Banks"; STANDALONE_APP=false reads the name
+  // TIME-Next injects via <CurrentUserProvider> from Okta. Powers
+  // the getDMRole call below and every SP that expects a user.
+  const currentDmUser = useCurrentDmUser();
+  // dmRole gates the Bulk Assign / Bulk Status buttons and per-row
+  // Assign To editability via isPrivilegedRole — DM_ADMIN and
+  // IT_SUPPORT both unlock the elevated surfaces. Empty string is
+  // the least-privileged default — hides the buttons and locks
+  // Assign To — used until the fetch returns and if the operator's
+  // user isn't in DM_USER.
   const [dmRole, setDmRole] = useState<string>("");
   // Live snapshot of the ExceptionsTable's column layout — fed by
   // its onColumnLayoutChange callback. hasReordered gates the Save
@@ -580,6 +584,7 @@ export default function DqMonitorPage() {
   // and the per-row Assign To column stays read-only.
   useEffect(() => {
     const controller = new AbortController();
+    if (!currentDmUser) return () => controller.abort();
     fetchDMRole(currentDmUser, controller.signal)
       .then((role) => setDmRole(role))
       .catch((e: unknown) => {
@@ -587,17 +592,16 @@ export default function DqMonitorPage() {
         setDmRole("");
       });
     return () => controller.abort();
-  }, []);
+  }, [currentDmUser]);
 
   useEffect(() => {
     const controller = new AbortController();
-    // Hard-coded pre-Okta. Once Okta integration lands, replace this
-    // constant with the resolved operator identity (DM_USER."USER"
-    // that maps to the Okta email in RULE_GROUP_AUTHORIZATION.ACCESS_
-    // LIST). Backend rejects an empty user with 400, so the tree
-    // stays gated even if this string is ever cleared.
-    const currentUser = "Joann Banks";
-    fetchRuleGroupsForUser(currentUser, controller.signal)
+    // Same operator identity used everywhere else on the page — see
+    // useCurrentDmUser for the STANDALONE_APP branching. Backend
+    // rejects an empty user with 400, so the tree stays gated even
+    // if the hook ever resolves to "".
+    if (!currentDmUser) return () => controller.abort();
+    fetchRuleGroupsForUser(currentDmUser, controller.signal)
       .then((groups) => {
         setRuleGroupOptions(groups.map((g) => g.name).filter(Boolean));
         setStatusVisibleGroups(
@@ -633,7 +637,7 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [currentDmUser]);
 
   // Populate the "DQM Date" dropdown once from EXCEPTION_HIST. Silently
   // no-op on AbortError; other failures just leave the list empty
@@ -1203,12 +1207,13 @@ export default function DqMonitorPage() {
   // the exception view (not the "View by Security" grid), AND against
   // the current-day EXCEPTION table — historical EXCEPTION_HIST days
   // must stay read-only (see ExceptionsTable readOnly wiring). On
-  // top of all that, both buttons are DM_ADMIN-only: operators with
+  // top of all that, both buttons are gated to privileged roles
+  // (DM_ADMIN + IT_SUPPORT via isPrivilegedRole): operators with
   // any other role (or unknown) never see them regardless of scope.
   // Any failing criterion hides both buttons and forces both panels
   // closed.
   const showBulkAssign =
-    dmRole === "DM_ADMIN" &&
+    isPrivilegedRole(dmRole) &&
     (viewByGroup === "Security Master" ||
       viewByGroup === "Security Master Benchmark" ||
       viewByGroup === "TOD SOD") &&
@@ -3177,11 +3182,12 @@ export default function DqMonitorPage() {
                   : undefined
               }
               showAssignToColumn={showAssignToColumn}
-              // Only DM_ADMIN operators can reassign; every other
-              // role sees the current assignee as read-only text.
-              // The column itself still renders — the widget just
+              // Only privileged roles (DM_ADMIN + IT_SUPPORT via
+              // isPrivilegedRole) can reassign; every other role
+              // sees the current assignee as read-only text. The
+              // column itself still renders — the widget just
               // downgrades to a plain <td>.
-              assignToReadOnly={dmRole !== "DM_ADMIN"}
+              assignToReadOnly={!isPrivilegedRole(dmRole)}
               assignToOptions={
                 showAssignToColumn ? dmUserOptions : undefined
               }
