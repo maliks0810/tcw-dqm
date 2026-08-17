@@ -709,13 +709,27 @@ export default function ExceptionsTable({
     if (showSuppressDateColumn) keys.push("suppressDate");
     if (showAssignToColumn) keys.push("assignTo");
     if (showCommentsColumn) keys.push("comments");
-    const priority = (priorityRdKeys ?? []).filter((k) =>
+    // Priority sits right after Comments in the canonical order —
+    // sourced from RULE.PRIORITY via SP_GET_EXCEPTIONS. Kept OUT of
+    // STATIC_COLUMN_KEYS so pinStaticsToCanonicalOrder leaves it
+    // freely reorderable (users can drag it anywhere or hide it),
+    // unlike Status / Suppress Date / Assign To / Comments which
+    // are force-pinned to the leading edge. Header + cell + filter
+    // wiring already exists (originally for the view-security mode
+    // fixed layout); this line just slots it into the view-exception
+    // layout as a default static column.
+    keys.push("priority");
+    // Renamed from `priority`/`prioritySet` to `priorityRd*` so the
+    // hoisted-RD-key list doesn't visually collide with the
+    // just-pushed "priority" static column key above — same behavior,
+    // clearer intent for future readers.
+    const priorityRd = (priorityRdKeys ?? []).filter((k) =>
       extraKeys.includes(k)
     );
-    const prioritySet = new Set(priority);
-    for (const k of priority) keys.push(`rd:${k}`);
+    const priorityRdSet = new Set(priorityRd);
+    for (const k of priorityRd) keys.push(`rd:${k}`);
     for (const k of extraKeys) {
-      if (prioritySet.has(k)) continue;
+      if (priorityRdSet.has(k)) continue;
       keys.push(`rd:${k}`);
     }
     // Lifecycle dates (OPEN_DATE / CLOSE_DATE) land at the far right,

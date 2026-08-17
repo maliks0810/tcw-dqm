@@ -35,6 +35,7 @@ import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
 import { updateUserPreferences } from "../services/update-user-preferences";
 import { fetchUserPreferences } from "../services/get-user-preferences";
+import { refreshUserPreferences } from "../services/refresh-user-preferences";
 import { useCurrentDmUser, isPrivilegedRole } from "../hooks/use-current-dm-user";
 import "../styles/dq-monitor.css";
 
@@ -1344,6 +1345,21 @@ export default function DqMonitorPage() {
           message: "Could not save (unknown user or scope).",
           success: false,
         });
+      }
+      // Cache warm-up: on a successful save (status 1 or 2) prime
+      // the backend's process-local user-preferences cache with the
+      // just-persisted value so the next getUserPreferences read
+      // returns from cache without a Snowflake round-trip. The
+      // backend already invalidates the slot inside
+      // /updateUserPreferences, so a failure here just leaves the
+      // slot empty — the cache-miss path re-populates on the next
+      // read. Non-fatal to the save-succeeded UX, hence swallowed.
+      if (status === 1 || status === 2) {
+        refreshUserPreferences(currentDmUser, viewByGroup, catalogArg).catch(
+          (refreshErr: unknown) => {
+            console.error("refreshUserPreferences failed", refreshErr);
+          }
+        );
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "unknown error";

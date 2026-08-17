@@ -95,9 +95,11 @@
 }
 
 .dq-logout-btn {
-  height: 36px;
+  /* Same top-row bar height as .dq-export-btn — see the comment
+     there for why 28px matches the grid header. */
+  height: 28px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: none;
   background: #111827;
   color: #ffffff;
@@ -111,9 +113,14 @@
 }
 
 .dq-export-btn {
-  height: 36px;
+  /* Height matches the Exceptions grid header row — .dq-table th
+     has no explicit height but resolves to ~28px from
+     "font-size: 13px * line-height: 1.2 + padding: 6px 0" — so the
+     top-row action buttons and the grid header line up at the same
+     bar height. */
+  height: 28px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid #003e7e;
   /* Background + font match the Exceptions grid header (see
      .dq-table th) so the header-row action buttons read as one
