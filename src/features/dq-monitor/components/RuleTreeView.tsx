@@ -68,7 +68,6 @@ export default function RuleTreeView({
           setTypesByGroup((p) => ({ ...p, [group]: types }))
         )
         .catch((e: unknown) => {
-          // eslint-disable-next-line no-console
           console.error(`RuleTreeView: getTypes("${group}") failed`, e);
           setTypesByGroup((p) => ({ ...p, [group]: [] }));
         });
@@ -93,7 +92,6 @@ export default function RuleTreeView({
           // doesn't look like "the catalog has no rules" — the tree
           // still drops to the "(no rules)" placeholder, but at least
           // the failure is visible.
-          // eslint-disable-next-line no-console
           console.error(`RuleTreeView: getRules("${type}") failed`, e);
           setRulesByType((p) => ({ ...p, [type]: [] }));
         });

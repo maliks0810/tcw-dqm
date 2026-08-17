@@ -3,6 +3,12 @@
 
 import { ApolloError } from '@apollo/client';
 
+// Loose shape of a GraphQL-error extensions.response payload — the
+// server can attach an arbitrary body but we only care about surfacing
+// its string form as the Error message. Kept optional/unknown so we
+// never assume more than what we're about to use.
+type ResponseWithBody = { body?: unknown };
+
 export const parseApolloErrors = (err: Error): Error | AggregateError => {
     //We only care about Apollo errors
     const apolloError = err as ApolloError
@@ -12,14 +18,13 @@ export const parseApolloErrors = (err: Error): Error | AggregateError => {
     }
 
     return new AggregateError(
-        apolloError.graphQLErrors.map(
-            (e) =>
-                new Error(
-                    (e?.extensions?.response as any)?.body
-                        ? (e?.extensions?.response as any).body
-                        : e.message
-                )
-        ),
+        apolloError.graphQLErrors.map((e) => {
+            const response = e?.extensions?.response as
+                | ResponseWithBody
+                | undefined;
+            const body = response?.body;
+            return new Error(body != null ? String(body) : e.message);
+        }),
         err.message
     );
 };

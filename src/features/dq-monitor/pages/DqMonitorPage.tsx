@@ -1295,7 +1295,6 @@ export default function DqMonitorPage() {
       .then((order) => setPreferredColumnOrder(order))
       .catch((e: unknown) => {
         if (e instanceof Error && e.name === "AbortError") return;
-        // eslint-disable-next-line no-console
         console.error("fetchUserPreferences failed", e);
         setPreferredColumnOrder(null);
       });
@@ -3107,8 +3106,7 @@ export default function DqMonitorPage() {
                           );
                         })
                         .catch((err) => {
-                          // eslint-disable-next-line no-console
-                          console.error("updateExceptionStatus failed", err);
+                                            console.error("updateExceptionStatus failed", err);
                           // Reconcile: any locally-guessed derived
                           // field could be stale, so pull authoritative
                           // state on failure.
@@ -3127,8 +3125,7 @@ export default function DqMonitorPage() {
                           patchExceptionRow(exceptionId, { comments });
                         })
                         .catch((err) => {
-                          // eslint-disable-next-line no-console
-                          console.error(
+                                            console.error(
                             "updateExceptionComments failed",
                             err
                           );
@@ -3173,8 +3170,7 @@ export default function DqMonitorPage() {
                           }
                         })
                         .catch((err) => {
-                          // eslint-disable-next-line no-console
-                          console.error(
+                                            console.error(
                             "updateExceptionSuppressDate/Status failed",
                             err
                           );
@@ -3203,8 +3199,7 @@ export default function DqMonitorPage() {
                           patchExceptionRow(exceptionId, { assignTo });
                         })
                         .catch((err) => {
-                          // eslint-disable-next-line no-console
-                          console.error(
+                                            console.error(
                             "updateExceptionAssignTo failed",
                             err
                           );
