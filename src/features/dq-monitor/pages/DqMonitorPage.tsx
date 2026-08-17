@@ -878,6 +878,12 @@ export default function DqMonitorPage() {
     });
   };
 
+  // "Current" tab data source: MAX(EXCEPTION.EXCEPTION_DATE) via
+  // SP_GET_EXCEPTION_HIST_DATES, surfaced as histDates[0]. Extracted
+  // to a plain string so exhaustive-deps can statically track it in
+  // the fetch effect below (a bare histDates[0] in the deps array
+  // trips the "complex expression" warning).
+  const latestExceptionDate = histDates[0] ?? "";
   useEffect(() => {
     const inGroupMode = viewMode === "group";
     const inRuleCatalogMode = viewMode === "ruleCatalog";
@@ -952,15 +958,10 @@ export default function DqMonitorPage() {
           exceptionState,
           assignToFilter,
           ruleNameSearchApplied,
-          // "Current" tab data source: histDates[0] is
-          // MAX(EXCEPTION.EXCEPTION_DATE), i.e. the latest date the
-          // server actually has live rows for. Passing it explicitly
-          // keeps the grid correct on holidays / delayed ETL days
-          // when today (UTC) would return 0 rows. Empty string on
-          // first render (before histDates loads) → server falls
-          // back to today UTC and the effect re-fires once
-          // histDates resolves.
-          histDates[0] ?? ""
+          // See the latestExceptionDate declaration above the
+          // effect for why we pass the LHS-dropdown latest date
+          // instead of relying on the server's today-UTC default.
+          latestExceptionDate
         );
     fetcher
       .then((rows) => {
@@ -994,10 +995,11 @@ export default function DqMonitorPage() {
     ruleNameSearchApplied,
     treeSelected,
     dqmDate,
-    // Track histDates[0] so a late-arriving MAX(EXCEPTION_DATE) (e.g.
-    // on holidays when the LHS dropdown resolves after the initial
-    // exceptions fetch) triggers a re-fetch with the corrected date.
-    histDates[0],
+    // Track the LHS-dropdown latest date so a late-arriving
+    // MAX(EXCEPTION_DATE) (e.g. on holidays when histDates resolves
+    // after the initial exceptions fetch) triggers a re-fetch with
+    // the corrected date.
+    latestExceptionDate,
   ]);
 
   // When 'All' is selected on the tree, the Number of Exceptions panel
