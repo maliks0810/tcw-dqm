@@ -832,13 +832,18 @@
    it lives inside the bulk side panels where vertical space is
    tighter. */
 .dq-bulk-panel-assign-btn {
-  height: 28px;
-  padding: 0 14px;
-  border-radius: 8px;
+  /* Sized ~15% smaller than .dq-export-btn (height 28 -> 24, padding
+     14 -> 12, font 13 -> 11, radius 8 -> 7) so Assign / Update
+     Status/Comments sit lighter inside the bulk side panels while
+     still matching the header buttons' navy + white 450-weight
+     look. */
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 7px;
   border: 1px solid #003e7e;
   background: #003e7e;
   color: #ffffff;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 450;
   cursor: pointer;
 }
