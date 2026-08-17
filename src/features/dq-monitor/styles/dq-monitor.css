@@ -114,11 +114,15 @@
   height: 36px;
   padding: 0 14px;
   border-radius: 8px;
-  border: 1px solid #9ca3af;
-  background: #f3f4f6;
-  color: #111827;
-  font-size: 10px;
-  font-weight: 700;
+  border: 1px solid #003e7e;
+  /* Background + font match the Exceptions grid header (see
+     .dq-table th) so the header-row action buttons read as one
+     visual system with the table below. Hover picks up the same
+     darker-navy the sortable headers use on hover. */
+  background: #003e7e;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 450;
   cursor: pointer;
   /* Anchor reset: the Swagger link reuses this class as an <a>. Without
      these an <a> would show its default underline and blue color, and
@@ -129,12 +133,12 @@
 }
 
 .dq-export-btn:hover {
-  background: #e5e7eb;
+  background: #002d5e;
   text-decoration: none;
 }
 
 .dq-export-btn:visited {
-  color: #111827;
+  color: #ffffff;
 }
 
 .dq-body {
@@ -820,24 +824,26 @@
   cursor: pointer;
 }
 
-/* Assign submit button next to the User dropdown. Mirrors the top-row
-   .dq-export-btn styling (grey pill, dark text, 1px border) so it
-   reads as the same UI element family as View by Security / Export
-   to Excel. Kept a hair shorter (28px vs 36px) because it lives inside
-   the Bulk Assign side panel where vertical space is tighter. */
+/* Submit button used by both bulk panels (Bulk Assign's Assign, Bulk
+   Status's Update Status/Comments). Mirrors the top-row .dq-export-btn
+   styling — same navy background + white 450-weight font as the
+   Exceptions grid header — so every action button on the page reads
+   as one visual system. Kept a hair shorter (28px vs 36px) because
+   it lives inside the bulk side panels where vertical space is
+   tighter. */
 .dq-bulk-panel-assign-btn {
   height: 28px;
   padding: 0 14px;
   border-radius: 8px;
-  border: 1px solid #9ca3af;
-  background: #f3f4f6;
-  color: #111827;
-  font-size: 12px;
-  font-weight: 700;
+  border: 1px solid #003e7e;
+  background: #003e7e;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 450;
   cursor: pointer;
 }
 .dq-bulk-panel-assign-btn:hover:not(:disabled) {
-  background: #e5e7eb;
+  background: #002d5e;
 }
 .dq-bulk-panel-assign-btn:disabled {
   background: #d1d5db;
