@@ -1346,6 +1346,32 @@ export default function DqMonitorPage() {
           success: false,
         });
       }
+      if (status === 1 || status === 2) {
+        // 1. Refresh the local preferredColumnOrder snapshot with
+        //    the labels we just persisted. Without this, clicking
+        //    OK on the "Column order saved" modal flips
+        //    hasReordered back to false, which runs the
+        //    apply-preferred-order effect in ExceptionsTable
+        //    against the STALE prior snapshot — visually reverting
+        //    the grid to the pre-save layout until the operator
+        //    clicks another LHS scope and back. This keeps the
+        //    snapshot in sync so the effect re-applies the same
+        //    layout the grid is already showing (no-op re-render).
+        setPreferredColumnOrder([...columnLayout.visibleLabels]);
+        // 2. Prime the backend's process-local user-preferences
+        //    cache with the just-persisted value so the next
+        //    getUserPreferences read serves from cache without a
+        //    Snowflake round-trip. The backend already invalidates
+        //    the slot inside /updateUserPreferences, so a failure
+        //    here just leaves the slot empty — the cache-miss path
+        //    re-populates on the next read. Non-fatal to the
+        //    save-succeeded UX, hence swallowed.
+        refreshUserPreferences(currentDmUser, viewByGroup, catalogArg).catch(
+          (refreshErr: unknown) => {
+            console.error("refreshUserPreferences failed", refreshErr);
+          }
+        );
+      }
       // Cache warm-up: on a successful save (status 1 or 2) prime
       // the backend's process-local user-preferences cache with the
       // just-persisted value so the next getUserPreferences read
