@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 import SortableTh, {
@@ -982,59 +981,75 @@ export default function ExceptionsTable({
   // exception row mounts its full stateful widget stack (Status
   // select + SuppressDateCell + CommentsCell + Assign To select),
   // which for ~2000-row datasets meant ~8000 mounted widgets in
-  // one React tick — 500ms+ event-loop freeze. useVirtualizer
-  // keeps only the visible slice (+ overscan) in the DOM; the
-  // rest is replaced by two spacer <tr>s that reserve the same
-  // scroll height so the scrollbar looks identical to a fully-
-  // materialised grid.
+  // one React tick — 500ms+ event-loop freeze. We keep only the
+  // visible slice (+ overscan) in the DOM; the rest is replaced
+  // by two spacer <tr>s that reserve the same scroll height so
+  // the scrollbar looks identical to a fully-materialised grid.
   //
-  // getScrollElement points at .dq-table-container (already the
-  // overflow:auto scroll host).
-  // estimateSize is the fallback height per row before
-  // measureElement samples the real one — 34px matches the
-  // resolved height of a widget-cell row today.
-  // getItemKey is the exception id so the internal cache stays
-  // aligned with the row DOM key.
+  // Hand-rolled instead of using @tanstack/react-virtual — that
+  // library's bundle uses nullish-coalescing (??) which CRA 4's
+  // Webpack 4 + Babel setup can't parse in node_modules (see
+  // "Module parse failed: Unexpected token" error). Rolling our
+  // own is ~30 lines, works in every CRA 4 build, and doesn't
+  // need craco / ejecting to add the node_modules transform.
   //
-  // Overscan sizing: measured from the scroll container's live
-  // clientHeight (see the ResizeObserver effect below) so a taller
-  // grid mounts proportionally more buffer rows and a shorter grid
-  // stays trim. Roughly one viewport's worth of rows above and
-  // below the visible slice — enough for drag-reorder and blur-
-  // scoped commits to keep the source row mounted during
-  // interaction without paying the cost of a fixed 30-row cap on
-  // small viewports (or a too-small buffer on tall ones).
+  // Trade-off: fixed 34px row height assumption vs
+  // measureElement-based variable heights. In practice rows all
+  // have similar heights (widget-cell rows resolve to ~34px)
+  // and wrapped Comments cells are rare enough that the modest
+  // scroll drift is negligible.
+  //
+  // Overscan scales with the scroll container's live clientHeight
+  // (ResizeObserver below) so a taller grid mounts proportionally
+  // more buffer rows and a shorter grid stays trim — one viewport
+  // of buffer each side. That keeps drag-reorder and blur-scoped
+  // commits mounted through interaction on any display size.
   const ROW_ESTIMATE_PX = 34;
   const OVERSCAN_MIN = 5;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
   const [scrollClientHeight, setScrollClientHeight] = useState(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const update = () => setScrollClientHeight(el.clientHeight);
-    update();
-    const ro = new ResizeObserver(update);
+    const onScroll = () => setScrollTop(el.scrollTop);
+    const onResize = () => setScrollClientHeight(el.clientHeight);
+    onScroll();
+    onResize();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onResize);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
   }, []);
   const overscan = Math.max(
     OVERSCAN_MIN,
     Math.ceil(scrollClientHeight / ROW_ESTIMATE_PX)
   );
-  const rowVirtualizer = useVirtualizer({
-    count: sortedRows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_ESTIMATE_PX,
-    overscan,
-    getItemKey: (index) => sortedRows[index]?.exceptionId ?? index,
-  });
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
-  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
-  const paddingBottom =
-    virtualRows.length > 0
-      ? totalSize - virtualRows[virtualRows.length - 1].end
-      : 0;
+  const virtualRange = useMemo(() => {
+    const total = sortedRows.length;
+    if (total === 0) {
+      return { startIdx: 0, endIdx: -1, paddingTop: 0, paddingBottom: 0 };
+    }
+    const firstVisible = Math.floor(scrollTop / ROW_ESTIMATE_PX);
+    const lastVisible = Math.ceil(
+      (scrollTop + Math.max(scrollClientHeight, ROW_ESTIMATE_PX)) /
+        ROW_ESTIMATE_PX
+    );
+    const startIdx = Math.max(0, firstVisible - overscan);
+    const endIdx = Math.min(total - 1, lastVisible + overscan);
+    const paddingTop = startIdx * ROW_ESTIMATE_PX;
+    const paddingBottom = Math.max(0, (total - 1 - endIdx) * ROW_ESTIMATE_PX);
+    return { startIdx, endIdx, paddingTop, paddingBottom };
+  }, [sortedRows.length, scrollTop, scrollClientHeight, overscan]);
+  const { startIdx, endIdx, paddingTop, paddingBottom } = virtualRange;
+  const virtualIndices = useMemo(() => {
+    const idxs: number[] = [];
+    for (let i = startIdx; i <= endIdx; i++) idxs.push(i);
+    return idxs;
+  }, [startIdx, endIdx]);
 
   // Per-row pending STATUS selection. The dropdown holds the operator's
   // pick locally until row-blur (focus leaves the <tr>), at which point
@@ -1835,8 +1850,8 @@ export default function ExceptionsTable({
                 />
               </tr>
             )}
-            {virtualRows.map((vr) => {
-              const row = sortedRows[vr.index];
+            {virtualIndices.map((idx) => {
+              const row = sortedRows[idx];
               if (!row) return null;
               // Every row uses the default even-row background — the
               // green "complete" swatch (Accept / Override / Suppress /
@@ -1858,13 +1873,11 @@ export default function ExceptionsTable({
                   // initialValue change" effects had to fire as a
                   // correctness fix — both go away with a stable key.
                   key={row.exceptionId}
-                  // Row-mount virtualization: react-virtual keeps
-                  // ~30 rows in the DOM regardless of dataset size.
-                  // data-index + measureElement lets the virtualizer
-                  // sample real row heights so a wrapped Comments
-                  // cell doesn't throw the scrollbar off.
-                  data-index={vr.index}
-                  ref={rowVirtualizer.measureElement}
+                  // Row-mount virtualization: only the visible slice
+                  // (+ one viewport of overscan each side) is mounted.
+                  // Fixed 34px row height assumption keeps the scroll
+                  // math trivial — see the virtualRange memo above.
+                  data-index={idx}
                   className={cls}
                   onMouseEnter={() => {
                     // Clear the sticky highlight the moment the
