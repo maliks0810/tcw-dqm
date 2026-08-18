@@ -51,6 +51,27 @@ const EXCEPTION_LIMIT: number = (() => {
   return Number.isFinite(n) && n > 0 ? n : 5000;
 })();
 
+// RESULT_DATA keys the ExceptionsTable should hoist to the front of its
+// dynamic-column section. Hoisted to module scope so the array
+// identity stays stable across renders — an inline literal on the
+// prop was rebuilding every render and cascading through
+// canonicalKeys's dep list, re-running the apply-preferred-order and
+// reconcile effects on every DqMonitorPage state flip.
+const EXCEPTIONS_TABLE_PRIORITY_RD_KEYS: readonly string[] = ["RULE_NAME"];
+
+// Today's date in ISO YYYY-MM-DD (UTC). Matches how the backend
+// stamps OPEN_DATE / CLOSE_DATE inside SP_UPDATE_EXCEPTION_STATUS
+// (CURRENT_DATE at UTC via CONVERT_TIMEZONE). Module-scope so the
+// four per-row write-back callbacks below can be useCallback'd
+// with empty dep lists.
+function isoTodayUtc(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
 // Render an ISO YYYY-MM-DD as MM/DD/YYYY for the "DQM Date" dropdown.
 // Falls back to the raw string when it doesn't parse.
 function formatDqmDate(iso: string): string {
@@ -214,17 +235,124 @@ export default function DqMonitorPage() {
     []
   );
 
-  // Today's date in ISO YYYY-MM-DD (UTC), matching how the backend
-  // stamps OPEN_DATE / CLOSE_DATE inside SP_UPDATE_EXCEPTION_STATUS
-  // (CURRENT_DATE at UTC via CONVERT_TIMEZONE). Small helper because
-  // both derivations below (open / close) need the same value.
-  const isoTodayUtc = (): string => {
-    const d = new Date();
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
-      2,
-      "0"
-    )}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  };
+  // Stable per-row write-back handlers for ExceptionsTable. Kept as
+  // useCallback with dependency-free bodies (services + state
+  // setters + patchExceptionRow are all stable) so the memoized
+  // per-cell components (CommentsCell / SuppressDateCell) can
+  // shallow-compare their onCommit prop and skip re-renders that
+  // used to fire on every parent state flip.
+  const handleExceptionStatusChange = useCallback(
+    (
+      exceptionId: number,
+      status: string,
+      comments: string,
+      suppressDate: string
+    ) => {
+      return updateExceptionStatus(exceptionId, status, comments, suppressDate)
+        .then(() => {
+          // Optimistic patch — no full-grid refetch. Replicates
+          // SP_UPDATE_EXCEPTION_STATUS's derived-column logic:
+          //   SUPPRESS_DATE — kept when new status is Suppress,
+          //     blanked otherwise.
+          //   OPEN_DATE — ratchets to today on transition INTO New;
+          //     else preserved.
+          //   CLOSE_DATE — set to today for Accept / Research;
+          //     cleared for New / Suppress / Challenge; else
+          //     preserved (Override, Hold, Complete keep prior).
+          setExceptions((prev) =>
+            prev.map((r) => {
+              if (r.exceptionId !== exceptionId) return r;
+              const today = isoTodayUtc();
+              const nextSuppress =
+                status === "Suppress" ? suppressDate : "";
+              const nextOpen = status === "New" ? today : r.openDate;
+              let nextClose = r.closeDate;
+              if (status === "Accept" || status === "Research") {
+                nextClose = today;
+              } else if (
+                status === "New" ||
+                status === "Suppress" ||
+                status === "Challenge"
+              ) {
+                nextClose = "";
+              }
+              return {
+                ...r,
+                status,
+                comments,
+                suppressDate: nextSuppress,
+                openDate: nextOpen,
+                closeDate: nextClose,
+              };
+            })
+          );
+        })
+        .catch((err) => {
+          console.error("updateExceptionStatus failed", err);
+          // Reconcile: any locally-guessed derived field could be
+          // stale, so pull authoritative state on failure.
+          setRefreshTick((n) => n + 1);
+        });
+    },
+    []
+  );
+
+  const handleExceptionCommentsChange = useCallback(
+    (exceptionId: number, comments: string) => {
+      return updateExceptionComments(exceptionId, comments)
+        .then(() => {
+          patchExceptionRow(exceptionId, { comments });
+        })
+        .catch((err) => {
+          console.error("updateExceptionComments failed", err);
+          setRefreshTick((n) => n + 1);
+        });
+    },
+    [patchExceptionRow]
+  );
+
+  const handleExceptionSuppressDateChange = useCallback(
+    (exceptionId: number, suppressDate: string) => {
+      // Setting a suppress date implies suppression — flip status
+      // to "Suppress" in the same commit. Clearing the date leaves
+      // status alone.
+      const p1 = updateExceptionSuppressDate(exceptionId, suppressDate);
+      const p2 = suppressDate
+        ? updateExceptionStatus(exceptionId, "Suppress")
+        : Promise.resolve(0);
+      return Promise.all([p1, p2])
+        .then(() => {
+          if (suppressDate) {
+            patchExceptionRow(exceptionId, {
+              suppressDate,
+              status: "Suppress",
+              closeDate: "",
+            });
+          } else {
+            patchExceptionRow(exceptionId, { suppressDate });
+          }
+        })
+        .catch((err) => {
+          console.error("updateExceptionSuppressDate/Status failed", err);
+          setRefreshTick((n) => n + 1);
+        });
+    },
+    [patchExceptionRow]
+  );
+
+  const handleExceptionAssignToChange = useCallback(
+    (exceptionId: number, assignTo: string) => {
+      return updateExceptionAssignTo(exceptionId, assignTo)
+        .then(() => {
+          patchExceptionRow(exceptionId, { assignTo });
+        })
+        .catch((err) => {
+          console.error("updateExceptionAssignTo failed", err);
+          setRefreshTick((n) => n + 1);
+        });
+    },
+    [patchExceptionRow]
+  );
   // Exceptions grid post-column-filter rows, mirrored up so the header's
   // Export to Excel can hand them to exportExceptionsToExcel.
   const [visibleExceptions, setVisibleExceptions] = useState<ExceptionRow[]>(
@@ -3073,7 +3201,7 @@ export default function DqMonitorPage() {
               // to scan. All other rd:* columns keep their natural
               // JSON storage order (see canonicalKeys in
               // ExceptionsTable).
-              priorityRdKeys={["RULE_NAME"]}
+              priorityRdKeys={EXCEPTIONS_TABLE_PRIORITY_RD_KEYS as string[]}
               // Any non-empty dqmDate means the grid is showing
               // EXCEPTION_HIST for a prior day. Historical rows must
               // stay read-only — mutating them would rewrite an
@@ -3094,131 +3222,16 @@ export default function DqMonitorPage() {
                 showStatusPanel ? exceptionStatusOptions : undefined
               }
               onStatusChange={
-                showStatusPanel
-                  ? (exceptionId, status, comments, suppressDate) =>
-                      updateExceptionStatus(
-                        exceptionId,
-                        status,
-                        comments,
-                        suppressDate
-                      )
-                        .then(() => {
-                          // Optimistic patch — no full-grid refetch.
-                          // Replicates SP_UPDATE_EXCEPTION_STATUS's
-                          // derived-column logic client-side:
-                          //   SUPPRESS_DATE — kept when new status is
-                          //     Suppress, blanked otherwise.
-                          //   OPEN_DATE — ratchets to today when
-                          //     transitioning INTO 'New'; else preserved.
-                          //   CLOSE_DATE — set to today for
-                          //     'Accept' / 'Research'; cleared for
-                          //     'New' / 'Suppress' / 'Challenge'; else
-                          //     preserved (Override, Hold, Complete
-                          //     etc. keep their prior CLOSE_DATE).
-                          setExceptions((prev) =>
-                            prev.map((r) => {
-                              if (r.exceptionId !== exceptionId) return r;
-                              const today = isoTodayUtc();
-                              const nextSuppress =
-                                status === "Suppress" ? suppressDate : "";
-                              const nextOpen =
-                                status === "New" ? today : r.openDate;
-                              let nextClose = r.closeDate;
-                              if (
-                                status === "Accept" ||
-                                status === "Research"
-                              ) {
-                                nextClose = today;
-                              } else if (
-                                status === "New" ||
-                                status === "Suppress" ||
-                                status === "Challenge"
-                              ) {
-                                nextClose = "";
-                              }
-                              return {
-                                ...r,
-                                status,
-                                comments,
-                                suppressDate: nextSuppress,
-                                openDate: nextOpen,
-                                closeDate: nextClose,
-                              };
-                            })
-                          );
-                        })
-                        .catch((err) => {
-                                            console.error("updateExceptionStatus failed", err);
-                          // Reconcile: any locally-guessed derived
-                          // field could be stale, so pull authoritative
-                          // state on failure.
-                          setRefreshTick((n) => n + 1);
-                        })
-                  : undefined
+                showStatusPanel ? handleExceptionStatusChange : undefined
               }
               showCommentsColumn={showCommentsColumn}
               onCommentsChange={
-                showCommentsColumn
-                  ? (exceptionId, comments) =>
-                      updateExceptionComments(exceptionId, comments)
-                        .then(() => {
-                          // Optimistic patch — comment updates don't
-                          // touch derived columns server-side.
-                          patchExceptionRow(exceptionId, { comments });
-                        })
-                        .catch((err) => {
-                                            console.error(
-                            "updateExceptionComments failed",
-                            err
-                          );
-                          setRefreshTick((n) => n + 1);
-                        })
-                  : undefined
+                showCommentsColumn ? handleExceptionCommentsChange : undefined
               }
               showSuppressDateColumn={showSuppressDateColumn}
               onSuppressDateChange={
                 showSuppressDateColumn
-                  ? (exceptionId, suppressDate) => {
-                      // Setting a suppress date implies the exception is
-                      // being suppressed — flip status to "Suppress" in
-                      // the same commit so the two fields stay in sync.
-                      // Clearing the date leaves status alone (the user
-                      // presumably wants to keep whatever status they had
-                      // before enrolling into suppression).
-                      const p1 = updateExceptionSuppressDate(
-                        exceptionId,
-                        suppressDate
-                      );
-                      const p2 = suppressDate
-                        ? updateExceptionStatus(exceptionId, "Suppress")
-                        : Promise.resolve(0);
-                      return Promise.all([p1, p2])
-                        .then(() => {
-                          // Optimistic patch — no full refetch. When
-                          // a suppress date is set the row also flips
-                          // to Suppress (which clears CLOSE_DATE per
-                          // SP_UPDATE_EXCEPTION_STATUS's CASE);
-                          // clearing the date leaves status alone.
-                          if (suppressDate) {
-                            patchExceptionRow(exceptionId, {
-                              suppressDate,
-                              status: "Suppress",
-                              closeDate: "",
-                            });
-                          } else {
-                            patchExceptionRow(exceptionId, {
-                              suppressDate,
-                            });
-                          }
-                        })
-                        .catch((err) => {
-                                            console.error(
-                            "updateExceptionSuppressDate/Status failed",
-                            err
-                          );
-                          setRefreshTick((n) => n + 1);
-                        });
-                    }
+                  ? handleExceptionSuppressDateChange
                   : undefined
               }
               showAssignToColumn={showAssignToColumn}
@@ -3232,22 +3245,7 @@ export default function DqMonitorPage() {
                 showAssignToColumn ? dmUserOptions : undefined
               }
               onAssignToChange={
-                showAssignToColumn
-                  ? (exceptionId, assignTo) =>
-                      updateExceptionAssignTo(exceptionId, assignTo)
-                        .then(() => {
-                          // Optimistic patch — assign-to updates don't
-                          // touch derived columns server-side.
-                          patchExceptionRow(exceptionId, { assignTo });
-                        })
-                        .catch((err) => {
-                                            console.error(
-                            "updateExceptionAssignTo failed",
-                            err
-                          );
-                          setRefreshTick((n) => n + 1);
-                        })
-                  : undefined
+                showAssignToColumn ? handleExceptionAssignToChange : undefined
               }
             />
           </section>

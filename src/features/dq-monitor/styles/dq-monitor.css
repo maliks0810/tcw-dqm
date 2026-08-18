@@ -1219,6 +1219,12 @@
   position: sticky;
   z-index: 1;
   background: #ffffff;
+  /* Paint containment gives the compositor a fixed clip box for
+     each sticky cell — hover repaints on unrelated rows can't leak
+     into the pinned-column paint region, cutting cascading style-
+     recalc + paint work on wide grids. paint is the safe subset
+     (no size/layout coupling); the sticky positioning stays intact. */
+  contain: paint;
 }
 
 /* Drag-to-reorder: while a column is being dragged over another, the
@@ -1543,7 +1549,12 @@
 
 .dq-table-row {
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  /* Row background-color transition removed — a 0.15s transition on
+     every visible row meant sweeping the mouse across a 2000-row
+     grid queued thousands of concurrent transitions (each with a
+     compositor tick), on top of the widget-hover repaints below.
+     Instant swatch swap on hover looks the same to the user and
+     lets the compositor breathe. */
 }
 
 .dq-table-row:hover,

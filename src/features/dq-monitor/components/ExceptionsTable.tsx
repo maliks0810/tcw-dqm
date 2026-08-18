@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 import SortableTh, {
@@ -989,6 +989,53 @@ export default function ExceptionsTable({
     Record<number, string>
   >({});
 
+  // Ref-mirror of pendingRowStatus so the memoized CommentsCell /
+  // SuppressDateCell dispatchers below can read the latest map
+  // without listing pendingRowStatus in their deps — otherwise the
+  // dispatcher identity would flip every time an operator picked a
+  // status, invalidating React.memo on every row's cell.
+  const pendingRowStatusRef = useRef(pendingRowStatus);
+  pendingRowStatusRef.current = pendingRowStatus;
+
+  // Stable per-row commit dispatchers. Kept out of the renderCell
+  // scope so React.memo on CommentsCell / SuppressDateCell can
+  // shallow-compare the onCommit prop and skip renders when nothing
+  // on the row changed. exceptionId + initialValue travel back
+  // through the callback so the dispatcher knows which row committed
+  // and what to compare against. Parent's onCommentsChange /
+  // onSuppressDateChange props are now themselves stable useCallbacks
+  // in DqMonitorPage, so listing them in deps keeps the dispatcher
+  // stable across the vast majority of renders.
+  const handleCommentsCellCommit = useCallback(
+    (
+      next: string,
+      exceptionId: number,
+      initialValue: string
+    ): boolean | void => {
+      // If a status pick is pending, the row-level
+      // tryCommitRowStatusChange (fired on this same blur via
+      // <tr onBlur>) will bundle the new comment into a single
+      // SP_UPDATE_EXCEPTION_STATUS PATCH. Skip the standalone
+      // SP_UPDATE_EXCEPTION_COMMENTS round-trip here to avoid a
+      // doubled backend call.
+      if (pendingRowStatusRef.current[exceptionId] != null) return true;
+      if (next !== initialValue) {
+        onCommentsChange?.(exceptionId, next);
+      }
+      return true;
+    },
+    [onCommentsChange]
+  );
+  const handleSuppressDateCellCommit = useCallback(
+    (next: string, exceptionId: number, initialValue: string): void => {
+      if (pendingRowStatusRef.current[exceptionId] != null) return;
+      if (next !== initialValue) {
+        onSuppressDateChange?.(exceptionId, next);
+      }
+    },
+    [onSuppressDateChange]
+  );
+
   // Sticky highlight for the last row whose status was successfully
   // committed. Paints the row in the same swatch the mouse-hover
   // rule uses so the operator can see "which row did I just change?"
@@ -1463,20 +1510,9 @@ export default function ExceptionsTable({
           >
             <SuppressDateCell
               initialValue={row.suppressDate}
+              exceptionId={row.exceptionId}
               readOnly={readOnly}
-              onCommit={(next) => {
-                // If a status pick is pending, the row-level
-                // tryCommitRowStatusChange (fired on this same blur
-                // via <tr onBlur>) will bundle the new suppress date
-                // into a single SP_UPDATE_EXCEPTION_STATUS PATCH.
-                // Skip the standalone SP_UPDATE_EXCEPTION_SUPPRESS_
-                // DATE round-trip here to avoid a doubled backend
-                // call for the same field-blur.
-                if (pendingRowStatus[row.exceptionId] != null) return;
-                if (next !== row.suppressDate) {
-                  onSuppressDateChange?.(row.exceptionId, next);
-                }
-              }}
+              onCommit={handleSuppressDateCellCommit}
             />
           </td>
         );
@@ -1563,30 +1599,9 @@ export default function ExceptionsTable({
               >
                 <CommentsCell
                   initialValue={row.comments}
+                  exceptionId={row.exceptionId}
                   readOnly={readOnly}
-                  onCommit={(next) => {
-                    // If a status pick is pending, the row-level
-                    // tryCommitRowStatusChange (fired on this same
-                    // blur via <tr onBlur>) will bundle the new
-                    // comment into a single SP_UPDATE_EXCEPTION_
-                    // STATUS PATCH. Skip the standalone SP_UPDATE_
-                    // EXCEPTION_COMMENTS round-trip to avoid a
-                    // doubled backend call. The status-commit path
-                    // is the sole enforcer of "non-New status
-                    // requires comment" — CommentsCell no longer
-                    // second-guesses blank edits, so blanking a
-                    // comment on a row whose committed status is
-                    // non-New goes through unchallenged (matches
-                    // user expectation: editing a comment on a New
-                    // row must never alert).
-                    if (pendingRowStatus[row.exceptionId] != null) {
-                      return true;
-                    }
-                    if (next !== row.comments) {
-                      onCommentsChange?.(row.exceptionId, next);
-                    }
-                    return true;
-                  }}
+                  onCommit={handleCommentsCellCommit}
                 />
               </div>
             </td>
@@ -1759,7 +1774,15 @@ export default function ExceptionsTable({
                 (isLastChanged ? " dq-table-row-just-changed" : "");
               return (
                 <tr
-                  key={`${row.ruleName}-${index}`}
+                  // Use exceptionId (stable per row) — the previous
+                  // `${ruleName}-${index}` key rebound after any sort
+                  // or filter so React reused the same DOM subtree
+                  // for a different exceptionId. Per-cell draft state
+                  // (CommentsCell / SuppressDateCell) could bleed
+                  // between rows, and the "reset draft on
+                  // initialValue change" effects had to fire as a
+                  // correctness fix — both go away with a stable key.
+                  key={row.exceptionId}
                   className={cls}
                   onMouseEnter={() => {
                     // Clear the sticky highlight the moment the
@@ -1852,28 +1875,39 @@ export default function ExceptionsTable({
 // Per-row COMMENTS cell. Keeps a local draft so keystrokes don't hit the
 // backend on every character; commits on blur (or Enter) via onCommit,
 // which the parent forwards to updateExceptionComments only if the value
-// actually changed.
-function CommentsCell({
+// actually changed. Wrapped in React.memo so parent state flips (hover,
+// commit tracking, filter toggles, ...) don't re-render every row's
+// input. exceptionId + initialValue travel back through onCommit so the
+// parent's dispatcher can stay stable across renders (no per-row inline
+// arrows) and still know which row committed what.
+type CommentsCellProps = {
+  initialValue: string;
+  exceptionId: number;
+  // Receives (draft, exceptionId, initialValue). Returning false
+  // explicitly tells CommentsCell to reject the draft and revert to
+  // `initialValue`. Any other return (true / undefined) is treated as
+  // accepted. Kept as a stable useCallback in the parent so React.memo
+  // shallow-compare can skip renders where nothing on this row changed.
+  onCommit: (
+    next: string,
+    exceptionId: number,
+    initialValue: string
+  ) => boolean | void;
+  readOnly?: boolean;
+};
+const CommentsCell = memo(function CommentsCell({
   initialValue,
+  exceptionId,
   onCommit,
   readOnly = false,
-}: {
-  initialValue: string;
-  // Returning false explicitly tells CommentsCell to reject the draft
-  // and revert to `initialValue`. Any other return (true / undefined)
-  // is treated as accepted. Used by the parent to enforce
-  // "non-blank comment required on non-New status" without hoisting
-  // the draft state.
-  onCommit: (next: string) => boolean | void;
-  readOnly?: boolean;
-}) {
+}: CommentsCellProps) {
   const [draft, setDraft] = useState<string>(initialValue);
   useEffect(() => {
     setDraft(initialValue);
   }, [initialValue]);
   const commit = () => {
     if (readOnly) return;
-    const result = onCommit(draft);
+    const result = onCommit(draft, exceptionId, initialValue);
     if (result === false) {
       setDraft(initialValue);
     }
@@ -1896,7 +1930,7 @@ function CommentsCell({
       }}
     />
   );
-}
+});
 
 // Per-row SUPPRESS_DATE cell. Controlled <input type="date"> whose value
 // was previously bound directly to row.suppressDate reverted every user
@@ -1907,15 +1941,19 @@ function CommentsCell({
 // [today, today + 2 years] — the native min/max attributes gray out
 // out-of-range dates in the picker, and the commit guard rejects
 // anything that slips through typing.
-function SuppressDateCell({
+// Same memoization pattern as CommentsCell — see the comment there.
+type SuppressDateCellProps = {
+  initialValue: string;
+  exceptionId: number;
+  onCommit: (next: string, exceptionId: number, initialValue: string) => void;
+  readOnly?: boolean;
+};
+const SuppressDateCell = memo(function SuppressDateCell({
   initialValue,
+  exceptionId,
   onCommit,
   readOnly = false,
-}: {
-  initialValue: string;
-  onCommit: (next: string) => void;
-  readOnly?: boolean;
-}) {
+}: SuppressDateCellProps) {
   const [draft, setDraft] = useState<string>(initialValue);
   useEffect(() => {
     setDraft(initialValue);
@@ -1953,7 +1991,8 @@ function SuppressDateCell({
         if (readOnly) return;
         const next = e.target.value;
         setDraft(next);
-        if (withinRange(next) && next !== initialValue) onCommit(next);
+        if (withinRange(next) && next !== initialValue)
+          onCommit(next, exceptionId, initialValue);
       }}
       onBlur={() => {
         if (readOnly) return;
@@ -1961,8 +2000,8 @@ function SuppressDateCell({
           setDraft(initialValue);
           return;
         }
-        if (draft !== initialValue) onCommit(draft);
+        if (draft !== initialValue) onCommit(draft, exceptionId, initialValue);
       }}
     />
   );
-}
+});
