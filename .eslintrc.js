@@ -67,7 +67,11 @@ module.exports = {
           'import/no-named-as-default': 'off',
           'react/react-in-jsx-scope': 'off',
           'jsx-a11y/anchor-is-valid': 'off',
-          '@typescript-eslint/no-unused-vars': ['off'],
+          // Kept ON to match TIME-Next's CI, which lints the copied
+          // DQM sources with this rule active. It was previously
+          // 'off' here, so unused imports/bindings passed locally
+          // and only failed in the deploy pipeline.
+          '@typescript-eslint/no-unused-vars': ['error'],
           '@typescript-eslint/explicit-function-return-type': ['off'],
           '@typescript-eslint/explicit-module-boundary-types': ['off'],
           '@typescript-eslint/no-empty-function': ['off'],

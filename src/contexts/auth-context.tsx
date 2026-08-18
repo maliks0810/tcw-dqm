@@ -29,13 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [oktaAuth, setOktaAuth] = useState<OktaAuth | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [identityField, setIdentityField] = useState<string>("preferred_username");
 
   useEffect(() => {
     (async () => {
       const env = await loadEnv();
-      setIdentityField(env.okta.identityFieldInToken || "preferred_username");
-
+      // No identityField state: both claim lookups below read
+      // env.okta.identityFieldInToken directly. Holding it in state
+      // would also be wrong here — a setState isn't visible inside
+      // the same effect pass, so the reads would use the stale
+      // initial value on first run.
       const client = createOktaAuth(env.okta);
       setOktaAuth(client);
 

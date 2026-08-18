@@ -4,7 +4,6 @@ import OktaProvider from "./contexts/okta-provider";
 import LoginPage from "./features/auth/pages/LoginPage";
 import LoginCallbackPage from "./features/auth/pages/LoginCallback";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
-import Home from "./features/home/pages/Home";
 import DqMonitorPage from "./features/dq-monitor/pages/DqMonitorPage";
 import { USE_OKTA } from "./services/auth-mode";
 

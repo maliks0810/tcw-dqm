@@ -74,16 +74,36 @@ function localStamp(): string {
   );
 }
 
+// Columns the assets CSV carries, in output order. An explicit
+// allowlist rather than an omit-list: exportRowsToExcel derives its
+// columns from Object.keys, so a new grid-internal field on
+// SecurityRow (alongside exceptions / allComplete / dateTimeIso)
+// would silently leak into the CSV under an omit-list, but is
+// inert here until someone adds it on purpose.
+const ASSET_EXPORT_KEYS: Array<keyof SecurityRow> = [
+  "dateTime",
+  "priority",
+  "severity",
+  "type",
+  "assignTo",
+  "aladdinId",
+  "figi",
+  "securityDescription",
+  "trader",
+  "tradingTeam",
+  "exceptionCount",
+  "bbgLastRefresh",
+  "triggerBbg",
+];
+
 export function exportAssetsToExcel(rows: SecurityRow[], filename?: string) {
-  // Strip internal bookkeeping fields before serializing —
-  // exportRowsToExcel derives its columns from Object.keys, and
-  // `exceptions` / `allComplete` / `dateTimeIso` are grid-internal
-  // state the CSV should never carry.
-  const flat = rows.map(
-    ({ exceptions, allComplete, dateTimeIso, ...visible }) => visible
-  );
+  const flat = rows.map((r) => {
+    const rec: Record<string, unknown> = {};
+    for (const k of ASSET_EXPORT_KEYS) rec[k] = r[k];
+    return rec;
+  });
   exportRowsToExcel(
-    flat as unknown as Array<Record<string, unknown>>,
+    flat,
     filename ?? `assets-${localStamp()}.csv`,
     ASSET_HEADER_OVERRIDES as Record<string, string>
   );
