@@ -136,7 +136,13 @@ export default function ColumnFilterHeader({
   };
 
   const apply = () => {
-    if (draft.size === 0 || draft.size === allValues.length) {
+    // "Everything ticked → no filter" must be a true coverage test,
+    // not a size comparison. allValues can change while the popover is
+    // open (SSE-driven refetches swap the row set), so equal sizes can
+    // hide different membership — e.g. draft {A,B} vs values [A,D]
+    // — and a size check would silently discard the user's selection.
+    const coversAll = allValues.every((v) => draft.has(v));
+    if (draft.size === 0 || coversAll) {
       onChange(null);
     } else {
       onChange(new Set(draft));

@@ -37,6 +37,7 @@ function formatDateTime(iso?: string): string {
 function toSecurityRow(a: ApiAsset): SecurityRow {
   return {
     dateTime: formatDateTime(a.exception_date),
+    dateTimeIso: a.exception_date ?? "",
     priority: a.priority ?? "",
     severity: a.severity ?? "",
     type: a.type ?? "",

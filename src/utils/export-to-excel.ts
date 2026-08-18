@@ -63,11 +63,28 @@ const ASSET_HEADER_OVERRIDES: Partial<Record<keyof SecurityRow, string>> = {
   triggerBbg: "Trigger BBG",
 };
 
+// Filename timestamp in the operator's LOCAL time — toISOString() is
+// UTC and stamps an evening-EDT export with tomorrow's date.
+function localStamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `-${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`
+  );
+}
+
 export function exportAssetsToExcel(rows: SecurityRow[], filename?: string) {
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  // Strip internal bookkeeping fields before serializing —
+  // exportRowsToExcel derives its columns from Object.keys, and
+  // `exceptions` / `allComplete` / `dateTimeIso` are grid-internal
+  // state the CSV should never carry.
+  const flat = rows.map(
+    ({ exceptions, allComplete, dateTimeIso, ...visible }) => visible
+  );
   exportRowsToExcel(
-    rows as unknown as Array<Record<string, unknown>>,
-    filename ?? `assets-${stamp}.csv`,
+    flat as unknown as Array<Record<string, unknown>>,
+    filename ?? `assets-${localStamp()}.csv`,
     ASSET_HEADER_OVERRIDES as Record<string, string>
   );
 }
@@ -146,7 +163,7 @@ export function exportExceptionsToExcel(
 ) {
   if (rows.length === 0) return;
 
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const stamp = localStamp();
 
   if (columns && columns.length > 0) {
     // Ordered path: one CSV column per grid column, in the grid's

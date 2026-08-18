@@ -768,9 +768,14 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, [currentDmUser]);
 
-  // Populate the "DQM Date" dropdown once from EXCEPTION_HIST. Silently
-  // no-op on AbortError; other failures just leave the list empty
-  // (dropdown falls back to the "Current" option only).
+  // Populate the "DQM Date" dropdown from EXCEPTION_HIST. Keyed on
+  // refreshTick — NOT once-on-mount — because histDates[0] is also
+  // the exception_date the live grid queries with. A rule run while
+  // the tab is open (SSE "rules.executed" → setRefreshTick) archives
+  // the old day and inserts a new EXCEPTION_DATE; without a refetch
+  // here the grid would keep querying the stale date and show 0 rows
+  // until a hard refresh. Silently no-op on AbortError; other
+  // failures just leave the previous list in place.
   useEffect(() => {
     const controller = new AbortController();
     fetchExceptionHistDates(controller.signal)
@@ -779,7 +784,7 @@ export default function DqMonitorPage() {
         if (e instanceof Error && e.name === "AbortError") return;
       });
     return () => controller.abort();
-  }, []);
+  }, [refreshTick]);
 
   const filteredRuleOptions = (() => {
     if (!ruleQuery) return ruleOptions;

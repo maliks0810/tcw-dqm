@@ -80,6 +80,7 @@ function toExceptionRow(e: ApiException): ExceptionRow {
   return {
     exceptionId: typeof e.exception_id === "number" ? e.exception_id : 0,
     dateTime: formatDateTime(e.exception_time),
+    dateTimeIso: e.exception_time ?? "",
     priority: e.priority ?? "",
     ruleName: ruleLabel,
     issue: e.issue_description ?? "",

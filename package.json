@@ -42,7 +42,7 @@
     "build:production": "BUILD_PATH='./build-prod' env-cmd -f .env.production react-scripts --openssl-legacy-provider build",
     "version": "node -p require('./package.json').version",
     "lint": "eslint --ext .ts --ext .tsx . --max-warnings=0",
-    "test": "react-scripts test a --watchAll=false --coverage  --passWithNoTests",
+    "test": "react-scripts test a --watchAll=false --coverage --passWithNoTests",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

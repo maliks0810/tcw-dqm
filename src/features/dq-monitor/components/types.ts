@@ -1,6 +1,12 @@
 export type ExceptionRow = {
   exceptionId: number;
   dateTime: string;
+  // Raw ISO timestamp behind dateTime (EXCEPTION.EXCEPTION_TIME as the
+  // API sent it). Sorting uses this — the display string above is
+  // "M/D/YY, HH:mm" which orders lexicographically, not chronologically
+  // (10/5 before 9/5, December-25 before January-26). ISO strings in a
+  // uniform format compare correctly with plain string comparison.
+  dateTimeIso?: string;
   priority: string;
   ruleName: string;
   issue: string;
@@ -35,6 +41,9 @@ export type ExceptionRow = {
 
 export type SecurityRow = {
   dateTime: string;
+  // Raw ISO date behind dateTime — same sort-vs-display split as
+  // ExceptionRow.dateTimeIso above.
+  dateTimeIso?: string;
   priority: string;
   severity: string;
   type: string;

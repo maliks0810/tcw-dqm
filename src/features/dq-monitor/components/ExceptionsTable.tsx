@@ -21,7 +21,9 @@ function getSortValue(row: ExceptionRow, key: string): string {
     case "status":
       return row.status;
     case "dateTime":
-      return row.dateTime;
+      // Sort on the raw ISO timestamp, not the "M/D/YY, HH:mm" display
+      // string — the latter orders lexicographically (10/5 before 9/5).
+      return row.dateTimeIso || row.dateTime;
     case "priority":
       return row.priority;
     case "ruleName":
@@ -986,44 +988,47 @@ export default function ExceptionsTable({
   // by two spacer <tr>s that reserve the same scroll height so
   // the scrollbar looks identical to a fully-materialised grid.
   //
-  // Hand-rolled instead of using @tanstack/react-virtual — that
-  // library's bundle uses nullish-coalescing (??) which CRA 4's
-  // Webpack 4 + Babel setup can't parse in node_modules (see
-  // "Module parse failed: Unexpected token" error). Rolling our
-  // own is ~30 lines, works in every CRA 4 build, and doesn't
-  // need craco / ejecting to add the node_modules transform.
+  // Hand-rolled on purpose. @tanstack/react-virtual ships modern
+  // syntax (??) that CRA 4's Webpack 4 can't parse without a craco
+  // shim into babel-loader's include list — a fragile extra build
+  // layer for a feature (measured variable-height rows) this grid
+  // can't produce anyway: every widget cell is a single-line
+  // <input>/<select> and `.dq-table td` sets white-space: nowrap,
+  // so rows are constant-height by construction. If multi-line
+  // comments ever become a requirement, bump ROW_ESTIMATE_PX to
+  // the new constant row height (or revisit the library once the
+  // build has moved off CRA 4 to Vite).
   //
-  // Trade-off: fixed 34px row height assumption vs
-  // measureElement-based variable heights. In practice rows all
-  // have similar heights (widget-cell rows resolve to ~34px)
-  // and wrapped Comments cells are rare enough that the modest
-  // scroll drift is negligible.
+  // The scroll host is tracked with a callback ref (state, not a
+  // MutableRefObject) because the table container mounts AFTER the
+  // first render whenever the grid starts in the empty/loading
+  // state (`if (data.length === 0) return ...` below) — an effect
+  // keyed on [] with a plain ref would never attach the scroll
+  // listener in that flow, freezing the window at the top rows.
   //
-  // Overscan scales with the scroll container's live clientHeight
-  // (ResizeObserver below) so a taller grid mounts proportionally
-  // more buffer rows and a shorter grid stays trim — one viewport
-  // of buffer each side. That keeps drag-reorder and blur-scoped
-  // commits mounted through interaction on any display size.
+  // Overscan scales with the scroll host's live clientHeight — one
+  // viewport of buffer each side (floor 5) so drag-reorder and
+  // blur-scoped commits keep the source row mounted through the
+  // interaction on any display size.
   const ROW_ESTIMATE_PX = 34;
   const OVERSCAN_MIN = 5;
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollClientHeight, setScrollClientHeight] = useState(0);
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => setScrollTop(el.scrollTop);
-    const onResize = () => setScrollClientHeight(el.clientHeight);
+    if (!scrollEl) return;
+    const onScroll = () => setScrollTop(scrollEl.scrollTop);
+    const onResize = () => setScrollClientHeight(scrollEl.clientHeight);
     onScroll();
     onResize();
-    el.addEventListener("scroll", onScroll, { passive: true });
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
     const ro = new ResizeObserver(onResize);
-    ro.observe(el);
+    ro.observe(scrollEl);
     return () => {
-      el.removeEventListener("scroll", onScroll);
+      scrollEl.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [scrollEl]);
   const overscan = Math.max(
     OVERSCAN_MIN,
     Math.ceil(scrollClientHeight / ROW_ESTIMATE_PX)
@@ -1040,16 +1045,21 @@ export default function ExceptionsTable({
     );
     const startIdx = Math.max(0, firstVisible - overscan);
     const endIdx = Math.min(total - 1, lastVisible + overscan);
-    const paddingTop = startIdx * ROW_ESTIMATE_PX;
-    const paddingBottom = Math.max(0, (total - 1 - endIdx) * ROW_ESTIMATE_PX);
-    return { startIdx, endIdx, paddingTop, paddingBottom };
+    return {
+      startIdx,
+      endIdx,
+      paddingTop: startIdx * ROW_ESTIMATE_PX,
+      paddingBottom: Math.max(0, (total - 1 - endIdx) * ROW_ESTIMATE_PX),
+    };
   }, [sortedRows.length, scrollTop, scrollClientHeight, overscan]);
-  const { startIdx, endIdx, paddingTop, paddingBottom } = virtualRange;
+  const { paddingTop, paddingBottom } = virtualRange;
   const virtualIndices = useMemo(() => {
     const idxs: number[] = [];
-    for (let i = startIdx; i <= endIdx; i++) idxs.push(i);
+    for (let i = virtualRange.startIdx; i <= virtualRange.endIdx; i++) {
+      idxs.push(i);
+    }
     return idxs;
-  }, [startIdx, endIdx]);
+  }, [virtualRange]);
 
   // Per-row pending STATUS selection. The dropdown holds the operator's
   // pick locally until row-blur (focus leaves the <tr>), at which point
@@ -1825,7 +1835,7 @@ export default function ExceptionsTable({
         </div>
       )}
       <div
-        ref={scrollRef}
+        ref={setScrollEl}
         className={
           "dq-table-container" +
           (isCommittingRow ? " dq-table-committing" : "")
@@ -1875,8 +1885,8 @@ export default function ExceptionsTable({
                   key={row.exceptionId}
                   // Row-mount virtualization: only the visible slice
                   // (+ one viewport of overscan each side) is mounted.
-                  // Fixed 34px row height assumption keeps the scroll
-                  // math trivial — see the virtualRange memo above.
+                  // Constant 34px row height keeps the scroll math
+                  // trivial — see the virtualRange memo above.
                   data-index={idx}
                   className={cls}
                   onMouseEnter={() => {
@@ -2020,6 +2030,29 @@ const CommentsCell = memo(function CommentsCell({
       setDraft(initialValue);
     }
   };
+  // Commit an uncommitted draft when the cell UNMOUNTS. Under row
+  // virtualization the row (and this input) is torn down as soon as
+  // it scrolls one overscan-viewport out of view — and a focused
+  // input that is removed from the DOM never fires blur, so a typed
+  // comment would be silently discarded. Parity note: without
+  // virtualization the draft survived scrolling and committed on the
+  // eventual blur; this cleanup restores that guarantee. Refs carry
+  // the latest values so the mount-scoped effect doesn't need deps
+  // (and StrictMode's dev double-mount is a no-op: draft still
+  // equals initialValue at that point).
+  const latest = useRef({ draft, initialValue, readOnly });
+  latest.current = { draft, initialValue, readOnly };
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  useEffect(() => {
+    return () => {
+      const l = latest.current;
+      if (l.readOnly) return;
+      if (l.draft !== l.initialValue) {
+        onCommitRef.current(l.draft, exceptionId, l.initialValue);
+      }
+    };
+  }, [exceptionId]);
   return (
     <input
       type="text"

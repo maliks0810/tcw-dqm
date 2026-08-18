@@ -15,6 +15,16 @@ import {
 // invalidate every browser's cached blob when the schema drifts.
 const SEC_STORAGE_KEY = "dqm.securityTable.layout.v1";
 
+// Blank cells fold into a "(none)" sentinel for the column filters —
+// same convention the Exceptions grid uses for its date/status
+// filters. Without it, `.filter(Boolean)` dropped "" from the checkbox
+// list while the row predicate still required membership, so a
+// blank-figi row vanished the moment ANY figi filter was applied,
+// with no checkbox able to bring it back. Module-scope so the useMemo
+// callbacks below don't need it in their dependency arrays.
+const blankKey = (v: string | undefined) =>
+  v && v.trim() !== "" ? v : "(none)";
+
 // Pulls a sort key value from a SecurityRow. Non-sortable widgets
 // (Actions dropdown, Assign To dropdown, Trigger BBG checkbox) collapse
 // to a stable proxy so clicking the header still cycles asc/desc without
@@ -24,7 +34,9 @@ function getSecuritySortValue(row: SecurityRow, key: string): string {
     case "actions":
       return "";
     case "dateTime":
-      return row.dateTime;
+      // Raw ISO date, not the formatted display string — the latter
+      // sorts lexicographically (10/5 before 9/5, year rollovers wrong).
+      return row.dateTimeIso || row.dateTime;
     case "priority":
       return row.priority;
     case "severity":
@@ -228,15 +240,15 @@ export default function SecurityTable({
 
   const allFigis = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.figi).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b)
+      Array.from(new Set(data.map((r) => blankKey(r.figi)))).sort((a, b) =>
+        a.localeCompare(b)
       ),
     [data]
   );
 
   const allPriorities = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.priority).filter(Boolean))).sort(
+      Array.from(new Set(data.map((r) => blankKey(r.priority)))).sort(
         (a, b) => a.localeCompare(b)
       ),
     [data]
@@ -244,7 +256,7 @@ export default function SecurityTable({
 
   const allSeverities = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.severity).filter(Boolean))).sort(
+      Array.from(new Set(data.map((r) => blankKey(r.severity)))).sort(
         (a, b) => a.localeCompare(b)
       ),
     [data]
@@ -260,9 +272,11 @@ export default function SecurityTable({
     () =>
       data.filter((row) => {
         if (assetIdFilter && !assetIdFilter.has(row.aladdinId)) return false;
-        if (figiFilter && !figiFilter.has(row.figi ?? "")) return false;
-        if (priorityFilter && !priorityFilter.has(row.priority)) return false;
-        if (severityFilter && !severityFilter.has(row.severity)) return false;
+        if (figiFilter && !figiFilter.has(blankKey(row.figi))) return false;
+        if (priorityFilter && !priorityFilter.has(blankKey(row.priority)))
+          return false;
+        if (severityFilter && !severityFilter.has(blankKey(row.severity)))
+          return false;
         return true;
       }),
     [data, assetIdFilter, figiFilter, priorityFilter, severityFilter]

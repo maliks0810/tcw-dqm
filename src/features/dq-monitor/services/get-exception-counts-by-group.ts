@@ -24,13 +24,22 @@ export async function fetchExceptionCountsByGroup(
   },
   signal?: AbortSignal
 ): Promise<GroupCount[]> {
+  // "All" is the dropdowns' no-filter sentinel — strip it exactly like
+  // fetchExceptions / fetchAssets do. The backend SP only special-cases
+  // the literal 'All' for exception_state and assign_to; severity /
+  // priority / exception_type would be compared against a type named
+  // "All" and match nothing, zeroing every group count.
   const params = new URLSearchParams();
-  if (filters.exceptionType) params.set("exception_type", filters.exceptionType);
-  if (filters.severity) params.set("severity", filters.severity);
-  if (filters.priority) params.set("priority", filters.priority);
-  if (filters.exceptionState)
+  if (filters.exceptionType && filters.exceptionType !== "All")
+    params.set("exception_type", filters.exceptionType);
+  if (filters.severity && filters.severity !== "All")
+    params.set("severity", filters.severity);
+  if (filters.priority && filters.priority !== "All")
+    params.set("priority", filters.priority);
+  if (filters.exceptionState && filters.exceptionState !== "All")
     params.set("exception_state", filters.exceptionState);
-  if (filters.assignTo) params.set("assign_to", filters.assignTo);
+  if (filters.assignTo && filters.assignTo !== "All")
+    params.set("assign_to", filters.assignTo);
   const url = params.toString()
     ? `${ENDPOINT}?${params.toString()}`
     : ENDPOINT;
