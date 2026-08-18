@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 import SortableTh, {
@@ -977,6 +978,64 @@ export default function ExceptionsTable({
     });
   }, [visibleRows, sort]);
 
+  // Row-mount virtualization for the tbody. Without this every
+  // exception row mounts its full stateful widget stack (Status
+  // select + SuppressDateCell + CommentsCell + Assign To select),
+  // which for ~2000-row datasets meant ~8000 mounted widgets in
+  // one React tick — 500ms+ event-loop freeze. useVirtualizer
+  // keeps only the visible slice (+ overscan) in the DOM; the
+  // rest is replaced by two spacer <tr>s that reserve the same
+  // scroll height so the scrollbar looks identical to a fully-
+  // materialised grid.
+  //
+  // getScrollElement points at .dq-table-container (already the
+  // overflow:auto scroll host).
+  // estimateSize is the fallback height per row before
+  // measureElement samples the real one — 34px matches the
+  // resolved height of a widget-cell row today.
+  // getItemKey is the exception id so the internal cache stays
+  // aligned with the row DOM key.
+  //
+  // Overscan sizing: measured from the scroll container's live
+  // clientHeight (see the ResizeObserver effect below) so a taller
+  // grid mounts proportionally more buffer rows and a shorter grid
+  // stays trim. Roughly one viewport's worth of rows above and
+  // below the visible slice — enough for drag-reorder and blur-
+  // scoped commits to keep the source row mounted during
+  // interaction without paying the cost of a fixed 30-row cap on
+  // small viewports (or a too-small buffer on tall ones).
+  const ROW_ESTIMATE_PX = 34;
+  const OVERSCAN_MIN = 5;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollClientHeight, setScrollClientHeight] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setScrollClientHeight(el.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const overscan = Math.max(
+    OVERSCAN_MIN,
+    Math.ceil(scrollClientHeight / ROW_ESTIMATE_PX)
+  );
+  const rowVirtualizer = useVirtualizer({
+    count: sortedRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_ESTIMATE_PX,
+    overscan,
+    getItemKey: (index) => sortedRows[index]?.exceptionId ?? index,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? totalSize - virtualRows[virtualRows.length - 1].end
+      : 0;
+
   // Per-row pending STATUS selection. The dropdown holds the operator's
   // pick locally until row-blur (focus leaves the <tr>), at which point
   // commitRowStatusChange runs the client-side validation guards and
@@ -1751,6 +1810,7 @@ export default function ExceptionsTable({
         </div>
       )}
       <div
+        ref={scrollRef}
         className={
           "dq-table-container" +
           (isCommittingRow ? " dq-table-committing" : "")
@@ -1762,7 +1822,22 @@ export default function ExceptionsTable({
           </thead>
 
           <tbody>
-            {sortedRows.map((row, index) => {
+            {paddingTop > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={visibleKeys.length}
+                  style={{
+                    height: paddingTop,
+                    padding: 0,
+                    border: 0,
+                    background: "transparent",
+                  }}
+                />
+              </tr>
+            )}
+            {virtualRows.map((vr) => {
+              const row = sortedRows[vr.index];
+              if (!row) return null;
               // Every row uses the default even-row background — the
               // green "complete" swatch (Accept / Override / Suppress /
               // STATE=Complete) has been retired at user request;
@@ -1783,6 +1858,13 @@ export default function ExceptionsTable({
                   // initialValue change" effects had to fire as a
                   // correctness fix — both go away with a stable key.
                   key={row.exceptionId}
+                  // Row-mount virtualization: react-virtual keeps
+                  // ~30 rows in the DOM regardless of dataset size.
+                  // data-index + measureElement lets the virtualizer
+                  // sample real row heights so a wrapped Comments
+                  // cell doesn't throw the scrollbar off.
+                  data-index={vr.index}
+                  ref={rowVirtualizer.measureElement}
                   className={cls}
                   onMouseEnter={() => {
                     // Clear the sticky highlight the moment the
@@ -1841,6 +1923,19 @@ export default function ExceptionsTable({
                 </tr>
               );
             })}
+            {paddingBottom > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={visibleKeys.length}
+                  style={{
+                    height: paddingBottom,
+                    padding: 0,
+                    border: 0,
+                    background: "transparent",
+                  }}
+                />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
