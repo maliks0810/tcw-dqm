@@ -171,14 +171,21 @@
   align-items: center;
 }
 
+/* Bare icon rather than a filled button — the gear is a utility
+   affordance, not a primary action like Export / Bulk Assign, so it
+   reads better unfilled beside them. The glyph carries the navy that
+   the fill used to; the SVG uses fill="currentColor", so `color` is
+   the single lever. Border dropped with the fill: an outlined empty
+   box next to solid buttons looks unfinished. A tinted hover keeps
+   the click affordance and matches the menu items' hover. */
 .dq-settings-btn {
   height: 28px;
   width: 28px;
   padding: 0;
   border-radius: 6px;
-  border: 1px solid #003e7e;
-  background: #003e7e;
-  color: #ffffff;
+  border: none;
+  background: transparent;
+  color: #003e7e;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -186,7 +193,8 @@
 }
 
 .dq-settings-btn:hover {
-  background: #002d5e;
+  background: #eef2ff;
+  color: #002d5e;
 }
 
 /* Right-aligned so the menu opens inward from the header's right edge
