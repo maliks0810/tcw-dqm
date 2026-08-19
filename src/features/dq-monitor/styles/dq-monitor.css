@@ -2025,14 +2025,12 @@
   right: 0;
   bottom: 0;
   /* Tuned to recede rather than announce itself: it sits over the
-     scrolling grid, so at the original 12px / #6b7280 / "Version:
-     1.0.0" it read as a floating chip competing with row content.
-     Shortening to "v1.0.0" and dropping to 11px in a lighter grey
-     shrinks the footprint to roughly a third. Padding trimmed to
-     match. The tinted background stays — without it, grid rows
-     scrolling underneath make the digits unreadable — but it now
-     covers far less of the last row. Full text lives in the title
-     attribute for anyone who needs it. */
+     scrolling grid, so at the original 12px / #6b7280 it read as a
+     floating chip competing with row content. Lowercase "version
+     1.0.0" at 11px in a lighter grey, with trimmed padding, keeps
+     it legible while staying quiet. The tinted background stays —
+     without it, grid rows scrolling underneath make the digits
+     unreadable. */
   padding: 3px 8px;
   background: #f3f4f6;
   color: #9ca3af;
