@@ -499,10 +499,20 @@ export default function DqMonitorPage() {
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleCatalog" | "rule"
   >("rule");
-  // Tracks whether the user has picked anything in the rule tree yet. When
-  // false, we render an empty right side instead of firing a broad exceptions
-  // fetch — i.e. the initial blank state.
-  const [treeSelected, setTreeSelected] = useState<boolean>(false);
+  // Gates the Number of Exceptions panel, the tree's selection highlight,
+  // and the RHS Exceptions section. Starts true so a cold load lands on
+  // the same state as clicking "All" in the tree: every other field
+  // selectAllTree touches (viewMode "rule", group / catalog / rule all
+  // "All", empty rule label and name search) already defaults to exactly
+  // what that handler sets, so this flag was the only thing separating
+  // first render from an explicit All selection.
+  //
+  // Safe to default on because the "All" scope is specifically excluded
+  // from the broad exceptions fetch below — it leaves the RHS grid empty
+  // and lets the aggregate per-group count effect populate the panel in
+  // one round-trip, so this costs one SP call, not a full unfiltered
+  // EXCEPTION read.
+  const [treeSelected, setTreeSelected] = useState<boolean>(true);
   const [viewByGroup, setViewByGroup] = useState<string>("All");
   const [ruleGroupOptions, setRuleGroupOptions] = useState<string[]>([]);
   // "DQM Date" back-in-time selector for the Exceptions grid.
@@ -1049,8 +1059,11 @@ export default function DqMonitorPage() {
       return;
     }
     if (!usesAsset && !treeSelected) {
-      // Initial blank state — user hasn't picked anything in the rule tree
-      // or typed a pattern. Skip the broad fetch.
+      // Blank state — nothing picked in the rule tree, no pattern typed.
+      // Skip the broad fetch. Currently unreachable: treeSelected starts
+      // true and nothing ever sets it back to false. Kept as the guard
+      // for a deliberate "no selection" state rather than deleted, since
+      // every caller below assumes a scope exists.
       setExceptions([]);
       setExceptionsError(null);
       setExceptionsLoading(false);
