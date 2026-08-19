@@ -3370,7 +3370,9 @@ export default function DqMonitorPage() {
       </div>
 
       {APP_VERSION && (
-        <div className="dq-version-badge">Version: {APP_VERSION}</div>
+        <div className="dq-version-badge" title={`Version ${APP_VERSION}`}>
+          v{APP_VERSION}
+        </div>
       )}
 
       {/* Save Column Order outcome modal. Uses the same dq-alert-*
