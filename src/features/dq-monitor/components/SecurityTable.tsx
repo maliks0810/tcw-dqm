@@ -134,14 +134,6 @@ type SecurityTableProps = {
   // Lets the parent enable/disable that menu item without reaching
   // into this grid's state.
   onHiddenCountChange?: (count: number) => void;
-  // Increment-only nonce the parent bumps for Settings → Reset
-  // Column Headers. Replaces this grid's old "Reset column order"
-  // link: restores the canonical order and drops hidden / pinned /
-  // resized overrides. Note this grid persists its layout to
-  // localStorage rather than USER_PREFERENCES, so the reset lands
-  // via the persist effect rewriting the stored blob — there is no
-  // server row to clear for the security view.
-  resetColumnsSignal?: number;
 };
 
 const UNASSIGNED_LABEL = "— Unassigned —";
@@ -252,7 +244,6 @@ export default function SecurityTable({
   clearFiltersSignal,
   showHiddenColumnsSignal,
   onHiddenCountChange,
-  resetColumnsSignal,
 }: SecurityTableProps) {
   const allAssetIds = useMemo(
     () =>
@@ -496,19 +487,6 @@ export default function SecurityTable({
     setColumnOrder(initialColumnOrder);
     setHasReordered(false);
   }, [initialColumnOrder]);
-
-  // Settings → Reset Column Headers. Same full reset the old in-grid
-  // "Reset column order" link performed. The persist effect below
-  // re-serializes the fresh state straight after, so the stored
-  // localStorage blob ends up back at defaults too.
-  const lastResetColumnsSignal = useRef<number | undefined>(
-    resetColumnsSignal
-  );
-  useEffect(() => {
-    if (resetColumnsSignal === lastResetColumnsSignal.current) return;
-    lastResetColumnsSignal.current = resetColumnsSignal;
-    resetColumns();
-  }, [resetColumnsSignal, resetColumns]);
 
   // Persist the layout on every relevant state change.
   usePersistedColumnLayout(
@@ -886,12 +864,19 @@ export default function SecurityTable({
             {hiddenCols.size > 0 && hasReordered && ", "}
             {hasReordered && "columns reordered"}
           </span>
-          {/* Status text only. Both actions this bar used to offer
-              now live under the Settings gear — "Show all" became
-              Show Hidden Columns, "Reset column order" became Reset
-              Column Headers — so grid-wide actions have one home.
-              The text stays because it explains why columns are
-              missing or out of their usual order. */}
+          {/* No "Show all" button — that action moved to
+              Settings → Show Hidden Columns, so both grids restore
+              hidden columns the same way. The count text stays, since
+              it explains why columns are missing. */}
+          {hasReordered && (
+            <button
+              type="button"
+              className="dq-hidden-cols-restore"
+              onClick={resetColumns}
+            >
+              Reset column order
+            </button>
+          )}
         </div>
       )}
       <div className="dq-table-container">
