@@ -34,6 +34,7 @@ type HeaderProps = {
   // renders only when this callback is supplied, so the parent
   // controls visibility. Fired by the "Clear Filters" item.
   onClearFilters?: () => void;
+  clearFiltersEnabled?: boolean;
   // Settings → Reset Column Headers. Rendered only when supplied AND
   // enabled; the parent disables it when no LHS rule group is
   // selected, since there is no scope whose saved layout could be
@@ -63,6 +64,7 @@ export default function Header({
   saveColumnOrderMessage,
   dmRole,
   onClearFilters,
+  clearFiltersEnabled,
   onResetColumnHeaders,
   resetColumnHeadersEnabled,
   onShowHiddenColumns,
@@ -241,7 +243,14 @@ export default function Header({
                     type="button"
                     role="menuitem"
                     className="dq-settings-item"
+                    disabled={!clearFiltersEnabled}
+                    title={
+                      clearFiltersEnabled
+                        ? undefined
+                        : "Switch to the Exceptions grid to clear filters"
+                    }
                     onClick={() => {
+                      if (!clearFiltersEnabled) return;
                       onClearFilters();
                       setSettingsOpen(false);
                     }}
@@ -258,7 +267,7 @@ export default function Header({
                     title={
                       showHiddenColumnsEnabled
                         ? undefined
-                        : "No hidden columns on this grid"
+                        : "No hidden columns on the Exceptions grid"
                     }
                     onClick={() => {
                       if (!showHiddenColumnsEnabled) return;

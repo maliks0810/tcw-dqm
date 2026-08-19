@@ -451,7 +451,6 @@ export default function DqMonitorPage() {
   // matches the current view.
   const [showHiddenColumnsSignal, setShowHiddenColumnsSignal] =
     useState<number>(0);
-  const [securityHiddenCount, setSecurityHiddenCount] = useState<number>(0);
   const saveColumnOrderOkRef = useRef<HTMLButtonElement | null>(null);
   // Server-loaded column layout for the current (currentDmUser,
   // viewByGroup, viewByRuleCatalog) scope. Fetched via
@@ -1437,17 +1436,25 @@ export default function DqMonitorPage() {
   // Guarded on a real rule group being selected: at the tree root
   // there is no scope to clear. The menu item is disabled in that
   // state; this is the matching server-side guard.
+  // Every Settings action targets the Exceptions grid only — the
+  // security grid keeps its own in-grid links and none of these
+  // signals reach it. Gating on the view keeps the items from
+  // looking available while silently doing nothing over there.
+  const inExceptionsView = viewMode !== "security";
+
   const resetColumnHeadersEnabled = Boolean(
-    viewByGroup && viewByGroup !== "All"
+    inExceptionsView && viewByGroup && viewByGroup !== "All"
   );
 
-  // Settings → Show Hidden Columns is live only when the grid that is
-  // actually on screen has something hidden — nothing to restore
-  // otherwise, and an always-clickable item that silently does
-  // nothing is worse than a greyed one.
-  const hiddenColumnCount =
-    viewMode === "security" ? securityHiddenCount : columnLayout.hiddenCount;
-  const showHiddenColumnsEnabled = hiddenColumnCount > 0;
+  // Live only when the Exceptions grid actually has something hidden
+  // — nothing to restore otherwise.
+  const showHiddenColumnsEnabled =
+    inExceptionsView && columnLayout.hiddenCount > 0;
+
+  // Filters exist on both grids, but Clear Filters only signals the
+  // Exceptions one, so it is greyed in the security view rather than
+  // appearing to work.
+  const clearFiltersEnabled = inExceptionsView;
   const resetColumnHeaders = useCallback(async () => {
     if (!viewByGroup || viewByGroup === "All") return;
     const catalogArg =
@@ -1927,6 +1934,7 @@ export default function DqMonitorPage() {
         saveColumnOrderMessage={saveColumnOrderMessage}
         dmRole={dmRole}
         onClearFilters={() => setClearFiltersSignal((n) => n + 1)}
+        clearFiltersEnabled={clearFiltersEnabled}
         onResetColumnHeaders={resetColumnHeaders}
         resetColumnHeadersEnabled={resetColumnHeadersEnabled}
         onShowHiddenColumns={() => setShowHiddenColumnsSignal((n) => n + 1)}
@@ -2440,9 +2448,6 @@ export default function DqMonitorPage() {
               {!loading && !error && (
                 <SecurityTable
                   data={assets}
-                  clearFiltersSignal={clearFiltersSignal}
-                  showHiddenColumnsSignal={showHiddenColumnsSignal}
-                  onHiddenCountChange={setSecurityHiddenCount}
                   selectedRow={selectedRow}
                   onRowSelect={handleRowSelect}
                   assigneeOptions={dmUserOptions}
