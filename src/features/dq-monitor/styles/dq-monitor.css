@@ -2024,20 +2024,18 @@
   position: fixed;
   right: 0;
   bottom: 0;
-  /* Tuned to recede rather than announce itself: it sits over the
-     scrolling grid, so at the original 12px / #6b7280 it read as a
-     floating chip competing with row content. Lowercase "version
-     1.0.0" at 11px in a lighter grey, with trimmed padding, keeps
-     it legible while staying quiet. The tinted background stays —
-     without it, grid rows scrolling underneath make the digits
-     unreadable. */
-  padding: 3px 8px;
-  background: #f3f4f6;
+  /* Bare text, no chip: the tinted background read as a floating
+     badge over the grid. Legibility survives the change because
+     .dq-page carries 16px of padding, so this corner is page
+     background rather than scrolling rows. Radius went with the
+     fill — nothing left to round. The 16px right padding lines the
+     text's right edge up with the grid's, so it reads as placed
+     rather than merely pinned to the corner. */
+  padding: 4px 16px;
   color: #9ca3af;
   font-size: 11px;
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.4;
-  border-top-left-radius: 4px;
   z-index: 10;
   white-space: nowrap;
   cursor: default;
