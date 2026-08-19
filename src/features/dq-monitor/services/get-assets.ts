@@ -20,18 +20,23 @@ type ApiAsset = {
   all_complete?: boolean;
 };
 
+// Renders as "08/19/26, 06:06 AM" — zero-padded throughout so the
+// column stays visually aligned, 12-hour with an explicit meridiem.
+// Built by hand rather than via toLocaleString: recent ICU emits a
+// narrow no-break space (U+202F) before AM/PM, which looks right but
+// isn't the plain space the format calls for, and the exact output
+// would then drift with the browser's ICU version.
 function formatDateTime(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-US", {
-    month: "numeric",
-    day: "numeric",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const h24 = d.getHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return (
+    `${p2(d.getMonth() + 1)}/${p2(d.getDate())}/${p2(d.getFullYear() % 100)}, ` +
+    `${p2(h12)}:${p2(d.getMinutes())} ${h24 < 12 ? "AM" : "PM"}`
+  );
 }
 
 function toSecurityRow(a: ApiAsset): SecurityRow {

@@ -9,8 +9,6 @@ import { fetchExceptions } from "../services/get-exceptions";
 import { fetchExceptionsHist } from "../services/get-exceptions-hist";
 import { fetchExceptionHistDates } from "../services/get-exception-hist-dates";
 import { executeSecurityRules } from "../services/execute-rules";
-import { fetchExceptionTypes } from "../services/get-exception-types";
-import { fetchSeverityTypes } from "../services/get-severity-types";
 import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionState } from "../services/get-exception-state";
 import { fetchExceptionStatus } from "../services/get-exception-status";
@@ -393,16 +391,19 @@ export default function DqMonitorPage() {
   );
   const [footerBlinking, setFooterBlinking] = useState<boolean>(false);
 
-  const [severity, setSeverity] = useState<string>("All");
-  const [severityOptions, setSeverityOptions] = useState<string[]>([]);
-  // Empty string = "no filter" — the exceptions fetcher omits the
-  // URL param when this is falsy, so the backend SP treats it as
-  // NULL. Only View by Security mode renders the Type dropdown, and
-  // fetchExceptionTypes below only fires when that mode is first
-  // entered — so in View Exceptions mode this stays empty and the
-  // exceptions fetch never applies a bogus type filter.
-  const [dqmType, setDqmType] = useState<string>("");
-  const [exceptionTypes, setExceptionTypes] = useState<string[]>([]);
+  // Type and Severity are no longer user-settable: their dropdowns were
+  // removed from the security sidebar, which was the only place either
+  // rendered. Both are pinned to their no-filter sentinel rather than
+  // deleted, because every fetcher and dep array downstream still takes
+  // them as arguments. "" is the sentinel for type (the fetchers omit
+  // the URL param entirely when falsy, so the SP sees NULL) and "All"
+  // for severity (stripped from the query string before the request).
+  //
+  // Deliberately NOT seeded to the first exception type the way the old
+  // dropdown was: a filter nobody can see or clear would silently narrow
+  // the assets grid with no way back out.
+  const severity = "All";
+  const dqmType = "";
   const [priority, setPriority] = useState<string>("All");
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [assignToFilter, setAssignToFilter] = useState<string>("All");
@@ -637,42 +638,14 @@ export default function DqMonitorPage() {
     selectedAladdinRef.current = selectedAladdinId;
   }, [selectedAladdinId]);
 
-  // The four filter dropdowns below (Type / Severity / Priority /
-  // Exception State) only render inside `viewMode === "security"` —
-  // no point paying for their SPs on mount when the user is in View
-  // Exceptions. Each fetch is guarded to fire on first entry to
-  // security mode and short-circuits once its options array is
-  // populated, so switching between modes doesn't re-fetch.
-  useEffect(() => {
-    if (viewMode !== "security") return;
-    if (exceptionTypes.length > 0) return;
-    const controller = new AbortController();
-    fetchExceptionTypes(controller.signal)
-      .then((codes) => {
-        setExceptionTypes(codes);
-        if (codes.length === 0) return;
-        setDqmType((current) =>
-          current && codes.includes(current) ? current : codes[0]
-        );
-      })
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === "AbortError") return;
-      });
-    return () => controller.abort();
-  }, [viewMode, exceptionTypes.length]);
-
-  useEffect(() => {
-    if (viewMode !== "security") return;
-    if (severityOptions.length > 0) return;
-    const controller = new AbortController();
-    fetchSeverityTypes(controller.signal)
-      .then((codes) => setSeverityOptions(codes))
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === "AbortError") return;
-      });
-    return () => controller.abort();
-  }, [viewMode, severityOptions.length]);
-
+  // The filter dropdowns below (Priority / Assign To / Exception State /
+  // Exception Status) only render inside `viewMode === "security"` — no
+  // point paying for their SPs on mount when the user is in View
+  // Exceptions. Each fetch is guarded to fire on first entry to security
+  // mode and short-circuits once its options array is populated, so
+  // switching between modes doesn't re-fetch. The Type and Severity
+  // option fetches are gone along with their dropdowns — nothing
+  // consumed the results once the selects were removed.
   useEffect(() => {
     if (viewMode !== "security") return;
     if (priorityOptions.length > 0) return;
@@ -2044,38 +2017,6 @@ export default function DqMonitorPage() {
               expand — no reset, no refetch. */}
           {viewMode === "security" && (
             <>
-              <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Type</h3>
-                <select
-                  className="dq-sidebar-select"
-                  value={dqmType}
-                  onChange={(e) => setDqmType(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {exceptionTypes.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Severity</h3>
-                <select
-                  className="dq-sidebar-select"
-                  value={severity}
-                  onChange={(e) => setSeverity(e.target.value)}
-                >
-                  <option value="All">All</option>
-                  {severityOptions.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="dq-sidebar-row">
                 <h3 className="dq-sidebar-title">Priority</h3>
                 <select

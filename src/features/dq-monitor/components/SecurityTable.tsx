@@ -39,10 +39,6 @@ function getSecuritySortValue(row: SecurityRow, key: string): string {
       return row.dateTimeIso || row.dateTime;
     case "priority":
       return row.priority;
-    case "severity":
-      return row.severity;
-    case "type":
-      return row.type;
     case "assignTo":
       return row.assignTo ?? "";
     case "assetId":
@@ -74,8 +70,6 @@ const SEC_COL_KEYS: string[] = [
   "actions",
   "dateTime",
   "priority",
-  "severity",
-  "type",
   "assignTo",
   "assetId",
   "figi",
@@ -94,8 +88,6 @@ const SEC_DEFAULT_WIDTHS: Record<string, number> = {
   actions: 120,
   dateTime: 140,
   priority: 100,
-  severity: 100,
-  type: 140,
   assignTo: 160,
   assetId: 120,
   figi: 140,
@@ -254,18 +246,32 @@ export default function SecurityTable({
     [data]
   );
 
-  const allSeverities = useMemo(
+  const allSecurityDescriptions = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => blankKey(r.severity)))).sort(
+      Array.from(new Set(data.map((r) => blankKey(r.securityDescription)))).sort(
         (a, b) => a.localeCompare(b)
       ),
+    [data]
+  );
+
+  // Counts are numbers, so the usual localeCompare would order them
+  // 1, 10, 2. Sort numerically and stringify only at the end — the
+  // filter machinery keys on strings throughout.
+  const allExceptionCounts = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => Number(r.exceptionCount) || 0)))
+        .sort((a, b) => a - b)
+        .map((n) => String(n)),
     [data]
   );
 
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [figiFilter, setFigiFilter] = useColumnFilter(allFigis);
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
-  const [severityFilter, setSeverityFilter] = useColumnFilter(allSeverities);
+  const [securityDescriptionFilter, setSecurityDescriptionFilter] =
+    useColumnFilter(allSecurityDescriptions);
+  const [exceptionCountFilter, setExceptionCountFilter] =
+    useColumnFilter(allExceptionCounts);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   const visibleRows = useMemo(
@@ -275,11 +281,26 @@ export default function SecurityTable({
         if (figiFilter && !figiFilter.has(blankKey(row.figi))) return false;
         if (priorityFilter && !priorityFilter.has(blankKey(row.priority)))
           return false;
-        if (severityFilter && !severityFilter.has(blankKey(row.severity)))
+        if (
+          securityDescriptionFilter &&
+          !securityDescriptionFilter.has(blankKey(row.securityDescription))
+        )
+          return false;
+        if (
+          exceptionCountFilter &&
+          !exceptionCountFilter.has(String(Number(row.exceptionCount) || 0))
+        )
           return false;
         return true;
       }),
-    [data, assetIdFilter, figiFilter, priorityFilter, severityFilter]
+    [
+      data,
+      assetIdFilter,
+      figiFilter,
+      priorityFilter,
+      securityDescriptionFilter,
+      exceptionCountFilter,
+    ]
   );
 
   // Click-to-sort (three-way asc → desc → off) + explicit dir set from
@@ -578,25 +599,6 @@ export default function SecurityTable({
             />
           </SortableTh>
         );
-      case "severity":
-        return (
-          <SortableTh key={key} {...commonThProps("severity")}>
-            <ColumnFilterHeader
-              label="Severity"
-              allValues={allSeverities}
-              filter={severityFilter}
-              onChange={setSeverityFilter}
-              isOpen={openFilterId === "severity"}
-              onToggle={(open) => setOpenFilterId(open ? "severity" : null)}
-            />
-          </SortableTh>
-        );
-      case "type":
-        return (
-          <SortableTh key={key} {...commonThProps("type")}>
-            Type
-          </SortableTh>
-        );
       case "assignTo":
         return (
           <SortableTh key={key} {...commonThProps("assignTo")}>
@@ -632,7 +634,16 @@ export default function SecurityTable({
       case "securityDescription":
         return (
           <SortableTh key={key} {...commonThProps("securityDescription")}>
-            Security Description
+            <ColumnFilterHeader
+              label="Security Description"
+              allValues={allSecurityDescriptions}
+              filter={securityDescriptionFilter}
+              onChange={setSecurityDescriptionFilter}
+              isOpen={openFilterId === "securityDescription"}
+              onToggle={(open) =>
+                setOpenFilterId(open ? "securityDescription" : null)
+              }
+            />
           </SortableTh>
         );
       case "trader":
@@ -650,7 +661,16 @@ export default function SecurityTable({
       case "exceptionCount":
         return (
           <SortableTh key={key} {...commonThProps("exceptionCount")}>
-            Exception Count
+            <ColumnFilterHeader
+              label="Exception Count"
+              allValues={allExceptionCounts}
+              filter={exceptionCountFilter}
+              onChange={setExceptionCountFilter}
+              isOpen={openFilterId === "exceptionCount"}
+              onToggle={(open) =>
+                setOpenFilterId(open ? "exceptionCount" : null)
+              }
+            />
           </SortableTh>
         );
       case "bbgLastRefresh":
@@ -702,18 +722,6 @@ export default function SecurityTable({
         return (
           <td key={key} className={tdClass(key)} style={tdStyle(key)}>
             {row.priority}
-          </td>
-        );
-      case "severity":
-        return (
-          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
-            {row.severity}
-          </td>
-        );
-      case "type":
-        return (
-          <td key={key} className={tdClass(key)} style={tdStyle(key)}>
-            {row.type}
           </td>
         );
       case "assignTo":

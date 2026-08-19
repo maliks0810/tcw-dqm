@@ -83,8 +83,6 @@ function localStamp(): string {
 const ASSET_EXPORT_KEYS: Array<keyof SecurityRow> = [
   "dateTime",
   "priority",
-  "severity",
-  "type",
   "assignTo",
   "aladdinId",
   "figi",
