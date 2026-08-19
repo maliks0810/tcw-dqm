@@ -35,6 +35,7 @@ import { updateBulkAssign } from "../services/update-bulk-assign";
 import { updateBulkStatus } from "../services/update-bulk-status";
 import { updateUserPreferences } from "../services/update-user-preferences";
 import { fetchUserPreferences } from "../services/get-user-preferences";
+import { clearUserPreferences } from "../services/clear-user-preferences";
 import { refreshUserPreferences } from "../services/refresh-user-preferences";
 import { useCurrentDmUser, isPrivilegedRole } from "../hooks/use-current-dm-user";
 import "../styles/dq-monitor.css";
@@ -433,6 +434,10 @@ export default function DqMonitorPage() {
   } | null>(null);
   const [saveOrderResetSignal, setSaveOrderResetSignal] =
     useState<number>(0);
+  // Bumped by Settings → Clear Filters. Both grids observe strict
+  // increments and drop every column filter; one signal serves both
+  // so the menu item works regardless of which view is on screen.
+  const [clearFiltersSignal, setClearFiltersSignal] = useState<number>(0);
   const saveColumnOrderOkRef = useRef<HTMLButtonElement | null>(null);
   // Server-loaded column layout for the current (currentDmUser,
   // viewByGroup, viewByRuleCatalog) scope. Fetched via
@@ -1402,6 +1407,43 @@ export default function DqMonitorPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [saveColumnOrderPopup]);
 
+  // Settings → Reset Column Headers. Deletes the saved layout for the
+  // scope the operator is currently looking at, then snaps the grid
+  // back to its canonical column order without waiting for a reload.
+  //
+  // Three things have to happen together, or the grid keeps showing
+  // the old order:
+  //   1. the USER_PREFERENCES row goes (server side),
+  //   2. preferredColumnOrder becomes null so the apply-preferred
+  //      effect in ExceptionsTable falls to the canonical branch, and
+  //   3. saveOrderResetSignal bumps so hasReordered clears — that
+  //      effect short-circuits while a drag is uncommitted, so
+  //      without this the reset would appear to do nothing.
+  //
+  // Guarded on a real rule group being selected: at the tree root
+  // there is no scope to clear. The menu item is disabled in that
+  // state; this is the matching server-side guard.
+  const resetColumnHeadersEnabled = Boolean(
+    viewByGroup && viewByGroup !== "All"
+  );
+  const resetColumnHeaders = useCallback(async () => {
+    if (!viewByGroup || viewByGroup === "All") return;
+    const catalogArg =
+      viewByRuleCatalog && viewByRuleCatalog !== "All" ? viewByRuleCatalog : "";
+    try {
+      await clearUserPreferences(currentDmUser, viewByGroup, catalogArg);
+    } catch (err: unknown) {
+      // Surface it but still reset the on-screen layout: the operator
+      // asked for default headers, and leaving the customised order up
+      // would make the click look like a no-op. The saved row simply
+      // survives, so a reload restores it — better than silently
+      // implying it was cleared.
+      console.error("clearUserPreferences failed", err);
+    }
+    setPreferredColumnOrder(null);
+    setSaveOrderResetSignal((n) => n + 1);
+  }, [currentDmUser, viewByGroup, viewByRuleCatalog]);
+
   // Load the operator's saved column layout for the current
   // (user, group, catalog) scope on every LHS scope change. When
   // viewByRuleCatalog is "All" (LHS at the group root) we pass ""
@@ -1861,6 +1903,10 @@ export default function DqMonitorPage() {
         }
         saveColumnOrderSaving={savingColumnOrder}
         saveColumnOrderMessage={saveColumnOrderMessage}
+        dmRole={dmRole}
+        onClearFilters={() => setClearFiltersSignal((n) => n + 1)}
+        onResetColumnHeaders={resetColumnHeaders}
+        resetColumnHeadersEnabled={resetColumnHeadersEnabled}
         onBulkAssignClick={
           showBulkAssign ? () => setBulkPanelOpen((v) => !v) : undefined
         }
@@ -2370,6 +2416,7 @@ export default function DqMonitorPage() {
               {!loading && !error && (
                 <SecurityTable
                   data={assets}
+                  clearFiltersSignal={clearFiltersSignal}
                   selectedRow={selectedRow}
                   onRowSelect={handleRowSelect}
                   assigneeOptions={dmUserOptions}
@@ -3195,6 +3242,7 @@ export default function DqMonitorPage() {
               // retracting the Save Column Order button until the
               // operator drag-reorders again.
               resetReorderSignal={saveOrderResetSignal}
+              clearFiltersSignal={clearFiltersSignal}
               // Server-loaded column layout for the current
               // (user, group, catalog) scope — see the
               // fetchUserPreferences effect above.

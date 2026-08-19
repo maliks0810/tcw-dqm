@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useOktaAuth } from "@okta/okta-react";
 import { USE_OKTA } from "../../../services/auth-mode";
 
@@ -24,6 +24,23 @@ type HeaderProps = {
   // seconds so the header row doesn't stay noisy. Not shown when
   // the button itself isn't rendered.
   saveColumnOrderMessage?: string;
+  // DM_USER.ROLE for the current operator, rendered beside the page
+  // title. Empty string / undefined renders nothing — that's the
+  // least-privileged default the page uses before the role fetch
+  // resolves and for users absent from DM_USER, and a stray empty
+  // badge next to the title would just be noise.
+  dmRole?: string;
+  // Settings gear (right of Export to Excel) and its menu. The gear
+  // renders only when this callback is supplied, so the parent
+  // controls visibility. Fired by the "Clear Filters" item.
+  onClearFilters?: () => void;
+  // Settings → Reset Column Headers. Rendered only when supplied AND
+  // enabled; the parent disables it when no LHS rule group is
+  // selected, since there is no scope whose saved layout could be
+  // cleared. Shown-but-disabled rather than hidden so the menu
+  // doesn't change shape as the operator moves around the tree.
+  onResetColumnHeaders?: () => void;
+  resetColumnHeadersEnabled?: boolean;
   breakdown?: React.ReactNode;
   breakdownLeftOffset?: number;
 };
@@ -40,6 +57,10 @@ export default function Header({
   saveColumnOrderLabel,
   saveColumnOrderSaving,
   saveColumnOrderMessage,
+  dmRole,
+  onClearFilters,
+  onResetColumnHeaders,
+  resetColumnHeadersEnabled,
   breakdown,
   breakdownLeftOffset,
 }: HeaderProps = {}) {
@@ -62,6 +83,29 @@ export default function Header({
     })();
   }, [authState?.isAuthenticated, oktaAuth]);
 
+  // Settings dropdown. Closes on outside click and on Escape — same
+  // affordances as the grid's per-column ⋮ menu, so the two behave
+  // consistently.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSettingsOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [settingsOpen]);
+
   const handleLogout = async () => {
     if (!USE_OKTA || !oktaAuth) return;
     await oktaAuth.signOut({
@@ -69,14 +113,24 @@ export default function Header({
     });
   };
 
-  // When a breakdown row is supplied, force the left column to occupy
-  // exactly `breakdownLeftOffset` pixels so the breakdown starts at the
-  // horizontal position where the Exceptions grid begins (sidebar width
-  // + resizer + gaps computed by the caller). Right column keeps its
-  // buttons flush right via .dq-header-right's justify-self: end.
+  // When a breakdown row is supplied, the left column is sized so the
+  // breakdown starts at the horizontal position where the Exceptions
+  // grid begins (sidebar width + resizer + gaps computed by the
+  // caller). Right column keeps its buttons flush right via
+  // .dq-header-right's justify-self: end.
+  //
+  // minmax(offset, auto) rather than a fixed `offset px`: the offset
+  // is the *preferred* start, not a cap. With the sidebar collapsed
+  // it shrinks to roughly the rail width, which is far narrower than
+  // the 18px bold title — a fixed track left the title overflowing
+  // into the breakdown's column and the two overlapped. The `auto`
+  // max lets the column grow to fit the title (plus the role badge)
+  // whenever the offset would be too small, so the breakdown gets
+  // pushed clear instead of overwritten, while still aligning to the
+  // grid edge whenever there is room.
   const headerStyle: React.CSSProperties | undefined =
     breakdown != null && breakdownLeftOffset != null
-      ? { gridTemplateColumns: `${breakdownLeftOffset}px auto 1fr` }
+      ? { gridTemplateColumns: `minmax(${breakdownLeftOffset}px, auto) auto 1fr` }
       : undefined;
 
   return (
@@ -84,6 +138,7 @@ export default function Header({
       <div className="dq-header-left">
         {USE_OKTA && <div className="dq-header-brand">TCW</div>}
         <h1 className="dq-header-title">DATA QUALITY MONITOR</h1>
+        {dmRole && <span className="dq-header-role">{dmRole}</span>}
       </div>
 
       {breakdown != null && (
@@ -145,6 +200,72 @@ export default function Header({
           >
             Export to Excel
           </button>
+        )}
+        {(onClearFilters || onResetColumnHeaders) && (
+          <div className="dq-settings-wrap" ref={settingsRef}>
+            <button
+              type="button"
+              className="dq-settings-btn"
+              title="Settings"
+              aria-label="Settings"
+              aria-haspopup="menu"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((v) => !v)}
+            >
+              {/* Material-style gear: a toothed ring with a hollow
+                  centre. currentColor lets .dq-settings-btn drive the
+                  fill for the default / hover states. */}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  fill="currentColor"
+                  d="M19.14 12.94a7.6 7.6 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.62l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.24-1.12.55-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.86a.5.5 0 0 0 .12.62l2.03 1.58a7.6 7.6 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.62l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.39 1.04.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.24 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.62l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
+                />
+              </svg>
+            </button>
+            {settingsOpen && (
+              <div className="dq-settings-menu" role="menu">
+                {onClearFilters && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="dq-settings-item"
+                    onClick={() => {
+                      onClearFilters();
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+                {onResetColumnHeaders && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="dq-settings-item"
+                    disabled={!resetColumnHeadersEnabled}
+                    title={
+                      resetColumnHeadersEnabled
+                        ? undefined
+                        : "Select a rule group on the left first"
+                    }
+                    onClick={() => {
+                      if (!resetColumnHeadersEnabled) return;
+                      onResetColumnHeaders();
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    Reset Column Headers
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
         {USE_OKTA && (
           <>

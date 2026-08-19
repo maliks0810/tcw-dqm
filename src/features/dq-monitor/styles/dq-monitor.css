@@ -73,6 +73,19 @@
   line-height: 1.2;
 }
 
+/* DM_USER.ROLE badge beside the page title. 12px matches
+   .dq-header-breakdown (the "Total: 6 | New: 3" row) so the two
+   pieces of at-a-glance context read at the same weight — the 18px
+   title stays the only large text in the row. Negative left margin
+   pulls it in from .dq-header-left's 16px flex gap, which is sized
+   for the TCW brand mark and reads as a disconnect here. */
+.dq-header-role {
+  font-size: 12px;
+  color: #111827;
+  margin-left: -8px;
+  white-space: nowrap;
+}
+
 .dq-header-date {
   color: #4b5563;
   font-size: 14px;
@@ -146,6 +159,79 @@
 
 .dq-export-btn:visited {
   color: #ffffff;
+}
+
+/* Settings gear + dropdown, right of Export to Excel. The wrap is the
+   positioning context for the absolutely-placed menu; the trigger
+   matches .dq-export-btn's 28px bar height and navy treatment so the
+   header row stays level and visually of a piece. */
+.dq-settings-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dq-settings-btn {
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid #003e7e;
+  background: #003e7e;
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dq-settings-btn:hover {
+  background: #002d5e;
+}
+
+/* Right-aligned so the menu opens inward from the header's right edge
+   rather than overflowing off-screen. z-index clears the sticky grid
+   header below it. */
+.dq-settings-menu {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 30;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dq-settings-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: #111827;
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dq-settings-item:hover:not(:disabled) {
+  background: #eef2ff;
+  color: #1d4ed8;
+}
+
+/* Disabled when the action has no scope to act on (Reset Column
+   Headers with no rule group selected on the LHS). Greyed rather
+   than hidden so the menu keeps a stable shape as the operator
+   moves around the tree. */
+.dq-settings-item:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
 }
 
 .dq-body {

@@ -141,6 +141,14 @@ type ExceptionsTableProps = {
   // — flips hasReordered back to false so the Save Column Order
   // button retracts. Used by the post-save modal's OK handler.
   resetReorderSignal?: number;
+  // Increment-only nonce the parent bumps to clear every column
+  // filter on the grid (Settings → Clear Filters). Same
+  // observe-strict-increments pattern as resetReorderSignal above.
+  // Deliberately does NOT touch sort, column order, pinning, or
+  // hidden columns — those are layout, not filtering, and wiping
+  // them would be a surprise from a menu item labelled "Clear
+  // Filters".
+  clearFiltersSignal?: number;
   // Server-loaded column layout for the current (user, group,
   // catalog) scope. Passed as an ordered array of user-visible
   // labels — same encoding onColumnLayoutChange emits. Semantics:
@@ -347,6 +355,7 @@ export default function ExceptionsTable({
   showLifecycleColumns = false,
   onColumnLayoutChange,
   resetReorderSignal,
+  clearFiltersSignal,
   preferredColumnOrder,
 }: ExceptionsTableProps) {
   const showStatusColumn =
@@ -786,6 +795,41 @@ export default function ExceptionsTable({
     lastResetReorderSignal.current = resetReorderSignal;
     setHasReordered(false);
   }, [resetReorderSignal]);
+
+  // Settings → Clear Filters. Drops every per-column filter, including
+  // the dynamic rd:* RESULT_DATA ones, and closes any open filter
+  // popover so the funnel icons visibly go back to their inactive
+  // (non-gold) state in the same paint. Sort / column order / pinned /
+  // hidden columns are intentionally left alone — see the prop comment.
+  const lastClearFiltersSignal = useRef<number | undefined>(
+    clearFiltersSignal
+  );
+  useEffect(() => {
+    if (clearFiltersSignal === lastClearFiltersSignal.current) return;
+    lastClearFiltersSignal.current = clearFiltersSignal;
+    setRuleNameFilter(null);
+    setPriorityFilter(null);
+    setAssetIdFilter(null);
+    setIdBbGlobalFilter(null);
+    setAssignToFilter(null);
+    setStatusFilter(null);
+    setSuppressDateFilter(null);
+    setOpenDateFilter(null);
+    setCloseDateFilter(null);
+    setResultDataFilters({});
+    setOpenFilterId(null);
+  }, [
+    clearFiltersSignal,
+    setRuleNameFilter,
+    setPriorityFilter,
+    setAssetIdFilter,
+    setIdBbGlobalFilter,
+    setAssignToFilter,
+    setStatusFilter,
+    setSuppressDateFilter,
+    setOpenDateFilter,
+    setCloseDateFilter,
+  ]);
 
   // Apply a server-loaded column layout, re-applying whenever either
   // preferredColumnOrder OR canonicalKeys shifts — as long as the

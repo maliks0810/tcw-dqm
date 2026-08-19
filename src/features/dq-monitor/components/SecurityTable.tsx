@@ -122,6 +122,11 @@ type SecurityTableProps = {
   ) => void;
   actionByAsset?: Record<string, ActionValue>;
   onActionShownChange?: (assetId: string, value: ActionValue) => void;
+  // Increment-only nonce the parent bumps to clear every column
+  // filter (Settings → Clear Filters). Mirrors the ExceptionsTable
+  // prop of the same name so one menu item clears whichever grid is
+  // on screen. Sort and column layout are left untouched.
+  clearFiltersSignal?: number;
 };
 
 const UNASSIGNED_LABEL = "— Unassigned —";
@@ -229,6 +234,7 @@ export default function SecurityTable({
   onAction,
   actionByAsset,
   onActionShownChange,
+  clearFiltersSignal,
 }: SecurityTableProps) {
   const allAssetIds = useMemo(
     () =>
@@ -267,6 +273,28 @@ export default function SecurityTable({
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
   const [severityFilter, setSeverityFilter] = useColumnFilter(allSeverities);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
+
+  // Settings → Clear Filters. Drops every column filter and closes any
+  // open popover. Observe-strict-increments so the initial mount value
+  // doesn't count as a clear. Sort and layout are left untouched.
+  const lastClearFiltersSignal = useRef<number | undefined>(
+    clearFiltersSignal
+  );
+  useEffect(() => {
+    if (clearFiltersSignal === lastClearFiltersSignal.current) return;
+    lastClearFiltersSignal.current = clearFiltersSignal;
+    setAssetIdFilter(null);
+    setFigiFilter(null);
+    setPriorityFilter(null);
+    setSeverityFilter(null);
+    setOpenFilterId(null);
+  }, [
+    clearFiltersSignal,
+    setAssetIdFilter,
+    setFigiFilter,
+    setPriorityFilter,
+    setSeverityFilter,
+  ]);
 
   const visibleRows = useMemo(
     () =>
