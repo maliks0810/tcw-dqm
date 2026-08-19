@@ -1181,7 +1181,12 @@ export default function DqMonitorPage() {
       viewByRuleCatalog === "All" &&
       viewByRule === "All" &&
       !ruleNameSearchApplied;
-    if (!inAllMode || ruleGroupOptions.length === 0) {
+    // countsDate must be resolved before calling — the endpoint requires
+    // exception_date and 400s without it. histDates arrives async, so on
+    // a cold load this effect runs once with an empty date and bails,
+    // then re-runs for real when the date lands.
+    const countsDate = dqmDate || latestExceptionDate;
+    if (!inAllMode || ruleGroupOptions.length === 0 || !countsDate) {
       setGroupCounts({});
       return;
     }
@@ -1194,6 +1199,11 @@ export default function DqMonitorPage() {
         // and returns counts in one round-trip. Status filter is
         // intentionally not passed (see the "unfiltered summary"
         // comment above).
+        //
+        // countsDate scopes this to one day, matching the exceptions
+        // fetch. Previously omitted, which counted every date in
+        // EXCEPTION and made the panel read several times higher than
+        // the grid it summarises.
         const rows = await fetchExceptionCountsByGroup(
           {
             exceptionType: dqmType,
@@ -1202,6 +1212,7 @@ export default function DqMonitorPage() {
             exceptionState,
             assignTo: assignToFilter,
           },
+          countsDate,
           controller.signal
         );
         if (!cancelled) {
@@ -1239,6 +1250,12 @@ export default function DqMonitorPage() {
     priority,
     exceptionState,
     assignToFilter,
+    // Both feed countsDate. latestExceptionDate resolves after the first
+    // render, so it has to be here or the panel would stay empty on a
+    // cold load; dqmDate keeps the counts in step with the back-in-time
+    // selector.
+    dqmDate,
+    latestExceptionDate,
   ]);
 
   // When in group mode, we break the count down by rule type — but the

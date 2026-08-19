@@ -14,6 +14,12 @@ export type GroupCount = {
 // Filter shape mirrors what the panel used to pass — status filter is
 // intentionally NOT applied (see DqMonitorPage groupCounts effect).
 // Empty-string args map to the backend's "no filter" branch.
+// exceptionDate is required and scopes the counts to a single day, the
+// same way fetchExceptions does. The SP equality-matches it, so omitting
+// it doesn't widen the result — the backend rejects the request outright.
+// Callers must resolve the date (latest from the LHS dropdown) rather
+// than letting the server assume today, which is wrong on holidays and
+// weekends when the newest EXCEPTION rows predate today.
 export async function fetchExceptionCountsByGroup(
   filters: {
     exceptionType?: string;
@@ -22,6 +28,7 @@ export async function fetchExceptionCountsByGroup(
     exceptionState?: string;
     assignTo?: string;
   },
+  exceptionDate: string,
   signal?: AbortSignal
 ): Promise<GroupCount[]> {
   // "All" is the dropdowns' no-filter sentinel — strip it exactly like
@@ -30,6 +37,7 @@ export async function fetchExceptionCountsByGroup(
   // priority / exception_type would be compared against a type named
   // "All" and match nothing, zeroing every group count.
   const params = new URLSearchParams();
+  params.set("exception_date", exceptionDate);
   if (filters.exceptionType && filters.exceptionType !== "All")
     params.set("exception_type", filters.exceptionType);
   if (filters.severity && filters.severity !== "All")
