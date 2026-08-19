@@ -3262,12 +3262,24 @@ export default function DqMonitorPage() {
               // stay read-only — mutating them would rewrite an
               // already-archived snapshot.
               readOnly={dqmDate !== ""}
-              // Open Date / Close Date columns render at the far
-              // right of the grid only for the Security-Master-family
-              // rule groups. Every other group keeps the grid focused
-              // on triage widgets + RESULT_DATA and doesn't surface
-              // the lifecycle dates.
-              showLifecycleColumns={inSecurityMasterFamily(viewByGroup)}
+              // Open Date / Close Date columns render at the far right
+              // of the grid only for the two Security Master groups.
+              // Every other group keeps the grid focused on triage
+              // widgets + RESULT_DATA and doesn't surface the lifecycle
+              // dates.
+              //
+              // Spelled out rather than routed through
+              // inSecurityMasterFamily() on purpose: this gate covers
+              // the two Security Master groups specifically, not the
+              // wider family, so TOD SOD does NOT get these columns.
+              // The condition previously tested "Security Benchmark
+              // Master" — a transposition that matches no rule group,
+              // so the benchmark group never actually got the columns
+              // despite being intended to. Corrected here.
+              showLifecycleColumns={
+                viewByGroup === "Security Master" ||
+                viewByGroup === "Security Master Benchmark"
+              }
               onVisibleRowsChange={setVisibleExceptions}
               onColumnLayoutChange={setColumnLayout}
               statusOptions={
