@@ -564,8 +564,16 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: #6b7280;
-  font-size: 11px;
+  /* Prominence comes mostly from colour and size, not weight: ▸/▾ are
+     geometric glyphs (U+25B8 / U+25BE) that many fonts ship in a
+     single weight, so font-weight alone can render identically.
+     Darkened from #6b7280 to #374151 and bumped 11px -> 13px to match
+     the adjacent .dq-tree-node label; bold is kept for the fonts that
+     do honour it. Width stays 14px — the triangles are ~0.8em wide so
+     13px still fits, and changing it would shift the tree indent. */
+  color: #374151;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
   flex: 0 0 14px;
   text-align: center;
