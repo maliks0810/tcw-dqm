@@ -88,6 +88,26 @@ function formatDqmDate(iso: string): string {
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
+// The Security-Master-family rule groups. Three separate gates key off
+// this exact membership — the View by Security toggle, Bulk Assign /
+// Bulk Status, and Save Column Order — and each one previously carried
+// its own copy of the list. They're kept on one shared constant because
+// the copies drifting is a live failure mode: TOD SOD was added to the
+// bulk and column-order gates but missed on the security toggle, so the
+// toggle silently never appeared for that group. Adding a group here
+// now lights up all three together. If a gate ever needs a genuinely
+// different membership, give it its own list rather than widening this
+// one.
+const SECURITY_MASTER_FAMILY_GROUPS = [
+  "Security Master",
+  "Security Master Benchmark",
+  "TOD SOD",
+];
+
+function inSecurityMasterFamily(group: string): boolean {
+  return SECURITY_MASTER_FAMILY_GROUPS.includes(group);
+}
+
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
   const [visibleAssets, setVisibleAssets] = useState<SecurityRow[]>([]);
@@ -617,13 +637,11 @@ export default function DqMonitorPage() {
     }
   }, []);
 
-  // View by Security is only meaningful inside the Security Master or
-  // Security Master Benchmark rule groups. If the user navigates away
-  // (picks a different group / catalog / rule), force the RHS back to
-  // the exceptions view so the header toggle can disappear cleanly.
-  const viewBySecurityAllowedGroup =
-    viewByGroup === "Security Master" ||
-    viewByGroup === "Security Master Benchmark";
+  // View by Security is only meaningful inside the Security-Master-family
+  // rule groups. If the user navigates away (picks a different group /
+  // catalog / rule), force the RHS back to the exceptions view so the
+  // header toggle can disappear cleanly.
+  const viewBySecurityAllowedGroup = inSecurityMasterFamily(viewByGroup);
   useEffect(() => {
     if (!viewBySecurityAllowedGroup && viewMode === "security") {
       setViewMode("rule");
@@ -1350,9 +1368,7 @@ export default function DqMonitorPage() {
   // closed.
   const showBulkAssign =
     isPrivilegedRole(dmRole) &&
-    (viewByGroup === "Security Master" ||
-      viewByGroup === "Security Master Benchmark" ||
-      viewByGroup === "TOD SOD") &&
+    inSecurityMasterFamily(viewByGroup) &&
     viewMode !== "security" &&
     dqmDate === "";
   useEffect(() => {
@@ -1372,10 +1388,7 @@ export default function DqMonitorPage() {
   // and security-view modes are excluded because the grid isn't the
   // Exceptions grid there.
   const inSaveColumnOrderScope =
-    (viewByGroup === "Security Master" ||
-      viewByGroup === "Security Master Benchmark" ||
-      viewByGroup === "TOD SOD") &&
-    viewMode !== "security";
+    inSecurityMasterFamily(viewByGroup) && viewMode !== "security";
   const showSaveColumnOrder =
     inSaveColumnOrderScope && columnLayout.hasReordered;
 
@@ -2415,10 +2428,17 @@ export default function DqMonitorPage() {
                       ) {
                         return;
                       }
+                      // Run the rules for whichever group the operator
+                      // is actually looking at. This was pinned to the
+                      // "Security Master" literal back when that was the
+                      // only group the security grid could open from;
+                      // now that the whole Security-Master family can
+                      // reach it, the literal would run the wrong
+                      // group's rules against a TOD SOD asset.
                       executeSecurityRules(
                         assetId,
                         idBbGlobal,
-                        "Security Master",
+                        viewByGroup,
                         "GROUP"
                       ).catch((e) => {
                         console.error("executeSecurityRules failed", e);
@@ -3247,10 +3267,7 @@ export default function DqMonitorPage() {
               // rule groups. Every other group keeps the grid focused
               // on triage widgets + RESULT_DATA and doesn't surface
               // the lifecycle dates.
-              showLifecycleColumns={
-                viewByGroup === "Security Master" ||
-                viewByGroup === "Security Benchmark Master"
-              }
+              showLifecycleColumns={inSecurityMasterFamily(viewByGroup)}
               onVisibleRowsChange={setVisibleExceptions}
               onColumnLayoutChange={setColumnLayout}
               statusOptions={
