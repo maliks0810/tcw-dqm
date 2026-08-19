@@ -52,6 +52,15 @@ const EXCEPTION_LIMIT: number = (() => {
   return Number.isFinite(n) && n > 0 ? n : 5000;
 })();
 
+// App version for the footer badge. Read from REACT_APP_VERSION, which
+// .env wires to $npm_package_version — so it tracks package.json
+// automatically at build time. Deliberately NOT `import pkg from
+// "package.json"`: that inlines the whole manifest into the client
+// bundle, shipping the full dependency list and its versions to the
+// browser. Empty string renders nothing rather than "Version:
+// undefined" if the var is ever missing.
+const APP_VERSION: string = process.env.REACT_APP_VERSION ?? "";
+
 // RESULT_DATA keys the ExceptionsTable should hoist to the front of its
 // dynamic-column section. Hoisted to module scope so the array
 // identity stays stable across renders — an inline literal on the
@@ -3359,6 +3368,10 @@ export default function DqMonitorPage() {
             : `Asset Id = ${lastEvent.aladdinId}, No of Exceptions = ${lastEvent.count}, Received at ${lastEvent.receivedAt}`
           : ""}
       </div>
+
+      {APP_VERSION && (
+        <div className="dq-version-badge">Version: {APP_VERSION}</div>
+      )}
 
       {/* Save Column Order outcome modal. Uses the same dq-alert-*
           styling as the "Please enter a comment" dialog inside
