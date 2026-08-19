@@ -1618,20 +1618,10 @@
   flex: none;
 }
 
-.dq-hidden-cols-restore {
-  border: none;
-  background: transparent;
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
-}
-
-.dq-hidden-cols-restore:hover {
-  color: #1e3a8a;
-}
+/* .dq-hidden-cols-restore removed — it styled the in-grid "Show all"
+   and "Reset column order" links, both of which now live under the
+   Settings gear. The .dq-hidden-cols-bar above still renders, but as
+   status text only. */
 
 .dq-table-row {
   cursor: pointer;

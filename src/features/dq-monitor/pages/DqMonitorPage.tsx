@@ -452,6 +452,12 @@ export default function DqMonitorPage() {
   const [showHiddenColumnsSignal, setShowHiddenColumnsSignal] =
     useState<number>(0);
   const [securityHiddenCount, setSecurityHiddenCount] = useState<number>(0);
+  // Bumped by Settings → Reset Column Headers so the security grid
+  // resets too. That grid keeps its layout in localStorage rather
+  // than USER_PREFERENCES, so it has no server row to clear — the
+  // signal drives its local reset and the persist effect writes the
+  // defaults back out.
+  const [resetColumnsSignal, setResetColumnsSignal] = useState<number>(0);
   const saveColumnOrderOkRef = useRef<HTMLButtonElement | null>(null);
   // Server-loaded column layout for the current (currentDmUser,
   // viewByGroup, viewByRuleCatalog) scope. Fetched via
@@ -1464,6 +1470,11 @@ export default function DqMonitorPage() {
     }
     setPreferredColumnOrder(null);
     setSaveOrderResetSignal((n) => n + 1);
+    // The security grid stores its layout in localStorage, not
+    // USER_PREFERENCES, so the clear above doesn't touch it. This
+    // signal drives its local reset — the same one its retired
+    // "Reset column order" link used to trigger.
+    setResetColumnsSignal((n) => n + 1);
   }, [currentDmUser, viewByGroup, viewByRuleCatalog]);
 
   // Load the operator's saved column layout for the current
@@ -2443,6 +2454,7 @@ export default function DqMonitorPage() {
                   clearFiltersSignal={clearFiltersSignal}
                   showHiddenColumnsSignal={showHiddenColumnsSignal}
                   onHiddenCountChange={setSecurityHiddenCount}
+                  resetColumnsSignal={resetColumnsSignal}
                   selectedRow={selectedRow}
                   onRowSelect={handleRowSelect}
                   assigneeOptions={dmUserOptions}
