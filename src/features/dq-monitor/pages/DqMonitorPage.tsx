@@ -420,7 +420,13 @@ export default function DqMonitorPage() {
     hasReordered: boolean;
     visibleLabels: string[];
     visibleColumns: { key: string; label: string }[];
-  }>({ hasReordered: false, visibleLabels: [], visibleColumns: [] });
+    hiddenCount: number;
+  }>({
+    hasReordered: false,
+    visibleLabels: [],
+    visibleColumns: [],
+    hiddenCount: 0,
+  });
   const [savingColumnOrder, setSavingColumnOrder] = useState<boolean>(false);
   const [saveColumnOrderMessage, setSaveColumnOrderMessage] = useState<string>("");
   // Modal shown after Save Column Order completes. `message` is what
@@ -438,6 +444,14 @@ export default function DqMonitorPage() {
   // increments and drop every column filter; one signal serves both
   // so the menu item works regardless of which view is on screen.
   const [clearFiltersSignal, setClearFiltersSignal] = useState<number>(0);
+  // Bumped by Settings → Show Hidden Columns; both grids observe
+  // strict increments and unhide everything. The two hidden counts
+  // are tracked separately because only one grid is mounted at a
+  // time and each reports its own — the menu item reads whichever
+  // matches the current view.
+  const [showHiddenColumnsSignal, setShowHiddenColumnsSignal] =
+    useState<number>(0);
+  const [securityHiddenCount, setSecurityHiddenCount] = useState<number>(0);
   const saveColumnOrderOkRef = useRef<HTMLButtonElement | null>(null);
   // Server-loaded column layout for the current (currentDmUser,
   // viewByGroup, viewByRuleCatalog) scope. Fetched via
@@ -1426,6 +1440,14 @@ export default function DqMonitorPage() {
   const resetColumnHeadersEnabled = Boolean(
     viewByGroup && viewByGroup !== "All"
   );
+
+  // Settings → Show Hidden Columns is live only when the grid that is
+  // actually on screen has something hidden — nothing to restore
+  // otherwise, and an always-clickable item that silently does
+  // nothing is worse than a greyed one.
+  const hiddenColumnCount =
+    viewMode === "security" ? securityHiddenCount : columnLayout.hiddenCount;
+  const showHiddenColumnsEnabled = hiddenColumnCount > 0;
   const resetColumnHeaders = useCallback(async () => {
     if (!viewByGroup || viewByGroup === "All") return;
     const catalogArg =
@@ -1907,6 +1929,8 @@ export default function DqMonitorPage() {
         onClearFilters={() => setClearFiltersSignal((n) => n + 1)}
         onResetColumnHeaders={resetColumnHeaders}
         resetColumnHeadersEnabled={resetColumnHeadersEnabled}
+        onShowHiddenColumns={() => setShowHiddenColumnsSignal((n) => n + 1)}
+        showHiddenColumnsEnabled={showHiddenColumnsEnabled}
         onBulkAssignClick={
           showBulkAssign ? () => setBulkPanelOpen((v) => !v) : undefined
         }
@@ -2417,6 +2441,8 @@ export default function DqMonitorPage() {
                 <SecurityTable
                   data={assets}
                   clearFiltersSignal={clearFiltersSignal}
+                  showHiddenColumnsSignal={showHiddenColumnsSignal}
+                  onHiddenCountChange={setSecurityHiddenCount}
                   selectedRow={selectedRow}
                   onRowSelect={handleRowSelect}
                   assigneeOptions={dmUserOptions}
@@ -3243,6 +3269,7 @@ export default function DqMonitorPage() {
               // operator drag-reorders again.
               resetReorderSignal={saveOrderResetSignal}
               clearFiltersSignal={clearFiltersSignal}
+              showHiddenColumnsSignal={showHiddenColumnsSignal}
               // Server-loaded column layout for the current
               // (user, group, catalog) scope — see the
               // fetchUserPreferences effect above.

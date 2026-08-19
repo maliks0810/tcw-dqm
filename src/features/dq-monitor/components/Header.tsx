@@ -41,6 +41,10 @@ type HeaderProps = {
   // doesn't change shape as the operator moves around the tree.
   onResetColumnHeaders?: () => void;
   resetColumnHeadersEnabled?: boolean;
+  // Settings → Show Hidden Columns. Replaces the in-grid "Show all"
+  // link. Disabled when the on-screen grid has nothing hidden.
+  onShowHiddenColumns?: () => void;
+  showHiddenColumnsEnabled?: boolean;
   breakdown?: React.ReactNode;
   breakdownLeftOffset?: number;
 };
@@ -61,6 +65,8 @@ export default function Header({
   onClearFilters,
   onResetColumnHeaders,
   resetColumnHeadersEnabled,
+  onShowHiddenColumns,
+  showHiddenColumnsEnabled,
   breakdown,
   breakdownLeftOffset,
 }: HeaderProps = {}) {
@@ -201,7 +207,7 @@ export default function Header({
             Export to Excel
           </button>
         )}
-        {(onClearFilters || onResetColumnHeaders) && (
+        {(onClearFilters || onResetColumnHeaders || onShowHiddenColumns) && (
           <div className="dq-settings-wrap" ref={settingsRef}>
             <button
               type="button"
@@ -241,6 +247,26 @@ export default function Header({
                     }}
                   >
                     Clear Filters
+                  </button>
+                )}
+                {onShowHiddenColumns && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="dq-settings-item"
+                    disabled={!showHiddenColumnsEnabled}
+                    title={
+                      showHiddenColumnsEnabled
+                        ? undefined
+                        : "No hidden columns on this grid"
+                    }
+                    onClick={() => {
+                      if (!showHiddenColumnsEnabled) return;
+                      onShowHiddenColumns();
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    Show Hidden Columns
                   </button>
                 )}
                 {onResetColumnHeaders && (

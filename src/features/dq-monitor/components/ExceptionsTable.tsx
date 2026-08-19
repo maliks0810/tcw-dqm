@@ -131,10 +131,13 @@ type ExceptionsTableProps = {
   // Excel (needs the key to look up row values AND the label for the
   // CSV header) — use it directly. visibleLabels is a convenience
   // slice of the same list for callers that only need the labels.
+  // hiddenCount lets the parent enable/disable Settings → Show
+  // Hidden Columns without reaching into the grid's state.
   onColumnLayoutChange?: (info: {
     hasReordered: boolean;
     visibleLabels: string[];
     visibleColumns: { key: string; label: string }[];
+    hiddenCount: number;
   }) => void;
   // Increment-only nonce the parent bumps when it wants the grid to
   // treat the current column layout as the new "committed" baseline
@@ -149,6 +152,11 @@ type ExceptionsTableProps = {
   // them would be a surprise from a menu item labelled "Clear
   // Filters".
   clearFiltersSignal?: number;
+  // Increment-only nonce the parent bumps to unhide every hidden
+  // column (Settings → Show Hidden Columns). Replaces the old
+  // in-grid "Show all" link. Same observe-strict-increments pattern
+  // as the signals above.
+  showHiddenColumnsSignal?: number;
   // Server-loaded column layout for the current (user, group,
   // catalog) scope. Passed as an ordered array of user-visible
   // labels — same encoding onColumnLayoutChange emits. Semantics:
@@ -356,6 +364,7 @@ export default function ExceptionsTable({
   onColumnLayoutChange,
   resetReorderSignal,
   clearFiltersSignal,
+  showHiddenColumnsSignal,
   preferredColumnOrder,
 }: ExceptionsTableProps) {
   const showStatusColumn =
@@ -831,6 +840,20 @@ export default function ExceptionsTable({
     setCloseDateFilter,
   ]);
 
+  // Settings → Show Hidden Columns. Unhides every column the operator
+  // hid via the per-column ⋮ menu. Restores them to their existing
+  // positions in columnOrder rather than reshuffling — hiding never
+  // removed a key from the order, only from visibleKeys, so simply
+  // emptying hiddenCols puts each column back where it was.
+  const lastShowHiddenColumnsSignal = useRef<number | undefined>(
+    showHiddenColumnsSignal
+  );
+  useEffect(() => {
+    if (showHiddenColumnsSignal === lastShowHiddenColumnsSignal.current) return;
+    lastShowHiddenColumnsSignal.current = showHiddenColumnsSignal;
+    showAllCols();
+  }, [showHiddenColumnsSignal, showAllCols]);
+
   // Apply a server-loaded column layout, re-applying whenever either
   // preferredColumnOrder OR canonicalKeys shifts — as long as the
   // operator hasn't drag-customized since the last apply. The
@@ -1232,6 +1255,7 @@ export default function ExceptionsTable({
       hasReordered,
       visibleLabels: columns.map((c) => c.label),
       visibleColumns: columns,
+      hiddenCount: hiddenCols.size,
     });
   }, [columnOrder, hiddenCols, hasReordered, onColumnLayoutChange]);
 
@@ -1863,19 +1887,16 @@ export default function ExceptionsTable({
 
   return (
     <div className="dq-exceptions-wrap">
+      {/* Count only — the restore action moved to Settings → Show
+          Hidden Columns. The bar still earns its place by explaining
+          why columns are missing; without it a hidden column just
+          looks like a bug. */}
       {showTopBar && (
         <div className="dq-hidden-cols-bar">
           <span>
             {hiddenCols.size} column
             {hiddenCols.size === 1 ? "" : "s"} hidden
           </span>
-          <button
-            type="button"
-            className="dq-hidden-cols-restore"
-            onClick={showAllCols}
-          >
-            Show all
-          </button>
         </div>
       )}
       <div

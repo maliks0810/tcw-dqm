@@ -127,6 +127,13 @@ type SecurityTableProps = {
   // prop of the same name so one menu item clears whichever grid is
   // on screen. Sort and column layout are left untouched.
   clearFiltersSignal?: number;
+  // Increment-only nonce the parent bumps to unhide every hidden
+  // column (Settings → Show Hidden Columns). Replaces this grid's
+  // old in-grid "Show all" link.
+  showHiddenColumnsSignal?: number;
+  // Lets the parent enable/disable that menu item without reaching
+  // into this grid's state.
+  onHiddenCountChange?: (count: number) => void;
 };
 
 const UNASSIGNED_LABEL = "— Unassigned —";
@@ -235,6 +242,8 @@ export default function SecurityTable({
   actionByAsset,
   onActionShownChange,
   clearFiltersSignal,
+  showHiddenColumnsSignal,
+  onHiddenCountChange,
 }: SecurityTableProps) {
   const allAssetIds = useMemo(
     () =>
@@ -451,6 +460,23 @@ export default function SecurityTable({
     });
   }, []);
   const showAllCols = useCallback(() => setHiddenCols(new Set()), []);
+
+  // Settings → Show Hidden Columns. Hiding never removed a key from
+  // columnOrder, only from visibleKeys, so emptying hiddenCols puts
+  // every column back in its existing position.
+  const lastShowHiddenColumnsSignal = useRef<number | undefined>(
+    showHiddenColumnsSignal
+  );
+  useEffect(() => {
+    if (showHiddenColumnsSignal === lastShowHiddenColumnsSignal.current) return;
+    lastShowHiddenColumnsSignal.current = showHiddenColumnsSignal;
+    showAllCols();
+  }, [showHiddenColumnsSignal, showAllCols]);
+
+  // Report the hidden count up so the parent can gate the menu item.
+  useEffect(() => {
+    onHiddenCountChange?.(hiddenCols.size);
+  }, [hiddenCols, onHiddenCountChange]);
   // Full reset: strip session-scoped overrides (hidden, pinned, resized,
   // reordered) back to the mount-time snapshot. The persist effect
   // re-serializes the fresh state immediately after.
@@ -838,15 +864,10 @@ export default function SecurityTable({
             {hiddenCols.size > 0 && hasReordered && ", "}
             {hasReordered && "columns reordered"}
           </span>
-          {hiddenCols.size > 0 && (
-            <button
-              type="button"
-              className="dq-hidden-cols-restore"
-              onClick={showAllCols}
-            >
-              Show all
-            </button>
-          )}
+          {/* No "Show all" button — that action moved to
+              Settings → Show Hidden Columns, so both grids restore
+              hidden columns the same way. The count text stays, since
+              it explains why columns are missing. */}
           {hasReordered && (
             <button
               type="button"
