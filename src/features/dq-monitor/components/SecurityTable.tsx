@@ -73,8 +73,8 @@ const SEC_COL_KEYS: string[] = [
   "assignTo",
   "assetId",
   "figi",
-  "securityDescription",
   "exceptionCount",
+  "securityDescription",
   "trader",
   "tradingTeam",
   "bbgLastRefresh",
@@ -246,6 +246,19 @@ export default function SecurityTable({
     [data]
   );
 
+  // Assign To is an editable dropdown per row, so the values here track
+  // whatever is currently selected — reassigning a row moves it between
+  // buckets on the next render. Unassigned rows collapse to blankKey's
+  // "(none)" so they stay selectable rather than disappearing behind an
+  // unreachable empty-string checkbox.
+  const allAssignees = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => blankKey(r.assignTo)))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [data]
+  );
+
   const allSecurityDescriptions = useMemo(
     () =>
       Array.from(new Set(data.map((r) => blankKey(r.securityDescription)))).sort(
@@ -268,6 +281,7 @@ export default function SecurityTable({
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
   const [figiFilter, setFigiFilter] = useColumnFilter(allFigis);
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
+  const [assignToFilter, setAssignToFilter] = useColumnFilter(allAssignees);
   const [securityDescriptionFilter, setSecurityDescriptionFilter] =
     useColumnFilter(allSecurityDescriptions);
   const [exceptionCountFilter, setExceptionCountFilter] =
@@ -280,6 +294,8 @@ export default function SecurityTable({
         if (assetIdFilter && !assetIdFilter.has(row.aladdinId)) return false;
         if (figiFilter && !figiFilter.has(blankKey(row.figi))) return false;
         if (priorityFilter && !priorityFilter.has(blankKey(row.priority)))
+          return false;
+        if (assignToFilter && !assignToFilter.has(blankKey(row.assignTo)))
           return false;
         if (
           securityDescriptionFilter &&
@@ -298,6 +314,7 @@ export default function SecurityTable({
       assetIdFilter,
       figiFilter,
       priorityFilter,
+      assignToFilter,
       securityDescriptionFilter,
       exceptionCountFilter,
     ]
@@ -602,7 +619,14 @@ export default function SecurityTable({
       case "assignTo":
         return (
           <SortableTh key={key} {...commonThProps("assignTo")}>
-            Assign To
+            <ColumnFilterHeader
+              label="Assign To"
+              allValues={allAssignees}
+              filter={assignToFilter}
+              onChange={setAssignToFilter}
+              isOpen={openFilterId === "assignTo"}
+              onToggle={(open) => setOpenFilterId(open ? "assignTo" : null)}
+            />
           </SortableTh>
         );
       case "assetId":
