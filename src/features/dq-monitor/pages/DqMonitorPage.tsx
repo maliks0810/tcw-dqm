@@ -108,6 +108,13 @@ function inSecurityMasterFamily(group: string): boolean {
   return SECURITY_MASTER_FAMILY_GROUPS.includes(group);
 }
 
+// .dq-header's grid column-gap, which sits between the title column and
+// the status-breakdown column. Must be subtracted when sizing the title
+// column to a target x-position, since the gap pushes the breakdown that
+// much further right. Keep in sync with `gap` on .dq-header in
+// dq-monitor.css.
+const HEADER_COLUMN_GAP = 16;
+
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
   const [visibleAssets, setVisibleAssets] = useState<SecurityRow[]>([]);
@@ -1977,10 +1984,13 @@ export default function DqMonitorPage() {
         // DATA QUALITY MONITOR (left) + Bulk Assign + View by Security
         // toggle + Export to Excel (right) all share the top row.
         // Status breakdown, when present, drops into a middle column
-        // left-aligned with the Exceptions grid — breakdownLeftOffset
-        // matches the sidebar's outer width (sidebar + gap + resizer +
-        // gap) so it lines up with the grid regardless of collapse /
-        // user resize.
+        // left-aligned with the Exceptions grid — see the
+        // breakdownLeftOffset prop below for the arithmetic. Tracks
+        // collapse and user resize, and because the column is sized with
+        // minmax() it degrades gracefully: when the title needs more room
+        // than the offset (a collapsed sidebar leaves only ~28px) the
+        // column grows and the breakdown shifts right instead of the two
+        // overlapping.
         modeToggleLabel={
           viewBySecurityAllowedGroup
             ? viewMode === "security"
@@ -2023,9 +2033,20 @@ export default function DqMonitorPage() {
             </>
           ) : undefined
         }
+        // Width to give the header's title column so the breakdown that
+        // follows it starts exactly at the Exceptions grid's left edge.
+        //
+        // .dq-body is a flex row with a 12px gap: sidebar, then a 6px
+        // resizer (expanded only), then the grid. So the grid's left
+        // edge is sidebar + 12 + 6 + 12 when expanded and sidebar + 12
+        // when collapsed. The header then adds its own 16px column gap
+        // between title and breakdown, which has to come back off or the
+        // breakdown lands 16px right of the grid — which is exactly
+        // where it used to sit.
         breakdownLeftOffset={
           (sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth) +
-          (sidebarCollapsed ? 12 : 30)
+          (sidebarCollapsed ? 12 : 30) -
+          HEADER_COLUMN_GAP
         }
       />
 
