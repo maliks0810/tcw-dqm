@@ -9,7 +9,6 @@ import { fetchExceptions } from "../services/get-exceptions";
 import { fetchExceptionsHist } from "../services/get-exceptions-hist";
 import { fetchExceptionHistDates } from "../services/get-exception-hist-dates";
 import { executeSecurityRules } from "../services/execute-rules";
-import { fetchPriorityTypes } from "../services/get-priority-types";
 import { fetchExceptionState } from "../services/get-exception-state";
 import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
@@ -431,9 +430,15 @@ export default function DqMonitorPage() {
   // the assets grid with no way back out.
   const severity = "All";
   const dqmType = "";
-  const [priority, setPriority] = useState<string>("All");
-  const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
-  const [assignToFilter, setAssignToFilter] = useState<string>("All");
+  // Priority and Assign To follow the same story: their sidebar
+  // dropdowns are gone, so both are pinned to the "All" no-filter
+  // sentinel that gets stripped before the request. The values stay
+  // because the asset / exception fetchers still take them as
+  // arguments.
+  const priority = "All";
+  const assignToFilter = "All";
+  // dmUserOptions outlives its dropdown — the per-row Assign To cells in
+  // both grids still populate from it.
   const [dmUserOptions, setDmUserOptions] = useState<string[]>([]);
   // Current operator's DM_USER.USER value. Resolution rules live in
   // useCurrentDmUser: STANDALONE_APP=true (default in this repo)
@@ -501,7 +506,11 @@ export default function DqMonitorPage() {
   >(undefined);
   const [exceptionState, setExceptionState] = useState<string>("Pending");
   const [exceptionStateOptions, setExceptionStateOptions] = useState<string[]>([]);
-  const [exceptionStatus, setExceptionStatus] = useState<string>("All");
+  // No exceptionStatus value here any more. Its sidebar dropdown was the
+  // only thing that read or wrote it — it was never passed to a fetcher —
+  // so removing the dropdown left nothing behind. The OPTIONS list stays:
+  // it feeds the Exceptions grid's Status column and the status
+  // breakdown, neither of which had anything to do with that dropdown.
   const [exceptionStatusOptions, setExceptionStatusOptions] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<
     "security" | "group" | "ruleCatalog" | "rule"
@@ -679,26 +688,17 @@ export default function DqMonitorPage() {
     selectedAladdinRef.current = selectedAladdinId;
   }, [selectedAladdinId]);
 
-  // The filter dropdowns below (Priority / Assign To / Exception State /
-  // Exception Status) only render inside `viewMode === "security"` — no
-  // point paying for their SPs on mount when the user is in View
-  // Exceptions. Each fetch is guarded to fire on first entry to security
-  // mode and short-circuits once its options array is populated, so
-  // switching between modes doesn't re-fetch. The Type and Severity
-  // option fetches are gone along with their dropdowns — nothing
-  // consumed the results once the selects were removed.
-  useEffect(() => {
-    if (viewMode !== "security") return;
-    if (priorityOptions.length > 0) return;
-    const controller = new AbortController();
-    fetchPriorityTypes(controller.signal)
-      .then((codes) => setPriorityOptions(codes))
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === "AbortError") return;
-      });
-    return () => controller.abort();
-  }, [viewMode, priorityOptions.length]);
-
+  // Exception State is the last dropdown standing in the security
+  // sidebar, so this is the only options fetch still gated on
+  // `viewMode === "security"` — no point paying for its SP on mount when
+  // the operator is in View Exceptions. Guarded to fire on first entry to
+  // security mode and short-circuits once the options array is
+  // populated, so switching between modes doesn't re-fetch.
+  //
+  // The Type, Severity, Priority and Assign To option fetches are all
+  // gone along with their dropdowns. Note the Exception Status options
+  // fetch survives its dropdown and is deliberately NOT gated on the
+  // view: it feeds the Exceptions grid's Status column in every mode.
   useEffect(() => {
     if (viewMode !== "security") return;
     if (exceptionStateOptions.length > 0) return;
@@ -2088,38 +2088,6 @@ export default function DqMonitorPage() {
           {viewMode === "security" && (
             <>
               <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Priority</h3>
-                <select
-                  className="dq-sidebar-select"
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
-                >
-                  <option value="All">All</option>
-                  {priorityOptions.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Assign To</h3>
-                <select
-                  className="dq-sidebar-select"
-                  value={assignToFilter}
-                  onChange={(e) => setAssignToFilter(e.target.value)}
-                >
-                  <option value="All">All</option>
-                  {dmUserOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dq-sidebar-row">
                 <h3 className="dq-sidebar-title">Exception State</h3>
                 <select
                   className="dq-sidebar-select"
@@ -2128,22 +2096,6 @@ export default function DqMonitorPage() {
                 >
                   <option value="All">All</option>
                   {exceptionStateOptions.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dq-sidebar-row">
-                <h3 className="dq-sidebar-title">Exception Status</h3>
-                <select
-                  className="dq-sidebar-select"
-                  value={exceptionStatus}
-                  onChange={(e) => setExceptionStatus(e.target.value)}
-                >
-                  <option value="All">All</option>
-                  {exceptionStatusOptions.map((code) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
