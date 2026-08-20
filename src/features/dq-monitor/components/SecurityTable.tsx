@@ -74,9 +74,9 @@ const SEC_COL_KEYS: string[] = [
   "assetId",
   "figi",
   "securityDescription",
+  "exceptionCount",
   "trader",
   "tradingTeam",
-  "exceptionCount",
   "bbgLastRefresh",
   "triggerBbg",
 ];

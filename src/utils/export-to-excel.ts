@@ -87,9 +87,9 @@ const ASSET_EXPORT_KEYS: Array<keyof SecurityRow> = [
   "aladdinId",
   "figi",
   "securityDescription",
+  "exceptionCount",
   "trader",
   "tradingTeam",
-  "exceptionCount",
   "bbgLastRefresh",
   "triggerBbg",
 ];
