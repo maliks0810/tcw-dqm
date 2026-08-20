@@ -127,18 +127,32 @@ export default function Header({
   // caller). Right column keeps its buttons flush right via
   // .dq-header-right's justify-self: end.
   //
-  // minmax(offset, auto) rather than a fixed `offset px`: the offset
-  // is the *preferred* start, not a cap. With the sidebar collapsed
-  // it shrinks to roughly the rail width, which is far narrower than
-  // the 18px bold title — a fixed track left the title overflowing
-  // into the breakdown's column and the two overlapped. The `auto`
-  // max lets the column grow to fit the title (plus the role badge)
-  // whenever the offset would be too small, so the breakdown gets
-  // pushed clear instead of overwritten, while still aligning to the
-  // grid edge whenever there is room.
+  // minmax(max-content, offset) rather than a fixed `offset px`: the
+  // offset is the *preferred* start, not a cap. With the sidebar
+  // collapsed it shrinks to roughly the rail width, far narrower than
+  // the 18px bold title plus the role badge, and a fixed track left the
+  // title overflowing into the breakdown's column so the two overlapped.
+  //
+  // max-content as the MINIMUM is what makes that structurally
+  // impossible: the track can never be narrower than the title and badge
+  // actually need, at any viewport width. The earlier
+  // minmax(offset, auto) did not guarantee this — a fixed minimum sets
+  // the track's base size outright and ignores the item's own
+  // min-content contribution, so the column only reached the title's
+  // width via the "maximize tracks" step, which needs spare room in the
+  // header. Squeeze the window and the base size wins and the title
+  // spills over the breakdown again.
+  //
+  // Per the grid spec a max below the min is floored by it, so this
+  // reads as: at least the title, exactly the offset when the offset is
+  // the larger of the two. Expanded, the offset wins and the breakdown
+  // lines up with the grid; collapsed, max-content wins and the
+  // breakdown sits just clear of the badge instead.
   const headerStyle: React.CSSProperties | undefined =
     breakdown != null && breakdownLeftOffset != null
-      ? { gridTemplateColumns: `minmax(${breakdownLeftOffset}px, auto) auto 1fr` }
+      ? {
+          gridTemplateColumns: `minmax(max-content, ${breakdownLeftOffset}px) auto 1fr`,
+        }
       : undefined;
 
   return (
