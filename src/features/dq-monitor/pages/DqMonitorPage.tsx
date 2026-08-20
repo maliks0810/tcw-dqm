@@ -549,14 +549,20 @@ export default function DqMonitorPage() {
   const [assignToVisibleGroups, setAssignToVisibleGroups] = useState<
     Set<string>
   >(new Set());
-  const showStatusPanel =
-    viewMode !== "security" && statusVisibleGroups.has(viewByGroup);
-  const showCommentsColumn =
-    viewMode !== "security" && commentsVisibleGroups.has(viewByGroup);
-  const showSuppressDateColumn =
-    viewMode !== "security" && suppressDateVisibleGroups.has(viewByGroup);
-  const showAssignToColumn =
-    viewMode !== "security" && assignToVisibleGroups.has(viewByGroup);
+  // Keyed purely off the selected rule group's FLAG_* visibility, with
+  // no view-mode condition. View by Security shows the same Exceptions
+  // grid as View Exceptions and the tree keeps driving viewByGroup while
+  // in that mode (selectGroupTree preserves viewMode === "security"), so
+  // the same LHS selection has to yield the same columns. Only the row
+  // set differs — the security view narrows it to the selected asset.
+  //
+  // These previously carried a `viewMode !== "security" &&` guard, which
+  // silently stripped Status / Comments / Suppress Date / Assign To off
+  // the grid the moment an asset was clicked.
+  const showStatusPanel = statusVisibleGroups.has(viewByGroup);
+  const showCommentsColumn = commentsVisibleGroups.has(viewByGroup);
+  const showSuppressDateColumn = suppressDateVisibleGroups.has(viewByGroup);
+  const showAssignToColumn = assignToVisibleGroups.has(viewByGroup);
   // Status filter starts empty and gets seeded with EVERY status
   // returned by SP_GET_EXCEPTION_STATUS as soon as that fetch lands
   // (see the seed effect right below the fetchExceptionStatus
@@ -3266,7 +3272,13 @@ export default function DqMonitorPage() {
 
             <ExceptionsTable
               data={tableExceptions}
-              showResultDataColumns={viewMode !== "security"}
+              // Master switch inside the table: besides the RESULT_DATA
+              // columns it also gates Status / Comments / Suppress Date /
+              // Assign To. Previously false in security mode, which was
+              // the second of two layers stripping columns there. Always
+              // on now, so both views render the same grid for the same
+              // rule group and only the row set differs.
+              showResultDataColumns
               // Nonce bumped by the Save Column Order modal's OK
               // handler on a successful save — child observes the
               // increment and flips its hasReordered back to false,
