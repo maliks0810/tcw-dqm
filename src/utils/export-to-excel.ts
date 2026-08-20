@@ -57,8 +57,8 @@ export function exportRowsToExcel<T extends Record<string, unknown>>(
 }
 
 const ASSET_HEADER_OVERRIDES: Partial<Record<keyof SecurityRow, string>> = {
-  aladdinId: "Asset Id",
-  figi: "FIGI",
+  aladdinId: "ALADDIN_ID",
+  figi: "ID_BB_GLOBAL",
   bbgLastRefresh: "BBG Last Refresh",
   triggerBbg: "Trigger BBG",
 };

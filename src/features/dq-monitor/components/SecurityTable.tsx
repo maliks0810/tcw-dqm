@@ -633,7 +633,7 @@ export default function SecurityTable({
         return (
           <SortableTh key={key} {...commonThProps("assetId")}>
             <ColumnFilterHeader
-              label="Asset Id"
+              label="ALADDIN_ID"
               allValues={allAssetIds}
               filter={assetIdFilter}
               onChange={setAssetIdFilter}
@@ -646,7 +646,7 @@ export default function SecurityTable({
         return (
           <SortableTh key={key} {...commonThProps("figi")}>
             <ColumnFilterHeader
-              label="FIGI"
+              label="ID_BB_GLOBAL"
               allValues={allFigis}
               filter={figiFilter}
               onChange={setFigiFilter}
