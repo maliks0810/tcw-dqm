@@ -55,6 +55,11 @@ function getSortValue(row: ExceptionRow, key: string): string {
 
 type ExceptionsTableProps = {
   data: ExceptionRow[];
+  // Placeholder shown in place of the grid when there are no rows. The
+  // default points at the rule tree, which is what fills the grid in
+  // every view except View by Security — there the parent overrides it
+  // to point at the assets table instead.
+  emptyMessage?: string;
   showResultDataColumns?: boolean;
   onVisibleRowsChange?: (rows: ExceptionRow[]) => void;
   statusOptions?: string[];
@@ -346,6 +351,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 
 export default function ExceptionsTable({
   data,
+  emptyMessage = "Select an item from the left hand panel to view exceptions",
   showResultDataColumns = true,
   onVisibleRowsChange,
   statusOptions,
@@ -1385,9 +1391,7 @@ export default function ExceptionsTable({
 
   if (data.length === 0) {
     return (
-      <div className="dq-empty-state">
-        Select a security from the table above to view exceptions
-      </div>
+      <div className="dq-empty-state">{emptyMessage}</div>
     );
   }
 

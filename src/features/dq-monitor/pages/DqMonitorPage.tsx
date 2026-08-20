@@ -3293,6 +3293,15 @@ export default function DqMonitorPage() {
 
             <ExceptionsTable
               data={tableExceptions}
+              // Only View by Security fills this grid from the assets
+              // table above; everywhere else the rule tree drives it, so
+              // the table's own default (which names the left hand
+              // panel) is the right text and is left in place.
+              emptyMessage={
+                viewMode === "security"
+                  ? "Select a security from the table above to view exceptions"
+                  : undefined
+              }
               // Master switch inside the table: besides the RESULT_DATA
               // columns it also gates Status / Comments / Suppress Date /
               // Assign To. Previously false in security mode, which was
