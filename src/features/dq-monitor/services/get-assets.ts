@@ -91,7 +91,18 @@ export async function fetchAssets(
   if (!Array.isArray(raw)) {
     throw new Error("getAssets: expected array response");
   }
-  const sorted = raw.slice().sort((a, b) => {
+  // SP_GET_ASSETS left-joins EXCEPTION out to the security dimension,
+  // so every exception with no ASSET_ID collapses into a single
+  // id-less bucket carrying their combined count. That bucket is not
+  // an asset — it sat unnoticed at the bottom of the default
+  // date-descending order and jumped to the top the moment anyone
+  // sorted by Exception Count, showing a blank ALADDIN_ID against a
+  // count far larger than any real row. Dropped here at the service
+  // boundary rather than in the grid so it stays out of the column
+  // filters, the CSV export and the visible-rows breakdown alike.
+  const identified = raw.filter((a) => (a.asset_id ?? "").trim() !== "");
+
+  const sorted = identified.slice().sort((a, b) => {
     const ta = a.exception_date ? new Date(a.exception_date).getTime() : 0;
     const tb = b.exception_date ? new Date(b.exception_date).getTime() : 0;
     return tb - ta;
