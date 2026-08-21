@@ -178,6 +178,20 @@ type ExceptionsTableProps = {
   //               doesn't hide new columns. hasReordered is reset to
   //               false — this array IS the committed baseline.
   preferredColumnOrder?: string[] | null;
+  // Bulk-selection column. When true the grid grows a leading column
+  // with no header name — just a Select All checkbox — and a checkbox
+  // on every row, whose ticked set is what the Bulk Status / Bulk
+  // Assign panels act on. Rendered outside the columnOrder machinery
+  // on purpose: it must never be drag-reorderable, hideable, sortable,
+  // or persisted into the saved column layout, and it has to vanish
+  // the instant the panel that turned it on closes.
+  selectionMode?: boolean;
+  // Controlled selection, keyed by ExceptionRow.exceptionId — the same
+  // EXCEPTION primary key the per-row status / assign endpoints use.
+  // The parent owns the set so it survives the grid re-rendering and
+  // so both bulk panels share one selection.
+  selectedIds?: Set<number>;
+  onSelectedIdsChange?: (next: Set<number>) => void;
 };
 
 function getActionClass(action: string): string {
@@ -372,6 +386,9 @@ export default function ExceptionsTable({
   clearFiltersSignal,
   showHiddenColumnsSignal,
   preferredColumnOrder,
+  selectionMode = false,
+  selectedIds,
+  onSelectedIdsChange,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -1051,6 +1068,47 @@ export default function ExceptionsTable({
       return compareValues(getSortValue(a, key), getSortValue(b, key)) * factor;
     });
   }, [visibleRows, sort]);
+
+  // ---- Bulk-selection column -------------------------------------
+  // "Select All" deliberately spans every row the grid is currently
+  // showing (sortedRows — i.e. after the column filters), NOT just the
+  // virtualized slice in the viewport. Scrolling must not change what
+  // "all" means, and the operator can only reason about the rows the
+  // filters left behind.
+  const selectedInGrid = useMemo(() => {
+    if (!selectionMode || !selectedIds || selectedIds.size === 0) return 0;
+    let n = 0;
+    for (const r of sortedRows) if (selectedIds.has(r.exceptionId)) n += 1;
+    return n;
+  }, [selectionMode, selectedIds, sortedRows]);
+  const allSelected = sortedRows.length > 0 && selectedInGrid === sortedRows.length;
+  // Drives the header box's indeterminate dash — checked means "every
+  // visible row", not "some".
+  const someSelected = selectedInGrid > 0 && !allSelected;
+
+  const toggleAllSelected = useCallback(
+    (checked: boolean) => {
+      if (!onSelectedIdsChange) return;
+      const next = new Set(selectedIds ?? []);
+      for (const r of sortedRows) {
+        if (checked) next.add(r.exceptionId);
+        else next.delete(r.exceptionId);
+      }
+      onSelectedIdsChange(next);
+    },
+    [onSelectedIdsChange, selectedIds, sortedRows]
+  );
+
+  const toggleRowSelected = useCallback(
+    (exceptionId: number, checked: boolean) => {
+      if (!onSelectedIdsChange) return;
+      const next = new Set(selectedIds ?? []);
+      if (checked) next.add(exceptionId);
+      else next.delete(exceptionId);
+      onSelectedIdsChange(next);
+    },
+    [onSelectedIdsChange, selectedIds]
+  );
 
   // Row-mount virtualization for the tbody. Without this every
   // exception row mounts its full stateful widget stack (Status
@@ -1880,6 +1938,11 @@ export default function ExceptionsTable({
 
   const visibleKeys = columnOrder.filter((k) => !isHidden(k));
 
+  // Spacer rows must span the checkbox column too, or the virtualized
+  // padding <tr>s come up one cell short and the browser collapses the
+  // table layout while scrolling.
+  const totalColSpan = visibleKeys.length + (selectionMode ? 1 : 0);
+
   // Top bar surfaces only the "N columns hidden" chip + Show all
   // affordance. The reordered-state indicator + Reset button were
   // removed at user request — operators can freely drag statics and
@@ -1912,14 +1975,36 @@ export default function ExceptionsTable({
       >
         <table className="dq-table">
           <thead>
-            <tr>{visibleKeys.map((k) => renderHeader(k))}</tr>
+            <tr>
+              {selectionMode && (
+                <th className="dq-select-th" scope="col">
+                  <label className="dq-select-all">
+                    <input
+                      type="checkbox"
+                      className="dq-select-box"
+                      checked={allSelected}
+                      ref={(el) => {
+                        // Partial selection shows the dash rather than
+                        // a tick — indeterminate is DOM-only state with
+                        // no React prop, so it has to be set on the node.
+                        if (el) el.indeterminate = someSelected;
+                      }}
+                      onChange={(e) => toggleAllSelected(e.target.checked)}
+                      aria-label="Select all rows"
+                    />
+                    <span>Select All</span>
+                  </label>
+                </th>
+              )}
+              {visibleKeys.map((k) => renderHeader(k))}
+            </tr>
           </thead>
 
           <tbody>
             {paddingTop > 0 && (
               <tr aria-hidden="true">
                 <td
-                  colSpan={visibleKeys.length}
+                  colSpan={totalColSpan}
                   style={{
                     height: paddingTop,
                     padding: 0,
@@ -2011,6 +2096,19 @@ export default function ExceptionsTable({
                     }
                   }}
                 >
+                  {selectionMode && (
+                    <td className="dq-select-td">
+                      <input
+                        type="checkbox"
+                        className="dq-select-box"
+                        checked={selectedIds?.has(row.exceptionId) ?? false}
+                        onChange={(e) =>
+                          toggleRowSelected(row.exceptionId, e.target.checked)
+                        }
+                        aria-label={`Select exception ${row.exceptionId}`}
+                      />
+                    </td>
+                  )}
                   {visibleKeys.map((k) => renderCell(k, row))}
                 </tr>
               );
@@ -2018,7 +2116,7 @@ export default function ExceptionsTable({
             {paddingBottom > 0 && (
               <tr aria-hidden="true">
                 <td
-                  colSpan={visibleKeys.length}
+                  colSpan={totalColSpan}
                   style={{
                     height: paddingBottom,
                     padding: 0,

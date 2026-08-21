@@ -657,6 +657,14 @@ export default function DqMonitorPage() {
   const [bulkIsPermanent, setBulkIsPermanent] = useState<boolean>(false);
   const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
   const [bulkMessage, setBulkMessage] = useState<string>("");
+  // Rows ticked in the Exceptions grid's bulk-selection column, keyed
+  // by EXCEPTION_ID. One set shared by both panels — there is only one
+  // checkbox column, so Bulk Status and Bulk Assign both act on
+  // whatever is ticked when their button is pressed. Empty by default:
+  // the column appears with nothing selected, never with everything.
+  const [bulkSelectedExceptionIds, setBulkSelectedExceptionIds] = useState<
+    Set<number>
+  >(() => new Set<number>());
 
   // Ask once for OS-level notification permission so SSE events can also
   // surface in the Windows Action Center, not just the footer.
@@ -1420,6 +1428,39 @@ export default function DqMonitorPage() {
   useEffect(() => {
     if (!showBulkAssign && bulkStatusPanelOpen) setBulkStatusPanelOpen(false);
   }, [showBulkAssign, bulkStatusPanelOpen]);
+
+  // The checkbox column exists only while a bulk panel is open. Both
+  // panels share it, so it stays up if either is open and drops the
+  // moment the last one closes — which is also when the selection is
+  // discarded, so reopening a panel always starts from nothing ticked.
+  const bulkSelectionMode =
+    showBulkAssign && (bulkPanelOpen || bulkStatusPanelOpen);
+  useEffect(() => {
+    if (bulkSelectionMode) return;
+    setBulkSelectedExceptionIds((prev) =>
+      prev.size === 0 ? prev : new Set<number>()
+    );
+  }, [bulkSelectionMode]);
+
+  // Drop ticks whose row is no longer in the grid. Without this an
+  // operator could tick rows, narrow the Rules combo (or switch tree
+  // node) so those rows leave the view, then hit Update and silently
+  // mutate exceptions they can no longer see. Keyed on tableExceptions
+  // — exactly what the grid renders — so the selection can only ever
+  // name visible rows. Returns the previous Set unchanged when nothing
+  // was pruned so this never loops on its own state update.
+  useEffect(() => {
+    if (!bulkSelectionMode) return;
+    setBulkSelectedExceptionIds((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(tableExceptions.map((r) => r.exceptionId));
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (live.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [bulkSelectionMode, tableExceptions]);
 
   // Save Column Order surfaces next to Bulk Status in the header when
   // the operator has drag-reordered the Exceptions grid inside one of
@@ -2780,37 +2821,76 @@ export default function DqMonitorPage() {
                     />
                     Is Permanent
                   </label>
+                  {/* Without this the Assign / Update button just sits
+                      disabled with no stated reason when nothing is
+                      ticked. Counts the shared selection, so it reads
+                      the same on both panels. */}
+                  <span className="dq-bulk-panel-selected">
+                    {bulkSelectedExceptionIds.size === 0
+                      ? "No rows selected"
+                      : `${bulkSelectedExceptionIds.size} row${
+                          bulkSelectedExceptionIds.size === 1 ? "" : "s"
+                        } selected`}
+                  </span>
                   <button
                     type="button"
                     className="dq-bulk-panel-assign-btn"
                     disabled={
                       bulkSubmitting ||
-                      bulkSelectedRules.size === 0 ||
+                      // Targets are the ticked grid rows now, not the
+                      // Rules combo — that combo only narrows the grid.
+                      bulkSelectedExceptionIds.size === 0 ||
                       bulkSelectedUser === ""
                     }
                     onClick={() => {
                       if (
                         bulkSubmitting ||
-                        bulkSelectedRules.size === 0 ||
+                        bulkSelectedExceptionIds.size === 0 ||
                         bulkSelectedUser === ""
                       ) {
                         return;
                       }
-                      const rules = Array.from(bulkSelectedRules);
+                      const exceptionIds = Array.from(
+                        bulkSelectedExceptionIds
+                      );
+                      // Not a target set — the distinct rules behind the
+                      // ticked rows, sent so the Is Permanent path still
+                      // knows which RULE rows to rewrite. EXCEPTION rows
+                      // are matched by exceptionIds alone.
+                      const rules = Array.from(
+                        new Set(
+                          tableExceptions
+                            .filter((r) =>
+                              bulkSelectedExceptionIds.has(r.exceptionId)
+                            )
+                            .map((r) => r.ruleName)
+                        )
+                      );
                       const isPermanent = bulkIsPermanent;
                       setBulkSubmitting(true);
                       setBulkMessage("");
-                      updateBulkAssign(rules, bulkSelectedUser, isPermanent)
+                      updateBulkAssign(
+                        exceptionIds,
+                        bulkSelectedUser,
+                        isPermanent,
+                        rules
+                      )
                         .then((updated) => {
+                          // Report the row count the operator ticked,
+                          // not a rule count — rules are incidental now.
                           setBulkMessage(
                             `${
                               isPermanent ? "Permanently assigned" : "Assigned"
-                            } ${rules.length} rule${
-                              rules.length === 1 ? "" : "s"
-                            } to ${bulkSelectedUser} (${updated} exception${
+                            } ${updated} exception${
                               updated === 1 ? "" : "s"
-                            } updated).`
+                            } to ${bulkSelectedUser}.`
                           );
+                          // Clear the ticks on success. Leaving a few
+                          // hundred rows checked after an apply invites
+                          // a second click with a different assignee
+                          // landing on rows the operator thought they
+                          // were done with.
+                          setBulkSelectedExceptionIds(new Set<number>());
                           // Deliberately NOT clearing bulkSelectedRules
                           // so the grid stays narrowed to the rules
                           // the user just acted on — they can inspect
@@ -3070,12 +3150,25 @@ export default function DqMonitorPage() {
                       Clear Comments
                     </label>
                   </div>
+                  {/* Without this the Assign / Update button just sits
+                      disabled with no stated reason when nothing is
+                      ticked. Counts the shared selection, so it reads
+                      the same on both panels. */}
+                  <span className="dq-bulk-panel-selected">
+                    {bulkSelectedExceptionIds.size === 0
+                      ? "No rows selected"
+                      : `${bulkSelectedExceptionIds.size} row${
+                          bulkSelectedExceptionIds.size === 1 ? "" : "s"
+                        } selected`}
+                  </span>
                   <button
                     type="button"
                     className="dq-bulk-panel-assign-btn"
                     disabled={
                       bulkStatusSubmitting ||
-                      bulkStatusSelectedRules.size === 0 ||
+                      // Targets are the ticked grid rows now, not the
+                      // Rules combo — that combo only narrows the grid.
+                      bulkSelectedExceptionIds.size === 0 ||
                       // Nothing to do: no status change AND no comment
                       // change (blank textbox without Clear ticked).
                       // Comment-only updates without status ARE
@@ -3105,7 +3198,7 @@ export default function DqMonitorPage() {
                     onClick={() => {
                       if (
                         bulkStatusSubmitting ||
-                        bulkStatusSelectedRules.size === 0
+                        bulkSelectedExceptionIds.size === 0
                       ) {
                         return;
                       }
@@ -3153,7 +3246,9 @@ export default function DqMonitorPage() {
                         );
                         return;
                       }
-                      const rules = Array.from(bulkStatusSelectedRules);
+                      const exceptionIds = Array.from(
+                        bulkSelectedExceptionIds
+                      );
                       const status = bulkStatusSelected;
                       // Comment resolution:
                       //   Clear ticked            → "" (backend wipes
@@ -3175,7 +3270,12 @@ export default function DqMonitorPage() {
                       const suppressDate = bulkStatusSuppressDate;
                       setBulkStatusSubmitting(true);
                       setBulkStatusMessage("");
-                      updateBulkStatus(rules, status, comments, suppressDate)
+                      updateBulkStatus(
+                        exceptionIds,
+                        status,
+                        comments,
+                        suppressDate
+                      )
                         .then((updated) => {
                           // Describe exactly what changed — status,
                           // comments, or both — rather than a fixed
@@ -3194,12 +3294,15 @@ export default function DqMonitorPage() {
                               ? parts.join(" and ")
                               : "made no changes";
                           setBulkStatusMessage(
-                            `Bulk ${desc} on ${rules.length} rule${
-                              rules.length === 1 ? "" : "s"
-                            } (${updated} exception${
+                            `Bulk ${desc} on ${updated} exception${
                               updated === 1 ? "" : "s"
-                            } updated).`
+                            }.`
                           );
+                          // Clear the ticks on success — same reasoning
+                          // as Bulk Assign: a stale full selection plus
+                          // a second click is how rows get a status the
+                          // operator never meant to give them.
+                          setBulkSelectedExceptionIds(new Set<number>());
                           // Deliberately NOT clearing
                           // bulkStatusSelectedRules — the grid stays
                           // narrowed to the rules the user just acted
@@ -3304,6 +3407,11 @@ export default function DqMonitorPage() {
                 viewByGroup === "Security Master" ||
                 viewByGroup === "Security Master Benchmark"
               }
+              // Checkbox column: on only while a bulk panel is open,
+              // gone the moment the last one closes.
+              selectionMode={bulkSelectionMode}
+              selectedIds={bulkSelectedExceptionIds}
+              onSelectedIdsChange={setBulkSelectedExceptionIds}
               onVisibleRowsChange={setVisibleExceptions}
               onColumnLayoutChange={setColumnLayout}
               statusOptions={

@@ -969,6 +969,16 @@
   cursor: not-allowed;
 }
 
+/* Ticked-row counter shown immediately left of the Assign / Update
+   button. Muted next to the message text — it is a standing readout,
+   not an outcome. */
+.dq-bulk-panel-selected {
+  font-size: 12px;
+  color: #4b5563;
+  white-space: nowrap;
+  padding-right: 4px;
+}
+
 /* Inline status message next to the Assign button. Neutral color so it
    works for both success and error surfaces; the text itself carries
    the outcome. aria-live=polite keeps SR users informed. */
@@ -1174,6 +1184,37 @@
   position: sticky;
   top: 0;
   z-index: 1;
+}
+
+/* Bulk-selection column. Present only while a Bulk Status / Bulk Assign
+   panel is open, so it is styled as a narrow fixed-width gutter rather
+   than a real data column — no sort affordance, no resize handle, no ⋮
+   menu, and never part of the persisted column layout. */
+.dq-table th.dq-select-th {
+  width: 96px;
+  min-width: 96px;
+  cursor: default;
+  user-select: none;
+}
+
+.dq-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 450;
+  white-space: nowrap;
+}
+
+.dq-table td.dq-select-td {
+  width: 96px;
+  min-width: 96px;
+  text-align: center;
+}
+
+.dq-select-box {
+  cursor: pointer;
+  margin: 0;
 }
 
 /* Sort + resize affordances on Exceptions-grid headers. Cursor and hover
