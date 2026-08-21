@@ -12,14 +12,20 @@ const ENDPOINT = `${DATA_QUALITY_SERVICE_URL}/de/securities/rules/v1/api/updateB
 //
 // ruleNames is NOT a target set — it is the distinct set of rules the
 // selected rows belong to, derived client-side and sent only so the
-// isPermanent path still has rule identity to work with. When
-// isPermanent is false (default) the backend writes one
-// RULE_ASSIGN_OVERRIDE row per rule in that set so future exceptions of
-// those rules inherit the same assignee; when true it updates
-// RULE.ASSIGN_TO_ID directly (permanent change to the rule default) and
-// skips RULE_ASSIGN_OVERRIDE entirely. Either way EXCEPTION rows are
-// updated strictly by exceptionIds. assignTo is resolved server-side
-// via DM_USER."USER".
+// isPermanent path has rule identity to work with. It matters ONLY when
+// isPermanent is true, where the backend sets RULE.ASSIGN_TO_ID so
+// future exceptions of those rules inherit the assignee. When
+// isPermanent is false the backend makes no rule-level write at all.
+//
+// That false branch used to insert a RULE_ASSIGN_OVERRIDE row per rule,
+// which silently reassigned every UNTICKED exception of the rule that
+// had no assignee of its own: SP_GET_EXCEPTIONS displays
+// COALESCE(EXCEPTION.ASSIGN_TO_ID, override.ASSIGN_TO_ID,
+// RULE.ASSIGN_TO_ID), so ticking 2 rows of a 3-row rule reported
+// "2 assigned" and showed 3.
+//
+// Either way EXCEPTION rows are updated strictly by exceptionIds.
+// assignTo is resolved server-side via DM_USER."USER".
 //
 // Returns the number of EXCEPTION rows updated.
 export async function updateBulkAssign(
