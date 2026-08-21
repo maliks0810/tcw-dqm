@@ -102,10 +102,16 @@ export async function fetchAssets(
   // filters, the CSV export and the visible-rows breakdown alike.
   const identified = raw.filter((a) => (a.asset_id ?? "").trim() !== "");
 
+  // Newest-first, then ASSET_ID as a tiebreaker so the sequence is a
+  // total order. SP_GET_ASSETS has no outer ORDER BY either, and these
+  // rows overwhelmingly share one exception_date, so without the
+  // tiebreaker the grid inherited whatever order the database happened
+  // to return and reshuffled after any write.
   const sorted = identified.slice().sort((a, b) => {
     const ta = a.exception_date ? new Date(a.exception_date).getTime() : 0;
     const tb = b.exception_date ? new Date(b.exception_date).getTime() : 0;
-    return tb - ta;
+    if (ta !== tb) return tb - ta;
+    return (a.asset_id ?? "").localeCompare(b.asset_id ?? "");
   });
   return sorted.map(toSecurityRow);
 }

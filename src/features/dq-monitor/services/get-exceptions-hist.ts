@@ -145,10 +145,22 @@ export async function fetchExceptionsHist(
   if (!Array.isArray(raw)) {
     throw new Error("getExceptionsHist: expected array response");
   }
+  // Sort newest-first, then by EXCEPTION_ID as a tiebreaker. The
+  // tiebreaker is what makes this a TOTAL order, and that matters: the
+  // stored procedure has no outer ORDER BY, so the database returns
+  // rows in whatever order it likes, and Postgres genuinely changes
+  // that order once an UPDATE rewrites the tuples. Array.sort is
+  // stable, so without a tiebreaker the many rows sharing one
+  // exception_time simply inherited the arbitrary arrival order - and
+  // the grid visibly reshuffled itself after every status / assign
+  // change. Ordering on the primary key removes the arrival order from
+  // the equation entirely. EXCEPTION_TIME is never touched by those
+  // updates, so the resulting sequence is stable across a refetch.
   const sorted = raw.slice().sort((a, b) => {
     const ta = a.exception_time ? new Date(a.exception_time).getTime() : 0;
     const tb = b.exception_time ? new Date(b.exception_time).getTime() : 0;
-    return tb - ta;
+    if (ta !== tb) return tb - ta;
+    return (a.exception_id ?? 0) - (b.exception_id ?? 0);
   });
   return sorted.map(toExceptionRow);
 }
