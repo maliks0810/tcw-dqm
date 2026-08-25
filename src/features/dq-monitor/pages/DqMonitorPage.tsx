@@ -1295,6 +1295,15 @@ export default function DqMonitorPage() {
   const [ruleDescByName, setRuleDescByName] = useState<
     Record<string, string>
   >({});
+  // RULE_GROUP -> the rule names under it. Deliberately NOT the same
+  // shape as ruleCatalogByRuleName above: that one is a merge-never-
+  // replace cache spanning every group visited this session, which is
+  // right for tooltip lookups but wrong for anything that has to answer
+  // "which rules are in scope RIGHT NOW". Each group's entry here is
+  // replaced wholesale, so a group only ever lists its own rules.
+  const [rulesByGroup, setRulesByGroup] = useState<Record<string, string[]>>(
+    {}
+  );
   useEffect(() => {
     if (viewMode !== "group" || !viewByGroup || viewByGroup === "All") {
       // Intentionally NOT clearing ruleCatalogByRuleName here — it's
@@ -1328,6 +1337,13 @@ export default function DqMonitorPage() {
           // is fed from multiple call sites.
           setRuleCatalogByRuleName((prev) => ({ ...prev, ...map }));
           setRuleDescByName((prev) => ({ ...prev, ...descMap }));
+          // This group's own rule list, replaced rather than merged.
+          setRulesByGroup((prev) => ({
+            ...prev,
+            [viewByGroup]: Object.keys(map).sort((a, b) =>
+              a.localeCompare(b)
+            ),
+          }));
         }
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -1692,23 +1708,25 @@ export default function DqMonitorPage() {
   // tree selection:
   //   - a specific rule selected     → just that rule
   //   - a catalog selected (no rule) → every rule under that catalog
-  //   - only the group selected      → every rule across every catalog
-  //                                    in Security Master
-  // ruleCatalogByRuleName is populated by the effect below (originally
-  // used for the count panel) and covers the group-only case.
+  //   - only the group selected      → every rule under THAT group
+  //
+  // The group case reads rulesByGroup, which is keyed by group and
+  // replaced per group. It used to read Object.keys(ruleCatalogByRuleName)
+  // — a cache that merges every group visited this session and is never
+  // cleared — so the dropdown listed rules from previously-viewed groups
+  // and only ever grew as the operator moved around the tree.
   const bulkRuleOptions = useMemo<string[]>(() => {
     if (!showBulkAssign) return [];
     if (viewByRule && viewByRule !== "All") return [viewByRule];
     if (viewByRuleCatalog && viewByRuleCatalog !== "All") return ruleOptions;
-    return Object.keys(ruleCatalogByRuleName).sort((a, b) =>
-      a.localeCompare(b)
-    );
+    return rulesByGroup[viewByGroup] ?? [];
   }, [
     showBulkAssign,
     viewByRule,
     viewByRuleCatalog,
     ruleOptions,
-    ruleCatalogByRuleName,
+    rulesByGroup,
+    viewByGroup,
   ]);
   // Drop any previously-selected rules that no longer appear in the
   // current option list (e.g. tree selection changed to a narrower
