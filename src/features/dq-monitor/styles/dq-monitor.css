@@ -1183,7 +1183,11 @@
   white-space: nowrap;
   position: sticky;
   top: 0;
-  z-index: 1;
+  /* Above .dq-td-pinned (z-index 1). Both are positioned, and the cells
+     come later in document order, so at equal z-index a pinned column's
+     cells would paint OVER the header as they scroll under it. Pinned
+     headers sit higher still at 3. */
+  z-index: 2;
 }
 
 /* Bulk-selection column. Present only while a Bulk Status / Bulk Assign
@@ -1221,12 +1225,23 @@
    feedback signal that the header is clickable to sort; the resize handle
    is a slim column-resize strip pinned to the right edge and only reveals
    itself on hover so it doesn't visually clutter the header row. */
-/* Beats the base ".dq-table th { position: sticky }" rule so the resize
-   handle inside the header anchors to the header cell instead of the
-   nearest ancestor. The 34px right padding reserves room for the
-   RHS-pinned ⋮ menu button + the 8px resize strip beyond it. */
+/* MUST stay `sticky`, not `relative`. This rule has the same
+   specificity as the base ".dq-table th { position: sticky }" and comes
+   later, so `position: relative` here silently un-stuck every sortable
+   header — i.e. every real column in the Exceptions and Assets grids —
+   and the header row scrolled away with the body. Only pinned columns
+   kept their headers, because .dq-th-pinned re-declares sticky further
+   down.
+
+   `relative` was originally chosen so the absolutely-positioned resize
+   handle and ⋮ menu anchor to the header cell rather than a distant
+   ancestor. `sticky` is equally a positioned element and establishes
+   the same containing block, so it satisfies that requirement too —
+   `top` is inherited from the base rule. The 34px right padding
+   reserves room for the RHS-pinned ⋮ menu button + the 8px resize
+   strip beyond it. */
 .dq-table th.dq-th-sortable {
-  position: relative;
+  position: sticky;
   cursor: pointer;
   user-select: none;
   padding-right: 34px;
