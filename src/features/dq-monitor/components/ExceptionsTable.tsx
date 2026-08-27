@@ -192,6 +192,12 @@ type ExceptionsTableProps = {
   // so both bulk panels share one selection.
   selectedIds?: Set<number>;
   onSelectedIdsChange?: (next: Set<number>) => void;
+  // Freezes the checkbox column: every box renders disabled and no
+  // toggle fires. Set by DqMonitorPage while Bulk Assign's Is Permanent
+  // is ticked, where the assignment is rule-wide by definition — every
+  // row is force-selected and the operator must not be able to imply a
+  // narrower scope by unticking one.
+  selectionLocked?: boolean;
 };
 
 function getActionClass(action: string): string {
@@ -389,6 +395,7 @@ export default function ExceptionsTable({
   selectionMode = false,
   selectedIds,
   onSelectedIdsChange,
+  selectionLocked = false,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -1088,7 +1095,7 @@ export default function ExceptionsTable({
 
   const toggleAllSelected = useCallback(
     (checked: boolean) => {
-      if (!onSelectedIdsChange) return;
+      if (!onSelectedIdsChange || selectionLocked) return;
       const next = new Set(selectedIds ?? []);
       for (const r of sortedRows) {
         if (checked) next.add(r.exceptionId);
@@ -1096,18 +1103,18 @@ export default function ExceptionsTable({
       }
       onSelectedIdsChange(next);
     },
-    [onSelectedIdsChange, selectedIds, sortedRows]
+    [onSelectedIdsChange, selectedIds, sortedRows, selectionLocked]
   );
 
   const toggleRowSelected = useCallback(
     (exceptionId: number, checked: boolean) => {
-      if (!onSelectedIdsChange) return;
+      if (!onSelectedIdsChange || selectionLocked) return;
       const next = new Set(selectedIds ?? []);
       if (checked) next.add(exceptionId);
       else next.delete(exceptionId);
       onSelectedIdsChange(next);
     },
-    [onSelectedIdsChange, selectedIds]
+    [onSelectedIdsChange, selectedIds, selectionLocked]
   );
 
   // Row-mount virtualization for the tbody. Without this every
@@ -1983,6 +1990,7 @@ export default function ExceptionsTable({
                       type="checkbox"
                       className="dq-select-box"
                       checked={allSelected}
+                      disabled={selectionLocked}
                       ref={(el) => {
                         // Partial selection shows the dash rather than
                         // a tick — indeterminate is DOM-only state with
@@ -2102,6 +2110,7 @@ export default function ExceptionsTable({
                         type="checkbox"
                         className="dq-select-box"
                         checked={selectedIds?.has(row.exceptionId) ?? false}
+                        disabled={selectionLocked}
                         onChange={(e) =>
                           toggleRowSelected(row.exceptionId, e.target.checked)
                         }
