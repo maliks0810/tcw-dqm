@@ -2863,16 +2863,6 @@ export default function DqMonitorPage() {
                     />
                     Is Permanent
                   </label>
-                  {/* The scope change is drastic enough to say out loud:
-                      ticking this selects every row and freezes the
-                      checkboxes, and the assignment becomes the rule's
-                      default for exceptions created later. */}
-                  {bulkIsPermanent && (
-                    <span className="dq-bulk-panel-permanent-note">
-                      Applies to every row in the grid and becomes the
-                      rule default — selection is locked.
-                    </span>
-                  )}
                   {/* Without this the Assign / Update button just sits
                       disabled with no stated reason when nothing is
                       ticked. Counts the shared selection, so it reads
