@@ -112,6 +112,28 @@ export default function ColumnFilterHeader({
     return allValues.filter((v) => v.toLowerCase().includes(needle));
   }, [allValues, search]);
 
+  // Typing narrows the ticked set, Excel-style: the matches become the
+  // selection and everything else is dropped.
+  //
+  // Previously typing only narrowed the visible LIST while the draft
+  // stayed at "everything ticked" (open() seeds it from filter ??
+  // allValues). Clicking OK then hit the coversAll branch in apply()
+  // and CLEARED the filter — so the obvious gesture, type a rule name
+  // and press OK, did the opposite of what it looked like, and the only
+  // way through was to untick (Select All) first and then tick the row.
+  //
+  // Clearing the box deliberately leaves the draft alone rather than
+  // re-ticking everything: the list re-expands with the matches still
+  // ticked, so what is on screen is still exactly what OK will apply.
+  const onSearchChange = (next: string) => {
+    setSearch(next);
+    if (next.trim() === "") return;
+    const needle = next.toLowerCase();
+    setDraft(
+      new Set(allValues.filter((v) => v.toLowerCase().includes(needle)))
+    );
+  };
+
   const allChecked = visible.length > 0 && visible.every((v) => draft.has(v));
 
   const toggleAll = () => {
@@ -207,7 +229,14 @@ export default function ColumnFilterHeader({
             type="text"
             placeholder="Search…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter applies, the way it does in Excel's filter box.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                apply();
+              }
+            }}
           />
           <label className="dq-col-filter-row dq-col-filter-row-all">
             <input
@@ -236,10 +265,16 @@ export default function ColumnFilterHeader({
             <button type="button" onClick={clear}>
               Clear
             </button>
+            {/* A search that matches nothing leaves the draft empty, and
+                an empty draft means "clear the filter" — so OK would
+                answer a typo by showing every row, which reads as the
+                filter being ignored. Block it instead; Clear is still
+                right there for actually clearing. */}
             <button
               type="button"
               className="dq-col-filter-apply"
               onClick={apply}
+              disabled={search.trim() !== "" && visible.length === 0}
             >
               OK
             </button>
