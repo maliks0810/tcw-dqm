@@ -49,6 +49,19 @@ const EXCEPTION_LIMIT: number = (() => {
   return Number.isFinite(n) && n > 0 ? n : 5000;
 })();
 
+// Separate, higher cap for the tree's "All" scope, which unions every
+// rule group the operator is authorised for and so legitimately returns
+// more than any single-group view. Configured via
+// REACT_APP_EXCEPTION_LIMIT_ALL with a 7000 fallback. Kept as its own
+// knob rather than raising EXCEPTION_LIMIT for everyone: a single rule
+// returning 6000 rows is still a sign the operator should narrow down,
+// whereas All returning 6000 is just All doing its job.
+const EXCEPTION_LIMIT_ALL: number = (() => {
+  const raw = process.env.REACT_APP_EXCEPTION_LIMIT_ALL;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 7000;
+})();
+
 // App version for the footer badge. Read from REACT_APP_VERSION, which
 // .env wires to $npm_package_version — so it tracks package.json
 // automatically at build time. Deliberately NOT `import pkg from
@@ -1091,16 +1104,19 @@ export default function DqMonitorPage() {
       setExceptionsLimitExceeded(false);
       return;
     }
-    if (
+    // Tree 'All' scope: no group, catalog or rule picked. The grid used
+    // to stay deliberately empty here. It now loads every exception
+    // across the rule groups the operator is authorised for, and a
+    // wildcard typed at this scope searches across all of them too.
+    const isAllScope =
       !usesAsset &&
       viewByGroup === "All" &&
       viewByRuleCatalog === "All" &&
-      viewByRule === "All" &&
-      !ruleNameSearchApplied
-    ) {
-      // Tree 'All' selected — RHS exceptions grid stays empty; the LHS
-      // Number of Exceptions panel populates from per-group counts in a
-      // separate effect.
+      viewByRule === "All";
+    if (isAllScope && ruleGroupOptions.length === 0) {
+      // Authorised-group list hasn't landed yet (or the operator has
+      // none). Fetching with no rule_group would query every group in
+      // the database, including ones they cannot see, so wait instead.
       setExceptions([]);
       setExceptionsError(null);
       setExceptionsLoading(false);
@@ -1117,41 +1133,72 @@ export default function DqMonitorPage() {
     const ruleCatalogArg = inGroupMode ? undefined : viewByRuleCatalog;
     // Empty dqmDate → live EXCEPTION table. Non-empty ISO date → the
     // LATEST BATCH_ID for that day from EXCEPTION_HIST, scoped by tree.
-    const fetcher = dqmDate
-      ? fetchExceptionsHist(
-          dqmDate,
-          assetArg,
-          controller.signal,
-          dqmType,
-          severity,
-          priority,
-          ruleCatalogArg,
-          viewByRule,
-          ruleGroupArg,
-          exceptionState,
-          assignToFilter,
-          ruleNameSearchApplied
-        )
-      : fetchExceptions(
-          assetArg,
-          controller.signal,
-          dqmType,
-          severity,
-          priority,
-          ruleCatalogArg,
-          viewByRule,
-          ruleGroupArg,
-          exceptionState,
-          assignToFilter,
-          ruleNameSearchApplied,
-          // See the latestExceptionDate declaration above the
-          // effect for why we pass the LHS-dropdown latest date
-          // instead of relying on the server's today-UTC default.
-          latestExceptionDate
-        );
+    // One request per authorised group, merged. The endpoint takes a
+    // single rule_group and has no user parameter, so it cannot scope
+    // to RULE_GROUP_AUTHORIZATION on its own; naming each group
+    // explicitly is what keeps 'All' to the operator's own groups
+    // rather than the whole database.
+    const groupsToFetch = isAllScope ? ruleGroupOptions : [ruleGroupArg];
+    const fetchForGroup = (g: string | undefined) =>
+      dqmDate
+        ? fetchExceptionsHist(
+            dqmDate,
+            assetArg,
+            controller.signal,
+            dqmType,
+            severity,
+            priority,
+            ruleCatalogArg,
+            viewByRule,
+            g,
+            exceptionState,
+            assignToFilter,
+            ruleNameSearchApplied
+          )
+        : fetchExceptions(
+            assetArg,
+            controller.signal,
+            dqmType,
+            severity,
+            priority,
+            ruleCatalogArg,
+            viewByRule,
+            g,
+            exceptionState,
+            assignToFilter,
+            ruleNameSearchApplied,
+            latestExceptionDate
+          );
+
+    // Merged results need re-sorting: each call returns its own group
+    // newest-first, and concatenating them would interleave by
+    // completion order. Same total ordering the services apply, so the
+    // grid reads identically whether one group or five were queried.
+    const mergeSorted = (batches: ExceptionRow[][]): ExceptionRow[] => {
+      const seen = new Set<number>();
+      const merged: ExceptionRow[] = [];
+      for (const batch of batches) {
+        for (const row of batch) {
+          if (seen.has(row.exceptionId)) continue;
+          seen.add(row.exceptionId);
+          merged.push(row);
+        }
+      }
+      return merged.sort((a, b) => {
+        const ta = a.dateTimeIso ?? a.dateTime;
+        const tb = b.dateTimeIso ?? b.dateTime;
+        if (ta !== tb) return ta < tb ? 1 : -1;
+        return a.exceptionId - b.exceptionId;
+      });
+    };
+
+    const limit = isAllScope ? EXCEPTION_LIMIT_ALL : EXCEPTION_LIMIT;
+    const fetcher: Promise<ExceptionRow[]> = isAllScope
+      ? Promise.all(groupsToFetch.map(fetchForGroup)).then(mergeSorted)
+      : fetchForGroup(ruleGroupArg);
     fetcher
       .then((rows) => {
-        if (rows.length > EXCEPTION_LIMIT) {
+        if (rows.length > limit) {
           setExceptions([]);
           setExceptionsLimitExceeded(true);
         } else {
@@ -1181,6 +1228,11 @@ export default function DqMonitorPage() {
     ruleNameSearchApplied,
     treeSelected,
     dqmDate,
+    // The All-scope fan-out reads this, and it arrives asynchronously
+    // from getRuleGroupsForUser - without it here the first render at
+    // All scope bails on the empty-list guard and never retries once
+    // the groups land. Set once per operator, so it does not churn.
+    ruleGroupOptions,
     // Track the LHS-dropdown latest date so a late-arriving
     // MAX(EXCEPTION_DATE) (e.g. on holidays when histDates resolves
     // after the initial exceptions fetch) triggers a re-fetch with
