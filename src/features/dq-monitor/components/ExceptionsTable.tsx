@@ -198,6 +198,16 @@ type ExceptionsTableProps = {
   // row is force-selected and the operator must not be able to imply a
   // narrower scope by unticking one.
   selectionLocked?: boolean;
+  // Restricts the grid to a fixed column set. undefined (the normal
+  // case) means "show every column this scope produces".
+  //
+  // Entries match either a static column key ("status", "openDate") or
+  // the RESULT_DATA column name behind an rd:* key ("ALADDIN_VALUE"
+  // matches "rd:ALADDIN_VALUE"), so callers can express the list the
+  // way an operator would name the columns. Applied to canonicalKeys,
+  // so a name absent from the current row set simply never appears
+  // rather than erroring.
+  allowedColumnKeys?: string[];
 };
 
 function getActionClass(action: string): string {
@@ -396,6 +406,7 @@ export default function ExceptionsTable({
   selectedIds,
   onSelectedIdsChange,
   selectionLocked = false,
+  allowedColumnKeys,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -789,7 +800,14 @@ export default function ExceptionsTable({
       keys.push("openDate");
       keys.push("closeDate");
     }
-    return keys;
+    if (!allowedColumnKeys) return keys;
+    // Match on the static key, or on the RESULT_DATA name behind an
+    // rd:* key. Order is canonical either way — the allow-list decides
+    // membership, never position.
+    const allowed = new Set(allowedColumnKeys);
+    return keys.filter((k) =>
+      allowed.has(k.startsWith("rd:") ? k.slice(3) : k)
+    );
   }, [
     showResultDataColumns,
     showStatusColumn,
@@ -799,6 +817,7 @@ export default function ExceptionsTable({
     showCommentsColumn,
     priorityRdKeys,
     showLifecycleColumns,
+    allowedColumnKeys,
   ]);
 
   // Drag-reordered column order. Starts from any persisted layout if the
