@@ -998,28 +998,67 @@ export default function DqMonitorPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [statusComboOpen]);
 
+  // Options behind "Pick a rule or type a pattern". Follows whatever
+  // the LHS tree currently has selected, so the combo always offers
+  // exactly the rules in scope:
+  //   - a catalog selected → that catalog's rules
+  //   - a group selected   → every rule under that group
+  //   - 'All'              → every rule under every authorised group
+  //
+  // Only the first case used to be implemented; the other two left
+  // ruleOptions empty, so at group or All level the combo offered
+  // nothing to pick and the typeahead produced no suggestions. Worse
+  // for exact selection: commitRuleQuery looks for the typed text in
+  // ruleOptions, and against an empty list it could never match, so
+  // even a fully-typed rule name degraded to a %pattern% search
+  // instead of selecting that rule.
   useEffect(() => {
-    if (!viewByRuleCatalog || viewByRuleCatalog === "All") {
-      setRuleOptions([]);
-      setViewByRule("All");
-      setRuleQuery("");
-      setRuleNameSearchApplied("");
-      return;
-    }
     const controller = new AbortController();
-    fetchRuleNames(viewByRuleCatalog, controller.signal)
-      .then((rules) => {
-        const names = rules.map((r) => r.rule_name);
-        setRuleOptions(names);
-        setViewByRule((current) =>
-          names.includes(current) ? current : "All"
-        );
+    const ignoreAbort = (e: unknown) => {
+      if (e instanceof Error && e.name === "AbortError") return;
+      console.error("rule options lookup failed", e);
+    };
+    // Keep whatever rule is selected only if it still exists in the
+    // new scope — same reconcile the catalog branch always did.
+    const applyNames = (names: string[]) => {
+      setRuleOptions(names);
+      setViewByRule((current) => (names.includes(current) ? current : "All"));
+    };
+
+    if (viewByRuleCatalog && viewByRuleCatalog !== "All") {
+      fetchRuleNames(viewByRuleCatalog, controller.signal)
+        .then((rules) => applyNames(rules.map((r) => r.rule_name)))
+        .catch(ignoreAbort);
+      return () => controller.abort();
+    }
+
+    // Group scope, or All across every authorised group. Same fan-out
+    // shape as the exceptions fetch, and bounded the same way: naming
+    // the groups explicitly is what keeps 'All' to the operator's own
+    // groups rather than every rule in the database.
+    const groups =
+      viewByGroup && viewByGroup !== "All" ? [viewByGroup] : ruleGroupOptions;
+    if (groups.length === 0) {
+      setRuleOptions([]);
+      return () => controller.abort();
+    }
+    Promise.all(
+      groups.map((g) => fetchRulesForGroup(g, controller.signal))
+    )
+      .then((batches) => {
+        const names = Array.from(
+          new Set(
+            batches
+              .flat()
+              .map((r) => r.rule_name)
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b));
+        applyNames(names);
       })
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === "AbortError") return;
-      });
+      .catch(ignoreAbort);
     return () => controller.abort();
-  }, [viewByRuleCatalog]);
+  }, [viewByRuleCatalog, viewByGroup, ruleGroupOptions]);
 
   useEffect(() => {
     return subscribeToEvents((event) => {
@@ -1186,16 +1225,27 @@ export default function DqMonitorPage() {
       setExceptionsLimitExceeded(false);
       return;
     }
-    // Tree 'All' scope: no group, catalog or rule picked. The grid used
-    // to stay deliberately empty here. It now loads every exception
-    // across the rule groups the operator is authorised for, and a
-    // wildcard typed at this scope searches across all of them too.
-    const isAllScope =
+    // No group or catalog picked on the tree. The grid used to stay
+    // deliberately empty here; it now loads every exception across the
+    // rule groups the operator is authorised for.
+    //
+    // Deliberately does NOT require viewByRule === "All": picking a
+    // single rule from the combo at this scope must still fan out over
+    // the authorised groups. Falling through to the single-call path
+    // would send rule_group="All", which the service drops, querying
+    // every group in the database including unauthorised ones. The
+    // rule filter rides along on each per-group call instead, so only
+    // the group that owns the rule returns anything.
+    //
+    // The component-level isAllScope, which gates the restricted
+    // columns, keeps the stricter definition: picking a rule is a
+    // narrowing, and the operator should see that rule's full column
+    // set.
+    const isAllFetchScope =
       !usesAsset &&
       viewByGroup === "All" &&
-      viewByRuleCatalog === "All" &&
-      viewByRule === "All";
-    if (isAllScope && ruleGroupOptions.length === 0) {
+      viewByRuleCatalog === "All";
+    if (isAllFetchScope && ruleGroupOptions.length === 0) {
       // Authorised-group list hasn't landed yet (or the operator has
       // none). Fetching with no rule_group would query every group in
       // the database, including ones they cannot see, so wait instead.
@@ -1228,7 +1278,7 @@ export default function DqMonitorPage() {
     const allScopeGroups = allScopeRestricted
       ? ruleGroupOptions.filter((g) => inSecurityMasterFamily(g))
       : ruleGroupOptions;
-    const groupsToFetch = isAllScope ? allScopeGroups : [ruleGroupArg];
+    const groupsToFetch = isAllFetchScope ? allScopeGroups : [ruleGroupArg];
     const fetchForGroup = (g: string | undefined) =>
       dqmDate
         ? fetchExceptionsHist(
@@ -1282,8 +1332,8 @@ export default function DqMonitorPage() {
       });
     };
 
-    const limit = isAllScope ? EXCEPTION_LIMIT_ALL : EXCEPTION_LIMIT;
-    const fetcher: Promise<ExceptionRow[]> = isAllScope
+    const limit = isAllFetchScope ? EXCEPTION_LIMIT_ALL : EXCEPTION_LIMIT;
+    const fetcher: Promise<ExceptionRow[]> = isAllFetchScope
       ? Promise.all(groupsToFetch.map(fetchForGroup)).then(mergeSorted)
       : fetchForGroup(ruleGroupArg);
     fetcher
@@ -1975,6 +2025,7 @@ export default function DqMonitorPage() {
     setViewByRule("All");
     setViewByRuleLabel("");
     setRuleNameSearchApplied("");
+    setRuleQuery("");
     setTreeSelected(true);
   }, []);
   const selectGroupTree = useCallback((g: string) => {
@@ -1984,6 +2035,7 @@ export default function DqMonitorPage() {
     setViewByRule("All");
     setViewByRuleLabel("");
     setRuleNameSearchApplied("");
+    setRuleQuery("");
     setTreeSelected(true);
   }, []);
   const selectTypeTree = useCallback((g: string, t: string) => {
