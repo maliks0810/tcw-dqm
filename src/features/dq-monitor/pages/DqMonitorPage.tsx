@@ -111,6 +111,27 @@ const ALL_SCOPE_COLUMN_KEYS: readonly string[] = [
 // (CURRENT_DATE at UTC via CONVERT_TIMEZONE). Module-scope so the
 // four per-row write-back callbacks below can be useCallback'd
 // with empty dep lists.
+// 2 business days on from today, UTC, weekends only. Mirrors the
+// identical CASE in SP_UPDATE_EXCEPTION_STATUS / SP_UPDATE_BULK_STATUS
+// so the optimistic patch below shows the same Suppress Date the server
+// just wrote for a Hold. Offsets by ISO weekday: Mon/Tue/Wed +2,
+// Thu/Fri +4 (skipping the weekend), Sat +3, Sun +2 - a Friday hold
+// runs to Tuesday.
+//
+// The SERVER is authoritative; this only avoids a blank cell until the
+// next refetch. If the two ever disagree the refetch wins.
+function isoHoldSuppressDateUtc(): string {
+  const d = new Date();
+  const utc = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+  );
+  // getUTCDay: 0=Sun..6=Sat. ISO weekday: Mon=1..Sun=7.
+  const iso = utc.getUTCDay() === 0 ? 7 : utc.getUTCDay();
+  const add = iso === 4 || iso === 5 ? 4 : iso === 6 ? 3 : 2;
+  utc.setUTCDate(utc.getUTCDate() + add);
+  return utc.toISOString().slice(0, 10);
+}
+
 function isoTodayUtc(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
@@ -326,27 +347,35 @@ export default function DqMonitorPage() {
         .then(() => {
           // Optimistic patch — no full-grid refetch. Replicates
           // SP_UPDATE_EXCEPTION_STATUS's derived-column logic:
-          //   SUPPRESS_DATE — kept when new status is Suppress,
-          //     blanked otherwise.
-          //   OPEN_DATE — ratchets to today on transition INTO New;
-          //     else preserved.
+          //   SUPPRESS_DATE — kept when new status is Suppress;
+          //     computed 2 business days out for Hold (the operator
+          //     does not choose it); blanked otherwise.
+          //   OPEN_DATE — ratchets to today on transition INTO New or
+          //     Hold (the hold clock runs from OPEN_DATE); else
+          //     preserved.
           //   CLOSE_DATE — set to today for Accept / Research;
-          //     cleared for New / Suppress / Challenge; else
-          //     preserved (Override, Hold, Complete keep prior).
+          //     cleared for New / Suppress / Challenge / Hold; else
+          //     preserved (Override, Complete keep prior).
           setExceptions((prev) =>
             prev.map((r) => {
               if (r.exceptionId !== exceptionId) return r;
               const today = isoTodayUtc();
               const nextSuppress =
-                status === "Suppress" ? suppressDate : "";
-              const nextOpen = status === "New" ? today : r.openDate;
+                status === "Hold"
+                  ? isoHoldSuppressDateUtc()
+                  : status === "Suppress"
+                  ? suppressDate
+                  : "";
+              const nextOpen =
+                status === "New" || status === "Hold" ? today : r.openDate;
               let nextClose = r.closeDate;
               if (status === "Accept" || status === "Research") {
                 nextClose = today;
               } else if (
                 status === "New" ||
                 status === "Suppress" ||
-                status === "Challenge"
+                status === "Challenge" ||
+                status === "Hold"
               ) {
                 nextClose = "";
               }
@@ -1431,6 +1460,10 @@ export default function DqMonitorPage() {
             assignTo: assignToFilter,
           },
           countsDate,
+          // Same condition the exceptions fetch uses to pick
+          // fetchExceptionsHist over fetchExceptions, so the panel can
+          // never summarise a different table than the grid shows.
+          dqmDate !== "",
           controller.signal
         );
         if (!cancelled) {

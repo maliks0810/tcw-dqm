@@ -29,6 +29,12 @@ export async function fetchExceptionCountsByGroup(
     assignTo?: string;
   },
   exceptionDate: string,
+  // Count EXCEPTION_HIST (that day's latest batch per group) instead of
+  // EXCEPTION. Set it whenever the grid is showing a historical date,
+  // so the panel and the grid read the same table. EXCEPTION only holds
+  // recent days, so counting it for an archived date returned 0 for
+  // every group while the grid beside it showed rows.
+  useHist = false,
   signal?: AbortSignal
 ): Promise<GroupCount[]> {
   // "All" is the dropdowns' no-filter sentinel — strip it exactly like
@@ -38,6 +44,7 @@ export async function fetchExceptionCountsByGroup(
   // "All" and match nothing, zeroing every group count.
   const params = new URLSearchParams();
   params.set("exception_date", exceptionDate);
+  if (useHist) params.set("use_hist", "true");
   if (filters.exceptionType && filters.exceptionType !== "All")
     params.set("exception_type", filters.exceptionType);
   if (filters.severity && filters.severity !== "All")
