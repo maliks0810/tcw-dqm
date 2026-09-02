@@ -210,6 +210,21 @@ type ExceptionsTableProps = {
   allowedColumnKeys?: string[];
 };
 
+// Blank cells fold into a visible "(none)" sentinel for the column
+// filters, the way Excel surfaces "(Blanks)".
+//
+// The sentinel has to be applied on BOTH sides — building the option
+// list AND matching rows — or blank rows become unreachable: dropping
+// "" from the checkbox list while the row predicate still requires
+// membership means every blank row silently disappears the moment any
+// value in that column is ticked, with no checkbox able to bring it
+// back. Status, the date columns and Assign To already did this; rule
+// name, priority, asset id, ID_BB_GLOBAL and every RESULT_DATA column
+// did not.
+const BLANK_SENTINEL = "(none)";
+const blankKey = (v: string | null | undefined) =>
+  v && v.trim() !== "" ? v : BLANK_SENTINEL;
+
 function getActionClass(action: string): string {
   switch (action.toLowerCase()) {
     case "update aladdin":
@@ -442,22 +457,22 @@ export default function ExceptionsTable({
   // multi-select w/ search, applied in-memory.
   const allRuleNames = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.ruleName).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b)
+      Array.from(new Set(data.map((r) => blankKey(r.ruleName)))).sort((a, b) =>
+        a.localeCompare(b)
       ),
     [data]
   );
   const allPriorities = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.priority).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b)
+      Array.from(new Set(data.map((r) => blankKey(r.priority)))).sort((a, b) =>
+        a.localeCompare(b)
       ),
     [data]
   );
   const allAssetIds = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.aladdin).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b)
+      Array.from(new Set(data.map((r) => blankKey(r.aladdin)))).sort((a, b) =>
+        a.localeCompare(b)
       ),
     [data]
   );
@@ -477,7 +492,7 @@ export default function ExceptionsTable({
   );
   const allIdBbGlobals = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.idBbGlobal).filter(Boolean))).sort(
+      Array.from(new Set(data.map((r) => blankKey(r.idBbGlobal)))).sort(
         (a, b) => a.localeCompare(b)
       ),
     [data]
@@ -543,9 +558,10 @@ export default function ExceptionsTable({
     for (const k of extraKeys) {
       const set = new Set<string>();
       for (const row of data) {
-        const v = formatCell(row.resultData?.[k]);
-        if (v === "") continue;
-        set.add(v);
+        // A key missing from resultData formats to "" just as an empty
+        // value does, and both read as blank in the cell, so both fold
+        // into the one sentinel.
+        set.add(blankKey(formatCell(row.resultData?.[k])));
       }
       m[k] = Array.from(set).sort((a, b) => a.localeCompare(b));
     }
@@ -595,10 +611,16 @@ export default function ExceptionsTable({
   const visibleRows = useMemo(
     () =>
       data.filter((row) => {
-        if (ruleNameFilter && !ruleNameFilter.has(row.ruleName)) return false;
-        if (priorityFilter && !priorityFilter.has(row.priority)) return false;
-        if (assetIdFilter && !assetIdFilter.has(row.aladdin)) return false;
-        if (idBbGlobalFilter && !idBbGlobalFilter.has(row.idBbGlobal ?? ""))
+        if (ruleNameFilter && !ruleNameFilter.has(blankKey(row.ruleName)))
+          return false;
+        if (priorityFilter && !priorityFilter.has(blankKey(row.priority)))
+          return false;
+        if (assetIdFilter && !assetIdFilter.has(blankKey(row.aladdin)))
+          return false;
+        if (
+          idBbGlobalFilter &&
+          !idBbGlobalFilter.has(blankKey(row.idBbGlobal))
+        )
           return false;
         if (assignToFilter && !assignToFilter.has(assignToKey(row.assignTo)))
           return false;
@@ -615,7 +637,7 @@ export default function ExceptionsTable({
           return false;
         for (const [k, f] of Object.entries(resultDataFilters)) {
           if (!f) continue;
-          if (!f.has(formatCell(row.resultData?.[k]))) return false;
+          if (!f.has(blankKey(formatCell(row.resultData?.[k])))) return false;
         }
         return true;
       }),

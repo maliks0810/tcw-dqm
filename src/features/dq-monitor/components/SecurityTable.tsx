@@ -224,7 +224,7 @@ export default function SecurityTable({
 }: SecurityTableProps) {
   const allAssetIds = useMemo(
     () =>
-      Array.from(new Set(data.map((r) => r.aladdinId).filter(Boolean))).sort(
+      Array.from(new Set(data.map((r) => blankKey(r.aladdinId)))).sort(
         (a, b) => a.localeCompare(b)
       ),
     [data]
@@ -291,7 +291,8 @@ export default function SecurityTable({
   const visibleRows = useMemo(
     () =>
       data.filter((row) => {
-        if (assetIdFilter && !assetIdFilter.has(row.aladdinId)) return false;
+        if (assetIdFilter && !assetIdFilter.has(blankKey(row.aladdinId)))
+          return false;
         if (figiFilter && !figiFilter.has(blankKey(row.figi))) return false;
         if (priorityFilter && !priorityFilter.has(blankKey(row.priority)))
           return false;
