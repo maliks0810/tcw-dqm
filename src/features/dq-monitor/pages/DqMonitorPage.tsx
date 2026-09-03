@@ -1657,30 +1657,41 @@ export default function DqMonitorPage() {
   // Master, Security Master Benchmark, and TOD SOD rule groups, in
   // the exception view (not the "View by Security" grid), AND against
   // the current-day EXCEPTION table — historical EXCEPTION_HIST days
-  // must stay read-only (see ExceptionsTable readOnly wiring). On
-  // top of all that, both buttons are gated to privileged roles
-  // (DM_ADMIN + IT_SUPPORT via isPrivilegedRole): operators with
-  // any other role (or unknown) never see them regardless of scope.
-  // Any failing criterion hides both buttons and forces both panels
-  // closed.
-  const showBulkAssign =
-    isPrivilegedRole(dmRole) &&
+  // must stay read-only (see ExceptionsTable readOnly wiring). Any
+  // failing criterion hides the button and forces its panel closed.
+  const bulkScopeAllowed =
     inSecurityMasterFamily(viewByGroup) &&
     viewMode !== "security" &&
     dqmDate === "";
+
+  // Bulk Assign stays restricted to privileged roles (DM_ADMIN,
+  // IT_SUPPORT, IT_USER via isPrivilegedRole): reassigning other
+  // people's work is an elevated action.
+  const showBulkAssign = isPrivilegedRole(dmRole) && bulkScopeAllowed;
+
+  // Bulk Status additionally admits DM_USER. Triaging exceptions —
+  // setting a status and a comment on rows you can already edit
+  // one at a time in the grid — is ordinary operator work, so the
+  // bulk affordance for it does not need elevation. Deliberately a
+  // separate gate rather than a widened isPrivilegedRole, which also
+  // governs per-row Assign To editability and the Bulk Assign button.
+  const showBulkStatus =
+    (isPrivilegedRole(dmRole) || dmRole === "DM_USER") && bulkScopeAllowed;
+
   useEffect(() => {
     if (!showBulkAssign && bulkPanelOpen) setBulkPanelOpen(false);
   }, [showBulkAssign, bulkPanelOpen]);
   useEffect(() => {
-    if (!showBulkAssign && bulkStatusPanelOpen) setBulkStatusPanelOpen(false);
-  }, [showBulkAssign, bulkStatusPanelOpen]);
+    if (!showBulkStatus && bulkStatusPanelOpen) setBulkStatusPanelOpen(false);
+  }, [showBulkStatus, bulkStatusPanelOpen]);
 
   // The checkbox column exists only while a bulk panel is open. Both
   // panels share it, so it stays up if either is open and drops the
   // moment the last one closes — which is also when the selection is
   // discarded, so reopening a panel always starts from nothing ticked.
   const bulkSelectionMode =
-    showBulkAssign && (bulkPanelOpen || bulkStatusPanelOpen);
+    (showBulkAssign && bulkPanelOpen) ||
+    (showBulkStatus && bulkStatusPanelOpen);
   useEffect(() => {
     if (bulkSelectionMode) return;
     setBulkSelectedExceptionIds((prev) =>
@@ -1970,12 +1981,13 @@ export default function DqMonitorPage() {
   // cleared — so the dropdown listed rules from previously-viewed groups
   // and only ever grew as the operator moved around the tree.
   const bulkRuleOptions = useMemo<string[]>(() => {
-    if (!showBulkAssign) return [];
+    if (!showBulkAssign && !showBulkStatus) return [];
     if (viewByRule && viewByRule !== "All") return [viewByRule];
     if (viewByRuleCatalog && viewByRuleCatalog !== "All") return ruleOptions;
     return rulesByGroup[viewByGroup] ?? [];
   }, [
     showBulkAssign,
+    showBulkStatus,
     viewByRule,
     viewByRuleCatalog,
     ruleOptions,
@@ -2270,7 +2282,7 @@ export default function DqMonitorPage() {
               )
         }
         onBulkStatusClick={
-          showBulkAssign
+          showBulkStatus
             ? () => setBulkStatusPanelOpen((v) => !v)
             : undefined
         }
@@ -3202,7 +3214,7 @@ export default function DqMonitorPage() {
               </div>
             )}
 
-            {bulkStatusPanelOpen && showBulkAssign && (
+            {bulkStatusPanelOpen && showBulkStatus && (
               <div className="dq-bulk-panel">
                 <div className="dq-bulk-panel-header">
                   <h3 className="dq-bulk-panel-title">Bulk Status</h3>
