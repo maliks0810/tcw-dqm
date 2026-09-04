@@ -784,8 +784,10 @@ export default function DqMonitorPage() {
   const [bulkMessage, setBulkMessage] = useState<string>("");
   // Security Group dropdown on the Bulk Assign panel. Options come from
   // SP_GET_SECURITY_GROUPS (distinct SECURITY_GROUP in
-  // SECURITY_CURRENT_VW); "" is the no-selection sentinel and renders
-  // as "All".
+  // SECURITY_CURRENT_VW). "" is the no-selection sentinel and renders
+  // as a blank entry - deliberately not labelled "All", since 'All'
+  // could itself be a real security group and the SP does not treat
+  // that string as a wildcard.
   const [securityGroupOptions, setSecurityGroupOptions] = useState<string[]>(
     []
   );
@@ -3154,7 +3156,7 @@ export default function DqMonitorPage() {
                           ? "Rules selected"
                           : securityGroupOptions.length === 0
                           ? "No security groups available"
-                          : "All"}
+                          : ""}
                       </option>
                       {securityGroupOptions.map((g) => (
                         <option key={g} value={g}>

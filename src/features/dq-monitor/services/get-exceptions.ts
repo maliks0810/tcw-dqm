@@ -119,7 +119,11 @@ export async function fetchExceptions(
   exceptionDate?: string,
   // SECURITY_GROUP filter. Selects a dedicated server-side query that
   // joins DIM_SECURITY on ASSET_ID = ALADDIN_ID, rather than adding a
-  // predicate to the default one. "All" / empty means no filter.
+  // predicate to the default one. Empty means no filter.
+  //
+  // Unlike every other filter here, "All" is NOT a sentinel: a security
+  // group genuinely named 'All' has to stay filterable, and the SP
+  // matches only on NULL / '' for this parameter.
   securityGroup?: string
 ): Promise<ExceptionRow[]> {
   const params = new URLSearchParams();
@@ -130,8 +134,7 @@ export async function fetchExceptions(
   if (ruleCatalog && ruleCatalog !== "All") params.set("rule_catalog", ruleCatalog);
   if (ruleName && ruleName !== "All") params.set("rule_name", ruleName);
   if (ruleGroup && ruleGroup !== "All") params.set("rule_group", ruleGroup);
-  if (securityGroup && securityGroup !== "All")
-    params.set("security_group", securityGroup);
+  if (securityGroup) params.set("security_group", securityGroup);
   if (exceptionState && exceptionState !== "All")
     params.set("exception_state", exceptionState);
   if (assignTo && assignTo !== "All") params.set("assign_to", assignTo);
