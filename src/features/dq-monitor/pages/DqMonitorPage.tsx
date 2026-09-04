@@ -14,6 +14,7 @@ import { fetchExceptionStatus } from "../services/get-exception-status";
 import { fetchDMUsers } from "../services/get-dm-users";
 import { fetchDMRole } from "../services/get-dm-role";
 import { fetchRuleGroupsForUser } from "../services/get-rule-groups-for-user";
+import { fetchSecurityGroups } from "../services/get-security-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRuleNames, ruleDisplayLabel } from "../services/get-rule-names";
 import { fetchRulesForGroup } from "../services/get-rules-for-group";
@@ -781,6 +782,33 @@ export default function DqMonitorPage() {
   const [bulkIsPermanent, setBulkIsPermanent] = useState<boolean>(false);
   const [bulkSubmitting, setBulkSubmitting] = useState<boolean>(false);
   const [bulkMessage, setBulkMessage] = useState<string>("");
+  // Security Group dropdown on the Bulk Assign panel. Options come from
+  // SP_GET_SECURITY_GROUPS (distinct SECURITY_GROUP in
+  // SECURITY_CURRENT_VW); "" is the no-selection sentinel and renders
+  // as "All".
+  const [securityGroupOptions, setSecurityGroupOptions] = useState<string[]>(
+    []
+  );
+  const [bulkSecurityGroup, setBulkSecurityGroup] = useState<string>("");
+  // Rules and Security Group are mutually exclusive ways of naming what
+  // the Bulk Assign panel acts on, so choosing either locks the other
+  // out. Locking rather than silently clearing: an operator who picked
+  // five rules and then reached for the wrong control gets a disabled
+  // dropdown to explain itself, not a vanished selection.
+  //
+  // Both start empty, so neither can lock the other before the operator
+  // has chosen anything, and clearing one frees the other immediately.
+  const bulkRulesLocked = bulkSecurityGroup !== "";
+  const bulkSecurityGroupLocked = bulkSelectedRules.size > 0;
+
+  // Closing the panel clears the security group. It filters the grid
+  // server-side, so leaving it set would keep the grid narrowed by a
+  // control the operator can no longer see - the same trap the Rules
+  // combo avoids by living inside the panel that scopes it.
+  useEffect(() => {
+    if (bulkPanelOpen) return;
+    setBulkSecurityGroup((prev) => (prev === "" ? prev : ""));
+  }, [bulkPanelOpen]);
   // Rows ticked in the Exceptions grid's bulk-selection column, keyed
   // by EXCEPTION_ID. One set shared by both panels — there is only one
   // checkbox column, so Bulk Status and Bulk Assign both act on
@@ -895,6 +923,19 @@ export default function DqMonitorPage() {
       });
     return () => controller.abort();
   }, [currentDmUser]);
+
+  // Reference data, fetched once: the list changes only when
+  // DIM_SECURITY does.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSecurityGroups(controller.signal)
+      .then(setSecurityGroupOptions)
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+        console.error("securityGroups fetch failed", e);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1336,7 +1377,11 @@ export default function DqMonitorPage() {
             exceptionState,
             assignToFilter,
             ruleNameSearchApplied,
-            latestExceptionDate
+            latestExceptionDate,
+            // Only ever set while the Bulk Assign panel is open; the
+            // panel clears it on close, so the grid returns to the
+            // unfiltered query on its own.
+            bulkSecurityGroup
           );
 
     // Merged results need re-sorting: each call returns its own group
@@ -1397,6 +1442,10 @@ export default function DqMonitorPage() {
     ruleNameSearchApplied,
     treeSelected,
     dqmDate,
+    // Picking a security group has to refetch: the filter is applied
+    // server-side by a different query, not by narrowing rows already
+    // in the browser.
+    bulkSecurityGroup,
     // The All-scope fan-out reads this, and it arrives asynchronously
     // from getRuleGroupsForUser - without it here the first render at
     // All scope bails on the empty-list guard and never retries once
@@ -2994,11 +3043,18 @@ export default function DqMonitorPage() {
                         aria-haspopup="listbox"
                         aria-expanded={bulkRuleComboOpen}
                         aria-labelledby="dq-bulk-rule-combo-label"
-                        disabled={bulkRuleOptions.length === 0}
+                        disabled={bulkRuleOptions.length === 0 || bulkRulesLocked}
+                        title={
+                          bulkRulesLocked
+                            ? "Clear the Security Group to pick rules"
+                            : undefined
+                        }
                         onClick={() => setBulkRuleComboOpen((v) => !v)}
                       >
                         <span className="dq-bulk-rule-combo-summary">
-                          {bulkRuleOptions.length === 0
+                          {bulkRulesLocked
+                            ? "Security Group selected"
+                            : bulkRuleOptions.length === 0
                             ? "No rules available"
                             : bulkSelectedRules.size === 0
                             ? "None"
@@ -3065,6 +3121,47 @@ export default function DqMonitorPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                  {/* Security Group sits directly below Rules. Options
+                      come from SP_GET_SECURITY_GROUPS. It is a selector
+                      only at this point: nothing downstream reads it,
+                      so picking a group does not yet narrow the rows or
+                      change what Assign writes. */}
+                  <div className="dq-bulk-panel-field">
+                    <label
+                      className="dq-bulk-panel-label"
+                      htmlFor="dq-bulk-security-group-select"
+                    >
+                      Security Group:
+                    </label>
+                    <select
+                      id="dq-bulk-security-group-select"
+                      className="dq-bulk-panel-select"
+                      value={bulkSecurityGroup}
+                      disabled={
+                        securityGroupOptions.length === 0 ||
+                        bulkSecurityGroupLocked
+                      }
+                      title={
+                        bulkSecurityGroupLocked
+                          ? "Clear the selected rules to pick a Security Group"
+                          : undefined
+                      }
+                      onChange={(e) => setBulkSecurityGroup(e.target.value)}
+                    >
+                      <option value="">
+                        {bulkSecurityGroupLocked
+                          ? "Rules selected"
+                          : securityGroupOptions.length === 0
+                          ? "No security groups available"
+                          : "All"}
+                      </option>
+                      {securityGroupOptions.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="dq-bulk-panel-field">
                     <label
