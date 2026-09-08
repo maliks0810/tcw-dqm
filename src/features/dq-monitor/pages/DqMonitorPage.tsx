@@ -679,10 +679,14 @@ export default function DqMonitorPage() {
   const [statusFilter, setStatusFilter] = useState<Set<string>>(
     () => new Set<string>()
   );
-  // Set true once the "seed statusFilter from exceptionStatusOptions"
-  // effect has run so it never re-fires after the user has customized
-  // the filter (e.g., deliberately unticked everything).
-  const statusFilterSeededRef = useRef<boolean>(false);
+  // Tracks which viewByGroup scopes the seed effect has already fired
+  // for, so the default filter is applied ONCE per scope. Any later
+  // customization on a scope persists — re-selecting the same scope
+  // does not reseed. Switching to a scope the user hasn't visited yet
+  // reseeds using that scope's rule (see the seed effect below).
+  const statusFilterSeededScopesRef = useRef<Set<string>>(
+    new Set<string>()
+  );
   const [statusComboOpen, setStatusComboOpen] = useState<boolean>(false);
   const statusComboRef = useRef<HTMLDivElement | null>(null);
   const [viewByRuleCatalog, setViewByRuleCatalog] = useState<string>("All");
@@ -907,16 +911,29 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, []);
 
-  // Seed the status filter with EVERY status the backend returned,
-  // one time only. Runs the first time exceptionStatusOptions
-  // becomes non-empty; the seededRef gate prevents this from ever
-  // wiping a user's later customization (e.g., unticking rows).
+  // Seed the status filter per viewByGroup scope, once each. The
+  // Security Master and Security Master Benchmark scopes default to
+  // "every status except Accept and Suppress" — those two are
+  // resolved states and clutter the working queue for those two
+  // groups. Every other scope defaults to every status ticked.
+  // A scope only reseeds the first time the user visits it, so any
+  // later customization survives navigating away and back.
   useEffect(() => {
-    if (statusFilterSeededRef.current) return;
     if (exceptionStatusOptions.length === 0) return;
-    setStatusFilter(new Set(exceptionStatusOptions));
-    statusFilterSeededRef.current = true;
-  }, [exceptionStatusOptions]);
+    if (!viewByGroup) return;
+    if (statusFilterSeededScopesRef.current.has(viewByGroup)) return;
+    const excluded =
+      viewByGroup === "Security Master" ||
+      viewByGroup === "Security Master Benchmark"
+        ? new Set<string>(["Accept", "Suppress"])
+        : new Set<string>();
+    setStatusFilter(
+      new Set<string>(
+        exceptionStatusOptions.filter((s) => !excluded.has(s))
+      )
+    );
+    statusFilterSeededScopesRef.current.add(viewByGroup);
+  }, [exceptionStatusOptions, viewByGroup]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1674,7 +1691,10 @@ export default function DqMonitorPage() {
     // doesn't flash empty for the ~200 ms window before seeding.
     // Once seeded, an empty set is a legitimate user choice ("hide
     // all") which we honor.
-    if (statusFilter.size === 0 && !statusFilterSeededRef.current) {
+    if (
+      statusFilter.size === 0 &&
+      statusFilterSeededScopesRef.current.size === 0
+    ) {
       return exceptions;
     }
     return exceptions.filter((r) => statusFilter.has(r.status));
@@ -3853,6 +3873,13 @@ export default function DqMonitorPage() {
                   ? (ALL_SCOPE_COLUMN_KEYS as string[])
                   : undefined
               }
+              // RULE_NAME cell hover tooltip mirrors the LHS tree leaves:
+              // shows RULE_DESCRIPTION when known, nothing otherwise.
+              // The map is populated by fetchRulesForGroup (see the
+              // rules-for-group effect above) so descriptions are only
+              // available for scopes whose rules have been fetched — a
+              // miss just renders the cell tooltip-less.
+              ruleDescriptionByName={ruleDescByName}
               // Checkbox column: on only while a bulk panel is open,
               // gone the moment the last one closes.
               selectionMode={bulkSelectionMode}

@@ -208,6 +208,11 @@ type ExceptionsTableProps = {
   // so a name absent from the current row set simply never appears
   // rather than erroring.
   allowedColumnKeys?: string[];
+  // Rule name -> RULE_DESCRIPTION lookup. When present, the RULE_NAME
+  // cell renders its description as an HTML title tooltip on hover —
+  // same behaviour as the LHS tree leaves. A missing / blank entry
+  // just leaves the cell tooltip-less.
+  ruleDescriptionByName?: Record<string, string>;
 };
 
 // Blank cells fold into a visible "(none)" sentinel for the column
@@ -422,6 +427,7 @@ export default function ExceptionsTable({
   onSelectedIdsChange,
   selectionLocked = false,
   allowedColumnKeys,
+  ruleDescriptionByName,
 }: ExceptionsTableProps) {
   const showStatusColumn =
     showResultDataColumns && Array.isArray(statusOptions);
@@ -1899,16 +1905,19 @@ export default function ExceptionsTable({
             {row.priority}
           </td>
         );
-      case "ruleName":
+      case "ruleName": {
+        const desc = ruleDescriptionByName?.[row.ruleName];
         return (
           <td
             key={key}
             className={tdPinnedClass("ruleName").trim()}
             style={tdPinnedStyle("ruleName")}
+            title={desc && desc.trim() !== "" ? desc : undefined}
           >
             {row.ruleName}
           </td>
         );
+      }
       case "issue":
         return (
           <td
