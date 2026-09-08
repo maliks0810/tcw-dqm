@@ -1719,8 +1719,21 @@ export default function ExceptionsTable({
       const tdCls = ("dq-td-rd" + tdPinnedClass(key)).trim();
       const innerCls =
         "dq-td-rd-inner" + (w ? " dq-td-rd-inner-wrap" : "");
+      // RULE_NAME is hoisted into RESULT_DATA as rd:RULE_NAME on every
+      // Security-Master-family scope, so the visible RULE_NAME cell is
+      // this rd:* one, not the static "ruleName" case below. Attach
+      // the RULE_DESCRIPTION tooltip here so hover works. Look up by
+      // row.ruleName (EXCEPTION.RULE_NAME) — that's the key
+      // fetchRulesForGroup populates the map with.
+      const desc =
+        k === "RULE_NAME" ? ruleDescriptionByName?.[row.ruleName] : undefined;
       return (
-        <td key={key} className={tdCls} style={tdPinnedStyle(key)}>
+        <td
+          key={key}
+          className={tdCls}
+          style={tdPinnedStyle(key)}
+          title={desc && desc.trim() !== "" ? desc : undefined}
+        >
           <div
             className={innerCls}
             style={w ? { maxWidth: w } : undefined}
