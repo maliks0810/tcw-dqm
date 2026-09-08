@@ -312,6 +312,16 @@ export default function DqMonitorPage() {
 
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
 
+  // Mirror `exceptions` into a ref so stable useCallback handlers can
+  // read the current row (status, dates) without pulling the state into
+  // their dep array — that would recreate them on every data change and
+  // defeat the memoized per-cell components that shallow-compare their
+  // onCommit prop.
+  const exceptionsRef = useRef<ExceptionRow[]>(exceptions);
+  useEffect(() => {
+    exceptionsRef.current = exceptions;
+  }, [exceptions]);
+
   // Optimistic patch: after a successful per-row update (STATUS / ASSIGN
   // TO / COMMENTS / SUPPRESS DATE), merge the fields we know changed
   // straight into local state — no SP_GET_EXCEPTIONS refetch, no
@@ -417,16 +427,30 @@ export default function DqMonitorPage() {
 
   const handleExceptionSuppressDateChange = useCallback(
     (exceptionId: number, suppressDate: string) => {
-      // Setting a suppress date implies suppression — flip status
-      // to "Suppress" in the same commit. Clearing the date leaves
-      // status alone.
+      // Setting a suppress date normally implies suppression — flip
+      // status to "Suppress" in the same commit. Two carve-outs:
+      //   1. Clearing the date: leave status alone.
+      //   2. Row is currently "Hold" AND the new date is on or before
+      //      the Hold boundary (2 business days out, matching the SP).
+      //      A date inside the hold window is just an adjustment to the
+      //      hold; only a date past the boundary means the operator is
+      //      converting the row into a proper suppression.
+      const row = exceptionsRef.current.find(
+        (r) => r.exceptionId === exceptionId
+      );
+      const stayHold =
+        !!suppressDate &&
+        row?.status === "Hold" &&
+        suppressDate <= isoHoldSuppressDateUtc();
+      const flipToSuppress = !!suppressDate && !stayHold;
+
       const p1 = updateExceptionSuppressDate(exceptionId, suppressDate);
-      const p2 = suppressDate
+      const p2 = flipToSuppress
         ? updateExceptionStatus(exceptionId, "Suppress")
         : Promise.resolve(0);
       return Promise.all([p1, p2])
         .then(() => {
-          if (suppressDate) {
+          if (flipToSuppress) {
             patchExceptionRow(exceptionId, {
               suppressDate,
               status: "Suppress",
@@ -2973,6 +2997,8 @@ export default function DqMonitorPage() {
                     <span className="dq-status-combo-summary">
                       {statusFilter.size === 0
                         ? "None"
+                        : statusFilter.size === exceptionStatusOptions.length
+                        ? "All"
                         : Array.from(statusFilter).join(", ")}
                     </span>
                     <span className="dq-status-combo-caret">▾</span>
@@ -2983,6 +3009,30 @@ export default function DqMonitorPage() {
                       role="group"
                       aria-labelledby="dq-status-combo-label"
                     >
+                      {/* "All" is derived: checked iff every status is
+                          ticked. Toggling it seeds every status or clears
+                          them all in one shot. Ticking / unticking any
+                          individual status naturally flips "All" on or
+                          off with no extra bookkeeping. */}
+                      <label className="dq-status-combo-item">
+                        <input
+                          type="checkbox"
+                          className="dq-status-combo-check"
+                          checked={
+                            exceptionStatusOptions.length > 0 &&
+                            statusFilter.size ===
+                              exceptionStatusOptions.length
+                          }
+                          onChange={() => {
+                            setStatusFilter((prev) =>
+                              prev.size === exceptionStatusOptions.length
+                                ? new Set<string>()
+                                : new Set<string>(exceptionStatusOptions)
+                            );
+                          }}
+                        />
+                        <span>All</span>
+                      </label>
                       {exceptionStatusOptions.map((code) => {
                         const checked = statusFilter.has(code);
                         return (
