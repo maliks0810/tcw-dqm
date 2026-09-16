@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ExceptionRow } from "./types";
 import ColumnFilterHeader, { useColumnFilter } from "./ColumnFilter";
 import SortableTh, {
@@ -1137,57 +1146,72 @@ export default function ExceptionsTable({
     });
   }, [visibleRows, sort]);
 
-  // Excel-style cell range selection for identifier / RESULT_DATA
-  // cells (aladdin, ID_BB_GLOBAL, rd:*). Click a cell to start,
-  // Shift+Click or drag to a second cell in the same column to
-  // extend, Ctrl/Cmd+C to copy the selection as newline-separated
-  // text. Editable cells (status / suppress date / assign to /
-  // comments) intentionally do not participate — their widgets
-  // already own the mousedown.
-  const [cellSelection, setCellSelection] = useState<
-    { column: string; ids: Set<number> } | null
-  >(null);
-  const [cellAnchor, setCellAnchor] = useState<number | null>(null);
+  // Excel-style rectangular cell selection. Drag from any cell to any
+  // other cell (across rows AND columns) to select the rectangle
+  // between them; Shift+Click extends from the anchor; Ctrl/Cmd+C
+  // copies the selection to the clipboard as TSV (tabs between
+  // columns, newlines between rows — the format Excel and Google
+  // Sheets paste from); Escape clears. Every cell participates, but
+  // clicks that land inside form widgets (input/select/textarea/
+  // button) are ignored so editable cells keep their edit flow.
+  type CellPos = { rowId: number; column: string };
+  const [selAnchor, setSelAnchor] = useState<CellPos | null>(null);
+  const [selTarget, setSelTarget] = useState<CellPos | null>(null);
   const draggingRef = useRef<boolean>(false);
-  const sortedRowIdOrderRef = useRef<number[]>([]);
-  useEffect(() => {
-    sortedRowIdOrderRef.current = sortedRows.map((r) => r.exceptionId);
+  // visibleKeys is computed lower in the render body (columnOrder minus
+  // hidden). Both the keyboard handler and colIndexMap need the current
+  // column order without pulling those into the effect's deps, so the
+  // render body sets this ref after every render.
+  const visibleKeysRef = useRef<string[]>([]);
+  const rowIndexMap = useMemo(() => {
+    const m = new Map<number, number>();
+    sortedRows.forEach((r, i) => m.set(r.exceptionId, i));
+    return m;
   }, [sortedRows]);
-  const rangeIds = useCallback(
-    (fromId: number, toId: number): Set<number> => {
-      const ids = sortedRowIdOrderRef.current;
-      const iFrom = ids.indexOf(fromId);
-      const iTo = ids.indexOf(toId);
-      if (iFrom < 0 || iTo < 0) return new Set<number>([toId]);
-      const [lo, hi] = iFrom < iTo ? [iFrom, iTo] : [iTo, iFrom];
-      return new Set<number>(ids.slice(lo, hi + 1));
-    },
-    []
-  );
+  // colIndexMap depends on visibleKeys, which is only computed lower.
+  // Rebuild it inside a ref that the render body refreshes; the
+  // membership test below (selectableCellAttrs) reads through the ref.
+  const colIndexMapRef = useRef<Map<string, number>>(new Map());
+  // Precomputed rectangle bounds — the render loop just does two Map
+  // lookups per cell against these to decide "am I selected".
+  const selBounds = useMemo(() => {
+    if (!selAnchor || !selTarget) return null;
+    const iRowA = rowIndexMap.get(selAnchor.rowId) ?? -1;
+    const iRowT = rowIndexMap.get(selTarget.rowId) ?? -1;
+    const iColA = colIndexMapRef.current.get(selAnchor.column) ?? -1;
+    const iColT = colIndexMapRef.current.get(selTarget.column) ?? -1;
+    if (iRowA < 0 || iRowT < 0 || iColA < 0 || iColT < 0) return null;
+    return {
+      rowLo: Math.min(iRowA, iRowT),
+      rowHi: Math.max(iRowA, iRowT),
+      colLo: Math.min(iColA, iColT),
+      colHi: Math.max(iColA, iColT),
+    };
+    // colIndexMapRef intentionally not in deps — its content is
+    // refreshed synchronously in the render body before this memo
+    // runs, and refs never trigger recomputes anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selAnchor, selTarget, rowIndexMap]);
   const startCellSelection = useCallback(
     (row: ExceptionRow, column: string, shift: boolean) => {
-      const id = row.exceptionId;
-      if (shift && cellAnchor != null && cellSelection?.column === column) {
-        setCellSelection({ column, ids: rangeIds(cellAnchor, id) });
+      const pos: CellPos = { rowId: row.exceptionId, column };
+      if (shift && selAnchor) {
+        setSelTarget(pos);
       } else {
-        setCellAnchor(id);
-        setCellSelection({ column, ids: new Set<number>([id]) });
+        setSelAnchor(pos);
+        setSelTarget(pos);
       }
       draggingRef.current = true;
     },
-    [cellAnchor, cellSelection, rangeIds]
+    [selAnchor]
   );
   const extendCellSelection = useCallback(
     (row: ExceptionRow, column: string) => {
       if (!draggingRef.current) return;
-      if (cellAnchor == null) return;
-      // Only extend within the same column — dragging into another
-      // column ends the drag rather than starting a new selection
-      // there, which the user did not initiate.
-      if (cellSelection && cellSelection.column !== column) return;
-      setCellSelection({ column, ids: rangeIds(cellAnchor, row.exceptionId) });
+      if (!selAnchor) return;
+      setSelTarget({ rowId: row.exceptionId, column });
     },
-    [cellAnchor, cellSelection, rangeIds]
+    [selAnchor]
   );
   useEffect(() => {
     const onUp = () => {
@@ -1196,63 +1220,147 @@ export default function ExceptionsTable({
     window.addEventListener("mouseup", onUp);
     return () => window.removeEventListener("mouseup", onUp);
   }, []);
-  // Ctrl/Cmd+C copies the current cell selection to the clipboard.
-  // Escape clears the selection. Skipped while focus is inside an
-  // input/select so form fields keep their native copy behaviour.
-  useEffect(() => {
-    const cellValueFor = (row: ExceptionRow, column: string): string => {
-      if (column === "aladdin") return row.aladdin ?? "";
-      if (column === "idBbGlobal") return row.idBbGlobal ?? "";
+  // Display value for a cell — mirrors what the grid renders (dates as
+  // MM/DD/YYYY, rd:* via formatCell, etc.) so what the operator sees is
+  // exactly what lands on the clipboard.
+  const cellDisplayValue = useCallback(
+    (row: ExceptionRow, column: string): string => {
       if (column.startsWith("rd:")) {
         return formatCell(row.resultData?.[column.slice(3)]);
       }
-      return "";
-    };
+      switch (column) {
+        case "status":
+          return row.status ?? "";
+        case "comments":
+          return row.comments ?? "";
+        case "assignTo":
+          return row.assignTo ?? "";
+        case "priority":
+          return row.priority ?? "";
+        case "ruleName":
+          return row.ruleName ?? "";
+        case "issue":
+          return row.issue ?? "";
+        case "aladdin":
+          return row.aladdin ?? "";
+        case "idBbGlobal":
+          return row.idBbGlobal ?? "";
+        case "vendor":
+          return row.vendor ?? "";
+        case "action":
+          return row.action ?? "";
+        case "state":
+          return row.state ?? "";
+        case "dateTime":
+          return row.dateTime ?? "";
+        case "suppressDate":
+          return formatMdyDate(row.suppressDate ?? "");
+        case "openDate":
+          return formatMdyDate(row.openDate ?? "");
+        case "closeDate":
+          return formatMdyDate(row.closeDate ?? "");
+        default:
+          return "";
+      }
+    },
+    []
+  );
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (cellSelection) setCellSelection(null);
+        if (selAnchor || selTarget) {
+          setSelAnchor(null);
+          setSelTarget(null);
+        }
         return;
       }
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key.toLowerCase() !== "c") return;
-      if (!cellSelection || cellSelection.ids.size === 0) return;
+      if (!selBounds) return;
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      const text = sortedRows
-        .filter((r) => cellSelection.ids.has(r.exceptionId))
-        .map((r) => cellValueFor(r, cellSelection.column))
+      const cols = visibleKeysRef.current;
+      const rowSlice = sortedRows.slice(selBounds.rowLo, selBounds.rowHi + 1);
+      const colSlice = cols.slice(selBounds.colLo, selBounds.colHi + 1);
+      const text = rowSlice
+        .map((r) => colSlice.map((c) => cellDisplayValue(r, c)).join("\t"))
         .join("\n");
       if (!text) return;
-      // clipboard.writeText is async but we don't await — the browser
-      // handles the promise, and preventing default keeps the native
-      // handler from also firing on any incidental text selection.
       navigator.clipboard.writeText(text).catch(() => {});
       e.preventDefault();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [cellSelection, sortedRows]);
-  // Helper for cells that participate in range selection. Returns the
-  // handlers plus a class ("dq-cell-selectable", plus "dq-cell-selected"
-  // when the cell is in the current selection); the caller merges the
-  // class into its existing className and spreads the handlers.
-  const selectableCellAttrs = (row: ExceptionRow, column: string) => {
-    const selected =
-      cellSelection?.column === column &&
-      cellSelection.ids.has(row.exceptionId);
-    const cls =
-      "dq-cell-selectable" + (selected ? " dq-cell-selected" : "");
-    return {
-      className: cls,
-      onMouseDown: (e: React.MouseEvent) =>
-        startCellSelection(row, column, e.shiftKey),
-      onMouseEnter: (e: React.MouseEvent) => {
-        if (e.buttons !== 1) return;
-        extendCellSelection(row, column);
-      },
-    };
-  };
+  }, [selAnchor, selTarget, selBounds, sortedRows, cellDisplayValue]);
+  const isCellSelected = useCallback(
+    (row: ExceptionRow, column: string): boolean => {
+      if (!selBounds) return false;
+      const iRow = rowIndexMap.get(row.exceptionId) ?? -1;
+      const iCol = colIndexMapRef.current.get(column) ?? -1;
+      if (iRow < 0 || iCol < 0) return false;
+      return (
+        iRow >= selBounds.rowLo &&
+        iRow <= selBounds.rowHi &&
+        iCol >= selBounds.colLo &&
+        iCol <= selBounds.colHi
+      );
+    },
+    [selBounds, rowIndexMap]
+  );
+  // Wrapper that spreads range-selection handlers onto whatever <td>
+  // renderCell returned. Applied uniformly at the tr.map callsite so
+  // every cell — static or rd:*, editable widget or plain text —
+  // participates without each case block having to opt in.
+  const wrapCellForSelection = useCallback(
+    (
+      cell: React.ReactNode,
+      row: ExceptionRow,
+      column: string
+    ): React.ReactNode => {
+      if (!isValidElement(cell)) return cell;
+      const el = cell as React.ReactElement<
+        React.HTMLAttributes<HTMLTableCellElement>
+      >;
+      const props = el.props;
+      const selected = isCellSelected(row, column);
+      const cls = (
+        (props.className ?? "") +
+        " dq-cell-selectable" +
+        (selected ? " dq-cell-selected" : "")
+      ).trim();
+      const existingMouseDown = props.onMouseDown;
+      const existingMouseEnter = props.onMouseEnter;
+      return cloneElement(el, {
+        className: cls,
+        onMouseDown: (e: React.MouseEvent<HTMLTableCellElement>) => {
+          existingMouseDown?.(e);
+          if (e.defaultPrevented) return;
+          // Skip if the click landed on a form widget — its own
+          // focus / edit behaviour has to win. Clicks on the td's
+          // padding or the plain text still start a selection.
+          const t = e.target as HTMLElement;
+          const tag = t.tagName;
+          if (
+            tag === "INPUT" ||
+            tag === "SELECT" ||
+            tag === "TEXTAREA" ||
+            tag === "BUTTON" ||
+            tag === "OPTION"
+          )
+            return;
+          startCellSelection(row, column, e.shiftKey);
+        },
+        onMouseEnter: (e: React.MouseEvent<HTMLTableCellElement>) => {
+          existingMouseEnter?.(e);
+          if (e.defaultPrevented) return;
+          if (e.buttons !== 1) return;
+          extendCellSelection(row, column);
+        },
+      });
+    },
+    [isCellSelected, startCellSelection, extendCellSelection]
+  );
 
   // ---- Bulk-selection column -------------------------------------
   // "Select All" deliberately spans every row the grid is currently
@@ -1854,8 +1962,7 @@ export default function ExceptionsTable({
     if (key.startsWith("rd:")) {
       const k = key.slice(3);
       const w = colWidths[key];
-      const s = selectableCellAttrs(row, key);
-      const tdCls = ("dq-td-rd" + tdPinnedClass(key) + " " + s.className).trim();
+      const tdCls = ("dq-td-rd" + tdPinnedClass(key)).trim();
       const innerCls =
         "dq-td-rd-inner" + (w ? " dq-td-rd-inner-wrap" : "");
       // RULE_NAME is hoisted into RESULT_DATA as rd:RULE_NAME on every
@@ -1872,8 +1979,6 @@ export default function ExceptionsTable({
           className={tdCls}
           style={tdPinnedStyle(key)}
           title={desc && desc.trim() !== "" ? desc : undefined}
-          onMouseDown={s.onMouseDown}
-          onMouseEnter={s.onMouseEnter}
         >
           <div
             className={innerCls}
@@ -2082,34 +2187,26 @@ export default function ExceptionsTable({
             {row.issue}
           </td>
         );
-      case "aladdin": {
-        const s = selectableCellAttrs(row, "aladdin");
+      case "aladdin":
         return (
           <td
             key={key}
-            className={(tdPinnedClass("aladdin") + " " + s.className).trim()}
+            className={tdPinnedClass("aladdin").trim()}
             style={tdPinnedStyle("aladdin")}
-            onMouseDown={s.onMouseDown}
-            onMouseEnter={s.onMouseEnter}
           >
             {row.aladdin}
           </td>
         );
-      }
-      case "idBbGlobal": {
-        const s = selectableCellAttrs(row, "idBbGlobal");
+      case "idBbGlobal":
         return (
           <td
             key={key}
-            className={(tdPinnedClass("idBbGlobal") + " " + s.className).trim()}
+            className={tdPinnedClass("idBbGlobal").trim()}
             style={tdPinnedStyle("idBbGlobal")}
-            onMouseDown={s.onMouseDown}
-            onMouseEnter={s.onMouseEnter}
           >
             {row.idBbGlobal}
           </td>
         );
-      }
       case "vendor":
         return (
           <td
@@ -2156,6 +2253,17 @@ export default function ExceptionsTable({
   };
 
   const visibleKeys = columnOrder.filter((k) => !isHidden(k));
+  // Sync the range-selection refs with the current column order so
+  // the keyboard / mouse handlers upstream see the same visibleKeys
+  // the JSX renders. Rebuilt in-render (before the map callsite that
+  // uses them) — refs never trigger re-renders, so this is cheap and
+  // avoids the effect-timing gap a useEffect would introduce.
+  visibleKeysRef.current = visibleKeys;
+  {
+    const nextMap = new Map<string, number>();
+    visibleKeys.forEach((k, i) => nextMap.set(k, i));
+    colIndexMapRef.current = nextMap;
+  }
 
   // Spacer rows must span the checkbox column too, or the virtualized
   // padding <tr>s come up one cell short and the browser collapses the
@@ -2330,7 +2438,9 @@ export default function ExceptionsTable({
                       />
                     </td>
                   )}
-                  {visibleKeys.map((k) => renderCell(k, row))}
+                  {visibleKeys.map((k) =>
+                    wrapCellForSelection(renderCell(k, row), row, k)
+                  )}
                 </tr>
               );
             })}
