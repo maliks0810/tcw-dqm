@@ -903,21 +903,20 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, []);
 
-  // Seed the status filter per viewByGroup scope, once each. Security
-  // Master, Security Master Benchmark, and the tree "All" scope default
-  // to "every status except Accept, Suppress, and Research" — those
-  // three are resolved states and clutter the working queue there.
-  // Every other scope defaults to every status ticked. A scope only
-  // reseeds the first time the user visits it, so any later
-  // customization survives navigating away and back.
+  // Seed the status filter per viewByGroup scope, once each. Every
+  // Security-Master-family group (Security Master, Security Master
+  // Benchmark, TOD SOD) and the tree "All" scope default to "every
+  // status except Accept, Suppress, and Research" — those three are
+  // resolved states and clutter the working queue there. Every other
+  // scope defaults to every status ticked. A scope only reseeds the
+  // first time the user visits it, so any later customization
+  // survives navigating away and back.
   useEffect(() => {
     if (exceptionStatusOptions.length === 0) return;
     if (!viewByGroup) return;
     if (statusFilterSeededScopesRef.current.has(viewByGroup)) return;
     const excluded =
-      viewByGroup === "Security Master" ||
-      viewByGroup === "Security Master Benchmark" ||
-      viewByGroup === "All"
+      inSecurityMasterFamily(viewByGroup) || viewByGroup === "All"
         ? new Set<string>(["Accept", "Suppress", "Research"])
         : new Set<string>();
     setStatusFilter(
