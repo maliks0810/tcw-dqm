@@ -1321,15 +1321,17 @@ export default function ExceptionsTable({
       const el = cell as React.ReactElement<
         React.HTMLAttributes<HTMLTableCellElement>
       >;
-      const props = el.props;
+      const {
+        className: existingClassName,
+        onMouseDown: existingMouseDown,
+        onMouseEnter: existingMouseEnter,
+      } = el.props;
       const selected = isCellSelected(row, column);
       const cls = (
-        (props.className ?? "") +
+        (existingClassName ?? "") +
         " dq-cell-selectable" +
         (selected ? " dq-cell-selected" : "")
       ).trim();
-      const existingMouseDown = props.onMouseDown;
-      const existingMouseEnter = props.onMouseEnter;
       return cloneElement(el, {
         className: cls,
         onMouseDown: (e: React.MouseEvent<HTMLTableCellElement>) => {
