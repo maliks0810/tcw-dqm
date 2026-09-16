@@ -1187,10 +1187,9 @@ export default function ExceptionsTable({
       colLo: Math.min(iColA, iColT),
       colHi: Math.max(iColA, iColT),
     };
-    // colIndexMapRef intentionally not in deps — its content is
-    // refreshed synchronously in the render body before this memo
-    // runs, and refs never trigger recomputes anyway.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // colIndexMapRef is a ref, so it's intentionally absent from the
+    // dep list — the rule already knows refs never trigger recomputes,
+    // so no disable directive is needed.
   }, [selAnchor, selTarget, rowIndexMap]);
   const startCellSelection = useCallback(
     (row: ExceptionRow, column: string, shift: boolean) => {
