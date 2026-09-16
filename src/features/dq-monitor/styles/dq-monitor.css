@@ -1210,8 +1210,19 @@
      seeds anchor == target so a single click renders as a 1×1
      selection) and extended live as the drag / Shift+Click grows the
      rectangle. Text flips to white for legibility on the dark ground. */
-  background: #4b5563;
-  color: #ffffff;
+  background: #9ca3af;
+  color: #111827;
+}
+
+/* Row-hover and just-changed backgrounds paint on every td via
+   ".dq-table-row:hover td" — a two-class-plus-pseudo selector that
+   outranks the single-class .dq-cell-selected above. Match the
+   specificity here so a selected cell stays dark grey even when the
+   row is being hovered or was just committed. */
+.dq-table-row:hover td.dq-cell-selected,
+.dq-table-row-just-changed td.dq-cell-selected {
+  background: #9ca3af;
+  color: #111827;
 }
 
 .dq-table th,
