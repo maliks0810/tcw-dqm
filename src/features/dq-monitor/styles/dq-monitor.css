@@ -1206,12 +1206,11 @@
 }
 
 .dq-cell-selected {
-  /* Dark navy matches the app's existing button / table-header palette
-     (.dq-export-btn, .dq-table th) so the selection reads as a native
-     element rather than a stray tint. Text flips to white for
-     legibility on the dark ground. */
-  background: #003e7e;
-  color: #ffffff;
+  /* Light green matches the existing "complete row" swatch
+     (.dq-header-breakdown-complete uses the same #dcfce7), so the
+     copy selection stays inside the app's palette. Keep the default
+     dark text — legible on the pale ground without a color override. */
+  background: #dcfce7;
 }
 
 .dq-table th,
