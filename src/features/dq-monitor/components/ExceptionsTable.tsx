@@ -542,6 +542,16 @@ export default function ExceptionsTable({
       ),
     [data]
   );
+  // Comments is free-form so this list can be long; the popover's
+  // built-in search box handles that — typing narrows Excel-style, and
+  // the caller can then just hit OK for a wildcard "contains" filter.
+  const allComments = useMemo(
+    () =>
+      Array.from(new Set(data.map((r) => blankKey(r.comments)))).sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [data]
+  );
   const [ruleNameFilter, setRuleNameFilter] = useColumnFilter(allRuleNames);
   const [priorityFilter, setPriorityFilter] = useColumnFilter(allPriorities);
   const [assetIdFilter, setAssetIdFilter] = useColumnFilter(allAssetIds);
@@ -552,6 +562,7 @@ export default function ExceptionsTable({
     useColumnFilter(allSuppressDates);
   const [openDateFilter, setOpenDateFilter] = useColumnFilter(allOpenDates);
   const [closeDateFilter, setCloseDateFilter] = useColumnFilter(allCloseDates);
+  const [commentsFilter, setCommentsFilter] = useColumnFilter(allComments);
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   // Per-RESULT_DATA-key filters keyed by the JSON key.
@@ -641,6 +652,8 @@ export default function ExceptionsTable({
           return false;
         if (closeDateFilter && !closeDateFilter.has(dateKey(row.closeDate)))
           return false;
+        if (commentsFilter && !commentsFilter.has(blankKey(row.comments)))
+          return false;
         for (const [k, f] of Object.entries(resultDataFilters)) {
           if (!f) continue;
           if (!f.has(blankKey(formatCell(row.resultData?.[k])))) return false;
@@ -658,6 +671,7 @@ export default function ExceptionsTable({
       suppressDateFilter,
       openDateFilter,
       closeDateFilter,
+      commentsFilter,
       resultDataFilters,
     ]
   );
@@ -1122,6 +1136,123 @@ export default function ExceptionsTable({
       return compareValues(getSortValue(a, key), getSortValue(b, key)) * factor;
     });
   }, [visibleRows, sort]);
+
+  // Excel-style cell range selection for identifier / RESULT_DATA
+  // cells (aladdin, ID_BB_GLOBAL, rd:*). Click a cell to start,
+  // Shift+Click or drag to a second cell in the same column to
+  // extend, Ctrl/Cmd+C to copy the selection as newline-separated
+  // text. Editable cells (status / suppress date / assign to /
+  // comments) intentionally do not participate — their widgets
+  // already own the mousedown.
+  const [cellSelection, setCellSelection] = useState<
+    { column: string; ids: Set<number> } | null
+  >(null);
+  const [cellAnchor, setCellAnchor] = useState<number | null>(null);
+  const draggingRef = useRef<boolean>(false);
+  const sortedRowIdOrderRef = useRef<number[]>([]);
+  useEffect(() => {
+    sortedRowIdOrderRef.current = sortedRows.map((r) => r.exceptionId);
+  }, [sortedRows]);
+  const rangeIds = useCallback(
+    (fromId: number, toId: number): Set<number> => {
+      const ids = sortedRowIdOrderRef.current;
+      const iFrom = ids.indexOf(fromId);
+      const iTo = ids.indexOf(toId);
+      if (iFrom < 0 || iTo < 0) return new Set<number>([toId]);
+      const [lo, hi] = iFrom < iTo ? [iFrom, iTo] : [iTo, iFrom];
+      return new Set<number>(ids.slice(lo, hi + 1));
+    },
+    []
+  );
+  const startCellSelection = useCallback(
+    (row: ExceptionRow, column: string, shift: boolean) => {
+      const id = row.exceptionId;
+      if (shift && cellAnchor != null && cellSelection?.column === column) {
+        setCellSelection({ column, ids: rangeIds(cellAnchor, id) });
+      } else {
+        setCellAnchor(id);
+        setCellSelection({ column, ids: new Set<number>([id]) });
+      }
+      draggingRef.current = true;
+    },
+    [cellAnchor, cellSelection, rangeIds]
+  );
+  const extendCellSelection = useCallback(
+    (row: ExceptionRow, column: string) => {
+      if (!draggingRef.current) return;
+      if (cellAnchor == null) return;
+      // Only extend within the same column — dragging into another
+      // column ends the drag rather than starting a new selection
+      // there, which the user did not initiate.
+      if (cellSelection && cellSelection.column !== column) return;
+      setCellSelection({ column, ids: rangeIds(cellAnchor, row.exceptionId) });
+    },
+    [cellAnchor, cellSelection, rangeIds]
+  );
+  useEffect(() => {
+    const onUp = () => {
+      draggingRef.current = false;
+    };
+    window.addEventListener("mouseup", onUp);
+    return () => window.removeEventListener("mouseup", onUp);
+  }, []);
+  // Ctrl/Cmd+C copies the current cell selection to the clipboard.
+  // Escape clears the selection. Skipped while focus is inside an
+  // input/select so form fields keep their native copy behaviour.
+  useEffect(() => {
+    const cellValueFor = (row: ExceptionRow, column: string): string => {
+      if (column === "aladdin") return row.aladdin ?? "";
+      if (column === "idBbGlobal") return row.idBbGlobal ?? "";
+      if (column.startsWith("rd:")) {
+        return formatCell(row.resultData?.[column.slice(3)]);
+      }
+      return "";
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (cellSelection) setCellSelection(null);
+        return;
+      }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() !== "c") return;
+      if (!cellSelection || cellSelection.ids.size === 0) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const text = sortedRows
+        .filter((r) => cellSelection.ids.has(r.exceptionId))
+        .map((r) => cellValueFor(r, cellSelection.column))
+        .join("\n");
+      if (!text) return;
+      // clipboard.writeText is async but we don't await — the browser
+      // handles the promise, and preventing default keeps the native
+      // handler from also firing on any incidental text selection.
+      navigator.clipboard.writeText(text).catch(() => {});
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [cellSelection, sortedRows]);
+  // Helper for cells that participate in range selection. Returns the
+  // handlers plus a class ("dq-cell-selectable", plus "dq-cell-selected"
+  // when the cell is in the current selection); the caller merges the
+  // class into its existing className and spreads the handlers.
+  const selectableCellAttrs = (row: ExceptionRow, column: string) => {
+    const selected =
+      cellSelection?.column === column &&
+      cellSelection.ids.has(row.exceptionId);
+    const cls =
+      "dq-cell-selectable" + (selected ? " dq-cell-selected" : "");
+    return {
+      className: cls,
+      onMouseDown: (e: React.MouseEvent) =>
+        startCellSelection(row, column, e.shiftKey),
+      onMouseEnter: (e: React.MouseEvent) => {
+        if (e.buttons !== 1) return;
+        extendCellSelection(row, column);
+      },
+    };
+  };
 
   // ---- Bulk-selection column -------------------------------------
   // "Select All" deliberately spans every row the grid is currently
@@ -1597,7 +1728,14 @@ export default function ExceptionsTable({
       case "comments":
         return (
           <SortableTh key={key} {...commonThProps("comments")}>
-            Comments
+            <ColumnFilterHeader
+              label="Comments"
+              allValues={allComments}
+              filter={commentsFilter}
+              onChange={setCommentsFilter}
+              isOpen={openFilterId === "comments"}
+              onToggle={(open) => setOpenFilterId(open ? "comments" : null)}
+            />
           </SortableTh>
         );
       case "dateTime":
@@ -1716,7 +1854,8 @@ export default function ExceptionsTable({
     if (key.startsWith("rd:")) {
       const k = key.slice(3);
       const w = colWidths[key];
-      const tdCls = ("dq-td-rd" + tdPinnedClass(key)).trim();
+      const s = selectableCellAttrs(row, key);
+      const tdCls = ("dq-td-rd" + tdPinnedClass(key) + " " + s.className).trim();
       const innerCls =
         "dq-td-rd-inner" + (w ? " dq-td-rd-inner-wrap" : "");
       // RULE_NAME is hoisted into RESULT_DATA as rd:RULE_NAME on every
@@ -1733,6 +1872,8 @@ export default function ExceptionsTable({
           className={tdCls}
           style={tdPinnedStyle(key)}
           title={desc && desc.trim() !== "" ? desc : undefined}
+          onMouseDown={s.onMouseDown}
+          onMouseEnter={s.onMouseEnter}
         >
           <div
             className={innerCls}
@@ -1941,26 +2082,34 @@ export default function ExceptionsTable({
             {row.issue}
           </td>
         );
-      case "aladdin":
+      case "aladdin": {
+        const s = selectableCellAttrs(row, "aladdin");
         return (
           <td
             key={key}
-            className={tdPinnedClass("aladdin").trim()}
+            className={(tdPinnedClass("aladdin") + " " + s.className).trim()}
             style={tdPinnedStyle("aladdin")}
+            onMouseDown={s.onMouseDown}
+            onMouseEnter={s.onMouseEnter}
           >
             {row.aladdin}
           </td>
         );
-      case "idBbGlobal":
+      }
+      case "idBbGlobal": {
+        const s = selectableCellAttrs(row, "idBbGlobal");
         return (
           <td
             key={key}
-            className={tdPinnedClass("idBbGlobal").trim()}
+            className={(tdPinnedClass("idBbGlobal") + " " + s.className).trim()}
             style={tdPinnedStyle("idBbGlobal")}
+            onMouseDown={s.onMouseDown}
+            onMouseEnter={s.onMouseEnter}
           >
             {row.idBbGlobal}
           </td>
         );
+      }
       case "vendor":
         return (
           <td

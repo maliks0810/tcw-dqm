@@ -121,53 +121,26 @@ export default function Header({
     });
   };
 
-  // When a breakdown row is supplied, the left column is sized so the
-  // breakdown starts at the horizontal position where the Exceptions
-  // grid begins (sidebar width + resizer + gaps computed by the
-  // caller). Right column keeps its buttons flush right via
-  // .dq-header-right's justify-self: end.
-  //
-  // minmax(max-content, offset) rather than a fixed `offset px`: the
-  // offset is the *preferred* start, not a cap. With the sidebar
-  // collapsed it shrinks to roughly the rail width, far narrower than
-  // the 18px bold title plus the role badge, and a fixed track left the
-  // title overflowing into the breakdown's column so the two overlapped.
-  //
-  // max-content as the MINIMUM is what makes that structurally
-  // impossible: the track can never be narrower than the title and badge
-  // actually need, at any viewport width. The earlier
-  // minmax(offset, auto) did not guarantee this — a fixed minimum sets
-  // the track's base size outright and ignores the item's own
-  // min-content contribution, so the column only reached the title's
-  // width via the "maximize tracks" step, which needs spare room in the
-  // header. Squeeze the window and the base size wins and the title
-  // spills over the breakdown again.
-  //
-  // Per the grid spec a max below the min is floored by it, so this
-  // reads as: at least the title, exactly the offset when the offset is
-  // the larger of the two. Expanded, the offset wins and the breakdown
-  // lines up with the grid; collapsed, max-content wins and the
-  // breakdown sits just clear of the badge instead.
-  const headerStyle: React.CSSProperties | undefined =
-    breakdown != null && breakdownLeftOffset != null
-      ? {
-          gridTemplateColumns: `minmax(max-content, ${breakdownLeftOffset}px) auto 1fr`,
-        }
+  // Breakdown (Total: | New: | ...) rides on its own row below the
+  // title/buttons row so a narrow laptop can't push the right-hand
+  // buttons off the screen. breakdownLeftOffset lines the breakdown
+  // up with the Exceptions grid's left edge; the caller resolves the
+  // sidebar + gap arithmetic so this component stays layout-agnostic.
+  const breakdownStyle: React.CSSProperties | undefined =
+    breakdownLeftOffset != null
+      ? { paddingLeft: breakdownLeftOffset }
       : undefined;
 
   return (
-    <div className="dq-header" style={headerStyle}>
-      <div className="dq-header-left">
-        {USE_OKTA && <div className="dq-header-brand">TCW</div>}
-        <h1 className="dq-header-title">DATA QUALITY MONITOR</h1>
-        {dmRole && <span className="dq-header-role">{dmRole}</span>}
-      </div>
+    <div className="dq-header">
+      <div className="dq-header-row">
+        <div className="dq-header-left">
+          {USE_OKTA && <div className="dq-header-brand">TCW</div>}
+          <h1 className="dq-header-title">DATA QUALITY MONITOR</h1>
+          {dmRole && <span className="dq-header-role">{dmRole}</span>}
+        </div>
 
-      {breakdown != null && (
-        <div className="dq-header-breakdown">{breakdown}</div>
-      )}
-
-      <div className="dq-header-right">
+        <div className="dq-header-right">
         {onBulkStatusClick && (
           <button
             className="dq-export-btn"
@@ -324,7 +297,14 @@ export default function Header({
             </button>
           </>
         )}
+        </div>
       </div>
+
+      {breakdown != null && (
+        <div className="dq-header-breakdown" style={breakdownStyle}>
+          {breakdown}
+        </div>
+      )}
     </div>
   );
 }

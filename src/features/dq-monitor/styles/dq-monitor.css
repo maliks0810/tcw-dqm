@@ -43,19 +43,29 @@
   box-sizing: border-box;
 }
 
+/* Two-row header: title + buttons on the top row, breakdown (Total: |
+   New: | ...) on a second row beneath. Splitting the breakdown off
+   the button row keeps the right-hand buttons on-screen at laptop
+   widths — previously they shared a single grid row with the
+   breakdown and got clipped or dropped once the breakdown grew. */
 .dq-header {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+
+.dq-header-row {
+  display: flex;
   align-items: center;
   gap: 16px;
-  flex: none;
+  justify-content: space-between;
 }
 
 .dq-header-left {
   display: flex;
   gap: 16px;
   align-items: center;
-  justify-self: start;
 }
 
 .dq-header-brand {
@@ -95,7 +105,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  justify-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .dq-user {
@@ -698,18 +709,15 @@
   color: #111827;
 }
 
-/* Middle cell of the top header when a status breakdown is present.
-   Width is auto so the row consumes just what the counts need; the
-   header's grid-template-columns places it starting at the Exceptions
-   grid's left edge (breakdownLeftOffset). Height is pinned to match
-   the Exceptions grid <th> so the two rows read as the same size;
-   background / font stay on the page default (transparent, dark
-   text). */
+/* Second row of the header when a status breakdown is present. Its
+   padding-left is set inline by Header.tsx from breakdownLeftOffset
+   so the counts start at the Exceptions grid's left edge; the
+   parent .dq-header is flex-column, so this simply flows on its
+   own line beneath the title/buttons row. Height matches the
+   Exceptions grid <th>; background / font stay on the page default. */
 .dq-header-breakdown {
-  justify-self: start;
-  align-self: center;
   box-sizing: border-box;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   color: #111827;
   /* Match the original in-grid status breakdown font (was 12px above
@@ -718,7 +726,7 @@
   font-size: 12px;
   line-height: 1.2;
   height: 30px;
-  padding: 0 10px;
+  padding-right: 10px;
   white-space: nowrap;
   overflow-x: auto;
   max-width: 100%;
@@ -1184,6 +1192,23 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 1080px;
+}
+
+/* Cells that participate in Excel-style range selection (aladdin,
+   ID_BB_GLOBAL, every rd:* RESULT_DATA column). Click sets an anchor,
+   Shift+Click or drag extends within the same column, Ctrl/Cmd+C
+   copies the selection as newline-separated text. user-select:none
+   here stops the browser's own text-drag selection from fighting the
+   painted highlight while the operator drags. */
+.dq-cell-selectable {
+  user-select: none;
+  cursor: cell;
+}
+
+.dq-cell-selected {
+  /* Match the "just changed" highlight family but with a bluer tint
+     so operators tell copy-selection apart from a fresh commit. */
+  background: #dbeafe;
 }
 
 .dq-table th,
@@ -2188,13 +2213,12 @@
     padding: 16px;
   }
 
-  .dq-header {
-    grid-template-columns: 1fr;
-  }
-
-  .dq-header-left,
-  .dq-header-right {
-    justify-self: stretch;
+  /* Under 900px the top row stacks: title over buttons, still flush
+     left. flex-wrap on .dq-header-right already keeps the buttons
+     wrapping cleanly whatever the row width is. */
+  .dq-header-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .dq-header-right {

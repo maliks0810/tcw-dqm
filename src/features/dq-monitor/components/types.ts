@@ -37,6 +37,12 @@ export type ExceptionRow = {
   // Keyed by column name as the rule SELECT emitted it. Undefined when the
   // exception's RESULT_DATA was null or didn't parse as a JSON object.
   resultData?: Record<string, unknown>;
+  // RULE_GROUP.NAME the row was fetched under. Stamped by DqMonitorPage's
+  // All-scope fan-out (one fetch per authorised group) so per-group
+  // counts in the "Number of Exceptions" panel can be computed
+  // client-side from the currently-visible row set — the SP payload does
+  // not carry it. Optional because single-group scopes do not need it.
+  ruleGroup?: string;
 };
 
 export type SecurityRow = {

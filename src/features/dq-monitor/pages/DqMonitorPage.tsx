@@ -18,7 +18,6 @@ import { fetchSecurityGroups } from "../services/get-security-groups";
 import { fetchRuleCatalogs } from "../services/get-rule-catalogs";
 import { fetchRuleNames, ruleDisplayLabel } from "../services/get-rule-names";
 import { fetchRulesForGroup } from "../services/get-rules-for-group";
-import { fetchExceptionCountsByGroup } from "../services/get-exception-counts-by-group";
 import { subscribeToEvents } from "../services/stream-events";
 import {
   exportAssetsToExcel,
@@ -168,13 +167,6 @@ const SECURITY_MASTER_FAMILY_GROUPS = [
 function inSecurityMasterFamily(group: string): boolean {
   return SECURITY_MASTER_FAMILY_GROUPS.includes(group);
 }
-
-// .dq-header's grid column-gap, which sits between the title column and
-// the status-breakdown column. Must be subtracted when sizing the title
-// column to a target x-position, since the gap pushes the breakdown that
-// much further right. Keep in sync with `gap` on .dq-header in
-// dq-monitor.css.
-const HEADER_COLUMN_GAP = 16;
 
 export default function DqMonitorPage() {
   const [assets, setAssets] = useState<SecurityRow[]>([]);
@@ -911,21 +903,22 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, []);
 
-  // Seed the status filter per viewByGroup scope, once each. The
-  // Security Master and Security Master Benchmark scopes default to
-  // "every status except Accept and Suppress" — those two are
-  // resolved states and clutter the working queue for those two
-  // groups. Every other scope defaults to every status ticked.
-  // A scope only reseeds the first time the user visits it, so any
-  // later customization survives navigating away and back.
+  // Seed the status filter per viewByGroup scope, once each. Security
+  // Master, Security Master Benchmark, and the tree "All" scope default
+  // to "every status except Accept, Suppress, and Research" — those
+  // three are resolved states and clutter the working queue there.
+  // Every other scope defaults to every status ticked. A scope only
+  // reseeds the first time the user visits it, so any later
+  // customization survives navigating away and back.
   useEffect(() => {
     if (exceptionStatusOptions.length === 0) return;
     if (!viewByGroup) return;
     if (statusFilterSeededScopesRef.current.has(viewByGroup)) return;
     const excluded =
       viewByGroup === "Security Master" ||
-      viewByGroup === "Security Master Benchmark"
-        ? new Set<string>(["Accept", "Suppress"])
+      viewByGroup === "Security Master Benchmark" ||
+      viewByGroup === "All"
+        ? new Set<string>(["Accept", "Suppress", "Research"])
         : new Set<string>();
     setStatusFilter(
       new Set<string>(
@@ -1450,8 +1443,19 @@ export default function DqMonitorPage() {
     };
 
     const limit = isAllFetchScope ? EXCEPTION_LIMIT_ALL : EXCEPTION_LIMIT;
+    // Stamp each row with the group it came from. Only the All fan-out
+    // needs it — the exceptionCountRows "All" branch reads it to
+    // compute per-group counts client-side so the panel tracks the
+    // Status filter. Single-group scopes leave it undefined; nothing
+    // downstream depends on it there.
+    const stampGroup =
+      (g: string | undefined) =>
+      (rows: ExceptionRow[]): ExceptionRow[] =>
+        g ? rows.map((r) => ({ ...r, ruleGroup: g })) : rows;
     const fetcher: Promise<ExceptionRow[]> = isAllFetchScope
-      ? Promise.all(groupsToFetch.map(fetchForGroup)).then(mergeSorted)
+      ? Promise.all(
+          groupsToFetch.map((g) => fetchForGroup(g).then(stampGroup(g)))
+        ).then(mergeSorted)
       : fetchForGroup(ruleGroupArg);
     fetcher
       .then((rows) => {
@@ -1506,100 +1510,13 @@ export default function DqMonitorPage() {
     latestExceptionDate,
   ]);
 
-  // When 'All' is selected on the tree, the Number of Exceptions panel
-  // shows one row per rule group. ExceptionRow does not carry rule_group,
-  // so we hit GET_EXCEPTIONS once per group (rule_group=<name>) and just
-  // count the rows. Refresh on the same triggers as the main exceptions
-  // fetch so SSE-driven refreshes and filter changes flow through.
-  const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
-  useEffect(() => {
-    const inAllMode =
-      viewMode !== "security" &&
-      treeSelected &&
-      viewByGroup === "All" &&
-      viewByRuleCatalog === "All" &&
-      viewByRule === "All" &&
-      !ruleNameSearchApplied;
-    // countsDate must be resolved before calling — the endpoint requires
-    // exception_date and 400s without it. histDates arrives async, so on
-    // a cold load this effect runs once with an empty date and bails,
-    // then re-runs for real when the date lands.
-    const countsDate = dqmDate || latestExceptionDate;
-    if (!inAllMode || ruleGroupOptions.length === 0 || !countsDate) {
-      setGroupCounts({});
-      return;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    (async () => {
-      try {
-        // Single aggregation call replaces the earlier per-group
-        // fetchExceptions fanout — server groups by RULE_GROUP.NAME
-        // and returns counts in one round-trip. Status filter is
-        // intentionally not passed (see the "unfiltered summary"
-        // comment above).
-        //
-        // countsDate scopes this to one day, matching the exceptions
-        // fetch. Previously omitted, which counted every date in
-        // EXCEPTION and made the panel read several times higher than
-        // the grid it summarises.
-        const rows = await fetchExceptionCountsByGroup(
-          {
-            exceptionType: dqmType,
-            severity,
-            priority,
-            exceptionState,
-            assignTo: assignToFilter,
-          },
-          countsDate,
-          // Same condition the exceptions fetch uses to pick
-          // fetchExceptionsHist over fetchExceptions, so the panel can
-          // never summarise a different table than the grid shows.
-          dqmDate !== "",
-          controller.signal
-        );
-        if (!cancelled) {
-          const next: Record<string, number> = {};
-          // Seed authorized groups to 0 so a group with zero rows
-          // still shows in the panel (SP returns nothing for empty
-          // groups since it aggregates over EXCEPTION).
-          for (const g of ruleGroupOptions) next[g] = 0;
-          for (const { ruleGroup, count } of rows) {
-            if (ruleGroup) next[ruleGroup] = count;
-          }
-          setGroupCounts(next);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") return;
-
-        console.error("groupCounts fetch failed", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [
-    viewMode,
-    treeSelected,
-    viewByGroup,
-    viewByRuleCatalog,
-    viewByRule,
-    ruleNameSearchApplied,
-    ruleGroupOptions,
-    refreshTick,
-    dqmType,
-    severity,
-    priority,
-    exceptionState,
-    assignToFilter,
-    // Both feed countsDate. latestExceptionDate resolves after the first
-    // render, so it has to be here or the panel would stay empty on a
-    // cold load; dqmDate keeps the counts in step with the back-in-time
-    // selector.
-    dqmDate,
-    latestExceptionDate,
-  ]);
+  // Number of Exceptions counts at 'All' are computed client-side from
+  // statusFilteredExceptions (see exceptionCountRows below). The All
+  // fan-out stamps each row with its ruleGroup so per-group tallies
+  // reflect whatever Status subset is currently visible — the earlier
+  // fetchExceptionCountsByGroup path aggregated server-side and could
+  // not follow the Status filter, so the panel disagreed with the
+  // grid.
 
   // When in group mode, we break the count down by rule type — but the
   // ExceptionRow only carries ruleName, so we need a ruleName -> ruleCatalog
@@ -2292,19 +2209,28 @@ export default function DqMonitorPage() {
       return rows;
     }
 
-    // 'All' selected on the tree (nothing scoped yet) — one row per rule
-    // group, populated from the per-group fetch in the groupCounts effect.
-    // groupCounts is fetched per-group without status context, so it
-    // stays unfiltered here; the panel labels this as an "All" summary
-    // and doesn't claim to reflect the status subset.
+    // 'All' selected on the tree (nothing scoped yet) — one row per
+    // rule group. Counts come from statusFilteredExceptions (which the
+    // All fan-out stamps with ruleGroup) so the panel tracks whatever
+    // Status subset is currently visible in the grid below. Groups the
+    // operator is authorised for but that have no matching rows still
+    // appear at 0 — seeded from ruleGroupOptions so an empty group is
+    // legible rather than absent.
     if (
       viewByGroup === "All" &&
       viewByRuleCatalog === "All" &&
       viewByRule === "All" &&
       !ruleNameSearchApplied
     ) {
+      const counts: Record<string, number> = {};
+      for (const g of ruleGroupOptions) counts[g] = 0;
+      for (const e of statusFilteredExceptions) {
+        const g = e.ruleGroup;
+        if (!g) continue;
+        counts[g] = (counts[g] ?? 0) + 1;
+      }
       return ruleGroupOptions
-        .map((g) => ({ name: g, count: groupCounts[g] ?? 0 }))
+        .map((g) => ({ name: g, count: counts[g] ?? 0 }))
         .sort((a, b) => b.count - a.count);
     }
 
@@ -2326,7 +2252,6 @@ export default function DqMonitorPage() {
     statusFilteredExceptions,
     ruleCatalogByRuleName,
     ruleGroupOptions,
-    groupCounts,
   ]);
 
   // Guarantee the page fills the visible viewport from its top edge
@@ -2455,20 +2380,18 @@ export default function DqMonitorPage() {
             </>
           ) : undefined
         }
-        // Width to give the header's title column so the breakdown that
-        // follows it starts exactly at the Exceptions grid's left edge.
+        // Padding-left for the breakdown row so its counts start at the
+        // Exceptions grid's left edge.
         //
         // .dq-body is a flex row with a 12px gap: sidebar, then a 6px
         // resizer (expanded only), then the grid. So the grid's left
         // edge is sidebar + 12 + 6 + 12 when expanded and sidebar + 12
-        // when collapsed. The header then adds its own 16px column gap
-        // between title and breakdown, which has to come back off or the
-        // breakdown lands 16px right of the grid — which is exactly
-        // where it used to sit.
+        // when collapsed. The breakdown now flows on its own row inside
+        // .dq-header (a flex column), so no extra column-gap
+        // compensation is needed — the offset lines up directly.
         breakdownLeftOffset={
           (sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth) +
-          (sidebarCollapsed ? 12 : 30) -
-          HEADER_COLUMN_GAP
+          (sidebarCollapsed ? 12 : 30)
         }
       />
 
