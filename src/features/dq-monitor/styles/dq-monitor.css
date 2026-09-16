@@ -1206,9 +1206,12 @@
 }
 
 .dq-cell-selected {
-  /* Match the "just changed" highlight family but with a bluer tint
-     so operators tell copy-selection apart from a fresh commit. */
-  background: #dbeafe;
+  /* Dark navy matches the app's existing button / table-header palette
+     (.dq-export-btn, .dq-table th) so the selection reads as a native
+     element rather than a stray tint. Text flips to white for
+     legibility on the dark ground. */
+  background: #003e7e;
+  color: #ffffff;
 }
 
 .dq-table th,
