@@ -1206,11 +1206,12 @@
 }
 
 .dq-cell-selected {
-  /* Light green matches the existing "complete row" swatch
-     (.dq-header-breakdown-complete uses the same #dcfce7), so the
-     copy selection stays inside the app's palette. Keep the default
-     dark text — legible on the pale ground without a color override. */
-  background: #dcfce7;
+  /* Dark grey, applied the moment a cell is clicked (startCellSelection
+     seeds anchor == target so a single click renders as a 1×1
+     selection) and extended live as the drag / Shift+Click grows the
+     rectangle. Text flips to white for legibility on the dark ground. */
+  background: #4b5563;
+  color: #ffffff;
 }
 
 .dq-table th,
