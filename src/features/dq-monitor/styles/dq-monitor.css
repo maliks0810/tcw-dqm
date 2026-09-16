@@ -1210,7 +1210,7 @@
      seeds anchor == target so a single click renders as a 1×1
      selection) and extended live as the drag / Shift+Click grows the
      rectangle. Text flips to white for legibility on the dark ground. */
-  background: #9ca3af;
+  background: #b5bac3;
   color: #111827;
 }
 
@@ -1221,7 +1221,7 @@
    row is being hovered or was just committed. */
 .dq-table-row:hover td.dq-cell-selected,
 .dq-table-row-just-changed td.dq-cell-selected {
-  background: #9ca3af;
+  background: #b5bac3;
   color: #111827;
 }
 
