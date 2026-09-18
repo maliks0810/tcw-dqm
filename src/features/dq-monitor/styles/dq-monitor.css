@@ -1678,10 +1678,28 @@
 }
 
 /* Suppress-date cell: native date input fills the column, no padding on
-   the TD so the input hugs the border like the comments cell. */
+   the TD so the input hugs the border like the comments cell.
+
+   min-width is load-bearing, not cosmetic. The grid uses the default
+   table-layout:auto, where the 160px set on the header is only a
+   SUGGESTION — the browser squeezes columns below it whenever the row is
+   wide, which is exactly what happens when a rule projects many
+   RESULT_DATA columns or long values. The column resize handle also
+   floors at 40px and persists whatever it is dragged to. Either way the
+   cell can end up narrower than an <input type="date"> needs.
+
+   When that happens the input still works and still accepts typing, but
+   the browser clips ::-webkit-calendar-picker-indicator off the right
+   edge — the calendar icon is simply not there to click, so the cell
+   reads as "the picker is broken on this rule".
+
+   min-width IS honoured in auto layout (unlike max-width — see the
+   .dq-td-rd note below) and beats a too-small persisted width, so it
+   covers both routes. 150px fits mm/dd/yyyy plus the indicator. */
 .dq-td-suppress-date {
   padding: 0;
   vertical-align: middle;
+  min-width: 150px;
 }
 
 .dq-row-suppress-date-input {
