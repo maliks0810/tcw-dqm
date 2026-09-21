@@ -3196,19 +3196,19 @@ export default function DqMonitorPage() {
                       onChange={(e) => setBulkSelectedUser(e.target.value)}
                     >
                       <option value="">Select user…</option>
-                      {dmUserOptions
-                        // Backend getDMUsers returns a literal
-                        // "Unassigned" entry; mirror the ExceptionsTable
-                        // per-row select which also filters it out — the
-                        // Bulk Assign flow always resolves to a real user.
-                        .filter(
-                          (u) => u.trim().toLowerCase() !== "unassigned"
-                        )
-                        .map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
+                      {/* "Unassigned" is deliberately NOT filtered out.
+                          It is a real DM_USER row, and assigning to it
+                          writes its ID into EXCEPTION.ASSIGN_TO_ID like
+                          any other user — that is how an exception is
+                          handed back to the unassigned pool, and it is
+                          why ASSIGN_TO_ID is never NULL. Filtering it
+                          here left bulk assign with no way to undo an
+                          assignment. */}
+                      {dmUserOptions.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <label
