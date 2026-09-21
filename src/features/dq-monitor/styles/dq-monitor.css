@@ -1727,6 +1727,35 @@
   color: transparent;
 }
 
+/* Pin the calendar button down explicitly instead of trusting the
+   browser default, which is what the rule above was relying on.
+   Chromium drops or shrinks ::-webkit-calendar-picker-indicator on its
+   own terms: it hides it when the control is too narrow for both the
+   field and the button, and it treats the button as decoration that can
+   go when the field has no value — which is the state EVERY row of an
+   untriaged rule is in, so a rule whose exceptions are all unsuppressed
+   can show no picker anywhere while a busier rule looks fine.
+
+   Declaring opacity / visibility / display / size takes that decision
+   away from the browser, and the min-width guarantees there is room for
+   the button next to mm/dd/yyyy regardless of how auto table layout
+   sizes the column. Both the empty and populated states are covered —
+   the selector deliberately does not mention the -empty class. */
+.dq-row-suppress-date-input {
+  min-width: 132px;
+}
+
+.dq-row-suppress-date-input::-webkit-calendar-picker-indicator {
+  display: inline-block;
+  visibility: visible;
+  opacity: 1;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin-left: 2px;
+  cursor: pointer;
+}
+
 /* Comments cell: input fills the full column width. Zero padding on the
    TD means the input's left/right edges hug the cell border. */
 .dq-td-comments {
