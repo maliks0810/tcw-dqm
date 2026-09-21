@@ -1718,14 +1718,25 @@
   border-color: #1d4ed8;
 }
 
-/* Hide the browser's "mm/dd/yyyy" format hint on empty <input type="date">
-   cells. When the input has no value, an is-empty class is applied so
-   the datetime-edit sub-fields render transparent — the calendar icon
-   stays visible so the user can still open the picker. On focus the
-   text is restored so typed input is legible while editing. */
-.dq-row-suppress-date-input.dq-row-suppress-date-input-empty:not(:focus)::-webkit-datetime-edit {
-  color: transparent;
-}
+/* The "mm/dd/yyyy" placeholder on an empty cell is now left visible.
+   It used to be hidden by rendering ::-webkit-datetime-edit transparent
+   while the cell had no value and no focus, on the assumption that the
+   calendar button was a separate pseudo-element and would survive.
+
+   It did not. The picker was reliably missing on exactly the rows with
+   a null SUPPRESS_DATE — the state that rule singled out — while typing
+   a date by hand still worked, which is the signature of the control
+   rendering but the button being gone rather than anything being
+   disabled. Declaring the indicator's own display / visibility /
+   opacity / size did not bring it back either, so the transparency was
+   reaching it through a route CSS could not then override.
+
+   Showing "mm/dd/yyyy" on unsuppressed rows is a small cosmetic cost.
+   A calendar button that silently disappears on precisely the rows an
+   operator needs it for — the ones not yet suppressed — is not. If the
+   placeholder is worth hiding again, it needs a technique that cannot
+   touch the button: an overlaid element, or swapping the control to
+   type="text" until it is focused. */
 
 /* Pin the calendar button down explicitly instead of trusting the
    browser default, which is what the rule above was relying on.
