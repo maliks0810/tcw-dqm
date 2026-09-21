@@ -347,7 +347,32 @@ export default function DqMonitorPage() {
       suppressDate: string
     ) => {
       return updateExceptionStatus(exceptionId, status, comments, suppressDate)
-        .then(() => {
+        .then((updated) => {
+          // A rejected write is not the only way this fails. Every guard
+          // inside SP_UPDATE_EXCEPTION_STATUS refuses by matching zero
+          // rows, not by raising: an unknown status, a move to Suppress
+          // with no date, or — the common one — a move to any status
+          // other than New with no comment. The handler still answers
+          // 200 with {"updated": 0}.
+          //
+          // That count was ignored here, so the optimistic patch below
+          // painted the row as saved regardless and the grid disagreed
+          // with the database until the next natural refetch. Hold made
+          // it obvious because it fills in a suppress date of T+2 that
+          // looks like proof the write landed; the same silent failure
+          // applied to every status.
+          //
+          // Treat it exactly like a rejection: skip the patch and pull
+          // authoritative state, so the row visibly snaps back instead
+          // of lying.
+          if (updated === 0) {
+            console.warn(
+              "updateExceptionStatus updated 0 rows — rejected by a server-side guard",
+              { exceptionId, status, hasComment: comments !== "" }
+            );
+            setRefreshTick((n) => n + 1);
+            return;
+          }
           // Optimistic patch — no full-grid refetch. Replicates
           // SP_UPDATE_EXCEPTION_STATUS's derived-column logic:
           //   SUPPRESS_DATE — kept when new status is Suppress;
