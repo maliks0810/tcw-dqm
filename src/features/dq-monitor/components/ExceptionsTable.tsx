@@ -2627,6 +2627,27 @@ const SuppressDateCell = memo(function SuppressDateCell({
       min={minDate}
       max={maxDate}
       disabled={readOnly}
+      // Tell password-manager extensions to leave this field alone.
+      //
+      // They attach their own overlay icon to fields they think are
+      // fillable, anchored to the input's RIGHT EDGE — the exact spot
+      // ::-webkit-calendar-picker-indicator occupies. The overlay
+      // covers the calendar button and swallows the click, while
+      // typing a date still works, which is what made this look like a
+      // browser rendering bug: intermittent, and following the
+      // extension rather than the browser.
+      //
+      // A page cannot override an extension, but these are the opt-out
+      // hooks the major ones document, so they are the available
+      // remedy. Harmless where no extension is installed. If one still
+      // covers the field, the deterministic fallback is our own button
+      // calling input.showPicker(), which does not live at the input's
+      // right edge at all.
+      autoComplete="off"
+      data-form-type="other"
+      data-lpignore="true"
+      data-1p-ignore=""
+      data-bwignore="true"
       onChange={(e) => {
         if (readOnly) return;
         const next = e.target.value;
