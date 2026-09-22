@@ -701,8 +701,11 @@ export default function DqMonitorPage() {
   // customization on a scope persists — re-selecting the same scope
   // does not reseed. Switching to a scope the user hasn't visited yet
   // reseeds using that scope's rule (see the seed effect below).
-  const statusFilterSeededScopesRef = useRef<Set<string>>(
-    new Set<string>()
+  // viewByGroup -> that scope's status selection. Doubles as the
+  // seeded-scopes record: an entry exists iff the scope has been seeded,
+  // so "never seeded" and "no remembered selection" are the same test.
+  const statusFilterByScopeRef = useRef<Map<string, Set<string>>>(
+    new Map<string, Set<string>>()
   );
   const [statusComboOpen, setStatusComboOpen] = useState<boolean>(false);
   const statusComboRef = useRef<HTMLDivElement | null>(null);
@@ -928,29 +931,58 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, []);
 
-  // Seed the status filter per viewByGroup scope, once each. Every
-  // Security-Master-family group (Security Master, Security Master
-  // Benchmark, TOD SOD) and the tree "All" scope default to "every
-  // status except Accept, Suppress, and Research" — those three are
-  // resolved states and clutter the working queue there. Every other
-  // scope defaults to every status ticked. A scope only reseeds the
-  // first time the user visits it, so any later customization
-  // survives navigating away and back.
+  // Status filter, remembered per viewByGroup scope.
+  //
+  // Every Security-Master-family group (Security Master, Security
+  // Master Benchmark, TOD SOD) and the tree "All" scope default to
+  // "every status except Accept, Suppress and Research" — those three
+  // are resolved states and clutter the working queue there. Every
+  // other scope defaults to every status ticked.
+  //
+  // The seeded-scopes ref alone was not enough. statusFilter is ONE
+  // shared set, so seeding a scope only decided what it looked like the
+  // FIRST time it was visited: going Security Master -> Pricing and
+  // Valuation -> Security Master left the filter on whatever Pricing
+  // seeded (all statuses), because the return trip found the scope
+  // already seeded and skipped straight past without restoring
+  // anything. Each scope now keeps its own selection and gets it back
+  // on return.
   useEffect(() => {
     if (exceptionStatusOptions.length === 0) return;
     if (!viewByGroup) return;
-    if (statusFilterSeededScopesRef.current.has(viewByGroup)) return;
+
+    const remembered = statusFilterByScopeRef.current.get(viewByGroup);
+    if (remembered) {
+      setStatusFilter(new Set(remembered));
+      return;
+    }
+
     const excluded =
       inSecurityMasterFamily(viewByGroup) || viewByGroup === "All"
         ? new Set<string>(["Accept", "Suppress", "Research"])
         : new Set<string>();
-    setStatusFilter(
-      new Set<string>(
-        exceptionStatusOptions.filter((s) => !excluded.has(s))
-      )
+    const seeded = new Set<string>(
+      exceptionStatusOptions.filter((s) => !excluded.has(s))
     );
-    statusFilterSeededScopesRef.current.add(viewByGroup);
+    statusFilterByScopeRef.current.set(viewByGroup, new Set(seeded));
+    setStatusFilter(seeded);
   }, [exceptionStatusOptions, viewByGroup]);
+
+  // Record a deliberate change against the scope it was made in.
+  //
+  // Deliberately called from the two checkbox handlers rather than
+  // from an effect watching statusFilter: on a scope switch the effect
+  // would run while statusFilter still holds the OUTGOING scope's set
+  // and would file it under the incoming scope, corrupting exactly
+  // what this is meant to preserve.
+  const rememberStatusFilter = useCallback(
+    (next: Set<string>) => {
+      if (!viewByGroup) return next;
+      statusFilterByScopeRef.current.set(viewByGroup, new Set(next));
+      return next;
+    },
+    [viewByGroup]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1632,10 +1664,7 @@ export default function DqMonitorPage() {
     // doesn't flash empty for the ~200 ms window before seeding.
     // Once seeded, an empty set is a legitimate user choice ("hide
     // all") which we honor.
-    if (
-      statusFilter.size === 0 &&
-      statusFilterSeededScopesRef.current.size === 0
-    ) {
+    if (statusFilter.size === 0 && statusFilterByScopeRef.current.size === 0) {
       return exceptions;
     }
     return exceptions.filter((r) => statusFilter.has(r.status));
@@ -2992,9 +3021,11 @@ export default function DqMonitorPage() {
                           }
                           onChange={() => {
                             setStatusFilter((prev) =>
-                              prev.size === exceptionStatusOptions.length
-                                ? new Set<string>()
-                                : new Set<string>(exceptionStatusOptions)
+                              rememberStatusFilter(
+                                prev.size === exceptionStatusOptions.length
+                                  ? new Set<string>()
+                                  : new Set<string>(exceptionStatusOptions)
+                              )
                             );
                           }}
                         />
@@ -3016,7 +3047,7 @@ export default function DqMonitorPage() {
                                   const next = new Set(prev);
                                   if (next.has(code)) next.delete(code);
                                   else next.add(code);
-                                  return next;
+                                  return rememberStatusFilter(next);
                                 });
                               }}
                             />
