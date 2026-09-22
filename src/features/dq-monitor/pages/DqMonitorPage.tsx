@@ -378,13 +378,13 @@ export default function DqMonitorPage() {
           //   SUPPRESS_DATE — kept when new status is Suppress;
           //     computed 2 business days out for Hold (the operator
           //     does not choose it); blanked otherwise.
-          //   OPEN_DATE — ratchets to today on transition INTO New or
-          //     Hold (the hold clock runs from OPEN_DATE); else
-          //     preserved.
-          //   CLOSE_DATE — set to today for Accept only; cleared for
-          //     New / Suppress / Challenge / Hold / Research; else
-          //     preserved (Override, Complete keep prior). Research is
-          //     open work, not a close.
+          //   OPEN_DATE — write-once. It records the day the exception
+          //     was first surfaced, so an existing value is never
+          //     overwritten; today is stamped only when the row lands
+          //     on New with nothing there yet.
+          //   CLOSE_DATE — a plain function of the status: the two
+          //     CLOSED statuses (Accept, Override) stamp today, every
+          //     other status clears it. No "preserve" case.
           setExceptions((prev) =>
             prev.map((r) => {
               if (r.exceptionId !== exceptionId) return r;
@@ -396,19 +396,9 @@ export default function DqMonitorPage() {
                   ? suppressDate
                   : "";
               const nextOpen =
-                status === "New" || status === "Hold" ? today : r.openDate;
-              let nextClose = r.closeDate;
-              if (status === "Accept") {
-                nextClose = today;
-              } else if (
-                status === "New" ||
-                status === "Suppress" ||
-                status === "Challenge" ||
-                status === "Hold" ||
-                status === "Research"
-              ) {
-                nextClose = "";
-              }
+                r.openDate || (status === "New" ? today : "");
+              const nextClose =
+                status === "Accept" || status === "Override" ? today : "";
               return {
                 ...r,
                 status,
