@@ -381,9 +381,10 @@ export default function DqMonitorPage() {
           //   OPEN_DATE — ratchets to today on transition INTO New or
           //     Hold (the hold clock runs from OPEN_DATE); else
           //     preserved.
-          //   CLOSE_DATE — set to today for Accept / Research;
-          //     cleared for New / Suppress / Challenge / Hold; else
-          //     preserved (Override, Complete keep prior).
+          //   CLOSE_DATE — set to today for Accept only; cleared for
+          //     New / Suppress / Challenge / Hold / Research; else
+          //     preserved (Override, Complete keep prior). Research is
+          //     open work, not a close.
           setExceptions((prev) =>
             prev.map((r) => {
               if (r.exceptionId !== exceptionId) return r;
@@ -397,13 +398,14 @@ export default function DqMonitorPage() {
               const nextOpen =
                 status === "New" || status === "Hold" ? today : r.openDate;
               let nextClose = r.closeDate;
-              if (status === "Accept" || status === "Research") {
+              if (status === "Accept") {
                 nextClose = today;
               } else if (
                 status === "New" ||
                 status === "Suppress" ||
                 status === "Challenge" ||
-                status === "Hold"
+                status === "Hold" ||
+                status === "Research"
               ) {
                 nextClose = "";
               }
