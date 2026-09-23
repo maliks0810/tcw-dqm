@@ -148,14 +148,15 @@ function formatDqmDate(iso: string): string {
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
-// The Security-Master-family rule groups. Three separate gates key off
+// The Security-Master-family rule groups. Four separate gates key off
 // this exact membership — the View by Security toggle, Bulk Assign /
-// Bulk Status, and Save Column Order — and each one previously carried
-// its own copy of the list. They're kept on one shared constant because
-// the copies drifting is a live failure mode: TOD SOD was added to the
-// bulk and column-order gates but missed on the security toggle, so the
-// toggle silently never appeared for that group. Adding a group here
-// now lights up all three together. If a gate ever needs a genuinely
+// Bulk Status, Save Column Order, and the Open Date / Close Date
+// lifecycle columns — and each one previously carried its own copy of
+// the list. They're kept on one shared constant because the copies
+// drifting is a live failure mode: TOD SOD was added to the bulk and
+// column-order gates but missed on the security toggle, so the toggle
+// silently never appeared for that group. Adding a group here now
+// lights up all four together. If a gate ever needs a genuinely
 // different membership, give it its own list rather than widening this
 // one.
 const SECURITY_MASTER_FAMILY_GROUPS = [
@@ -3815,22 +3816,23 @@ export default function DqMonitorPage() {
               // already-archived snapshot.
               readOnly={dqmDate !== ""}
               // Open Date / Close Date columns render at the far right
-              // of the grid only for the two Security Master groups.
+              // of the grid only for the Security-Master-family groups.
               // Every other group keeps the grid focused on triage
               // widgets + RESULT_DATA and doesn't surface the lifecycle
               // dates.
               //
-              // Spelled out rather than routed through
-              // inSecurityMasterFamily() on purpose: this gate covers
-              // the two Security Master groups specifically, not the
-              // wider family, so TOD SOD does NOT get these columns.
-              // The condition previously tested "Security Benchmark
-              // Master" — a transposition that matches no rule group,
-              // so the benchmark group never actually got the columns
-              // despite being intended to. Corrected here.
+              // This used to spell out the two Security Master groups
+              // and deliberately exclude TOD SOD. TOD SOD now wants the
+              // lifecycle dates too, which makes the membership here
+              // identical to SECURITY_MASTER_FAMILY_GROUPS — so it goes
+              // through the shared helper rather than becoming a fourth
+              // hand-maintained copy of the same list. (An earlier
+              // version of the spelled-out form tested "Security
+              // Benchmark Master", a transposition matching no rule
+              // group, which is exactly the drift the constant exists
+              // to prevent.)
               showLifecycleColumns={
-                viewByGroup === "Security Master" ||
-                viewByGroup === "Security Master Benchmark" ||
+                inSecurityMasterFamily(viewByGroup) ||
                 // Open / Close Date are part of the restricted All
                 // column list, and canonicalKeys only emits them when
                 // this is on.
