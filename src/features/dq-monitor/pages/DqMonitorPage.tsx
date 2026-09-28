@@ -8,6 +8,8 @@ import { fetchAssets } from "../services/get-assets";
 import { fetchExceptions } from "../services/get-exceptions";
 import { fetchExceptionsHist } from "../services/get-exceptions-hist";
 import { fetchExceptionHistDates } from "../services/get-exception-hist-dates";
+import { fetchExceptionRuns } from "../services/get-exception-runs";
+import type { ExceptionRun } from "../services/get-exception-runs";
 import { executeSecurityRules } from "../services/execute-rules";
 import { fetchExceptionState } from "../services/get-exception-state";
 import { fetchExceptionStatus } from "../services/get-exception-status";
@@ -34,7 +36,11 @@ import { updateUserPreferences } from "../services/update-user-preferences";
 import { fetchUserPreferences } from "../services/get-user-preferences";
 import { clearUserPreferences } from "../services/clear-user-preferences";
 import { refreshUserPreferences } from "../services/refresh-user-preferences";
-import { useCurrentDmUser, isPrivilegedRole } from "../hooks/use-current-dm-user";
+import {
+  useCurrentDmUser,
+  isPrivilegedRole,
+  canEditExceptions,
+} from "../hooks/use-current-dm-user";
 import "../styles/dq-monitor.css";
 
 // Cap on how many EXCEPTION rows we render in the grid at once. Bigger
@@ -147,6 +153,30 @@ function formatDqmDate(iso: string): string {
   if (!m) return iso;
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
+
+// Run time shown beside the date when a day has more than one run.
+// Same local-time HH:MM rendering as the grid's Exception Time column,
+// so the two can be matched up. "" when the timestamp doesn't parse.
+function formatDqmTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+// One historical entry in the "Exceptions Date" dropdown. batchId pins
+// a specific EXCEPTION_HIST run; null lets the backend pick that day's
+// latest batch.
+type DqmDateOption = {
+  value: string;
+  date: string;
+  batchId: number | null;
+  label: string;
+};
 
 // The Security-Master-family rule groups. Four separate gates key off
 // this exact membership — the View by Security toggle, Bulk Assign /
@@ -648,6 +678,11 @@ export default function DqMonitorPage() {
   // No client-side UTC calculation — the labels come straight from
   // what the two tables actually contain.
   const [dqmDate, setDqmDate] = useState<string>("");
+  // EXCEPTION_HIST batch pinned by the dropdown when a scoped day has
+  // several runs. null = that day's latest batch (or the live table when
+  // dqmDate is ""). Any archived run, even one from the live date, is
+  // history and keeps the grid read-only via dqmDate !== "".
+  const [dqmBatchId, setDqmBatchId] = useState<number | null>(null);
   const [histDates, setHistDates] = useState<string[]>([]);
   // Rule groups with FLAG_STATUS_VISIBLE = true (from SP_GET_RULE_GROUPS).
   // Drives the STATUS filter panel + STATUS column in the Exceptions grid.
@@ -1085,6 +1120,105 @@ export default function DqMonitorPage() {
     return () => controller.abort();
   }, [refreshTick]);
 
+  // Once a rule group, catalog or rule is picked on the LHS tree, the
+  // dropdown lists that scope's runs instead of bare dates: the live
+  // EXCEPTION run plus every EXCEPTION_HIST batch, so it only offers
+  // days on which the scope has data. Kept separate from histDates on
+  // purpose: histDates[0] is the live EXCEPTION date the grid queries
+  // with and must stay global, whatever the scope. null = no scope,
+  // still loading, or the lookup failed — the dropdown falls back to
+  // the unscoped date list rather than going empty.
+  const dateScopeActive =
+    viewByGroup !== "All" || viewByRuleCatalog !== "All" || viewByRule !== "All";
+  const [scopedRuns, setScopedRuns] = useState<ExceptionRun[] | null>(null);
+  useEffect(() => {
+    setScopedRuns(null);
+    if (!dateScopeActive) return;
+    const controller = new AbortController();
+    fetchExceptionRuns(controller.signal, {
+      ruleGroup: viewByGroup,
+      ruleCatalog: viewByRuleCatalog,
+      ruleName: viewByRule,
+    })
+      .then((runs) => setScopedRuns(runs))
+      .catch((e: unknown) => {
+        if (e instanceof Error && e.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, [dateScopeActive, viewByGroup, viewByRuleCatalog, viewByRule, refreshTick]);
+
+  // The live "current" entry (value "") and the entries under it. In a
+  // scope, a day with more than one run — archived batches, plus the
+  // live run on the live date — labels every entry for that day with
+  // its run time so they can be told apart; each archived entry pins
+  // its BATCH_ID. Without a scope the list stays one entry per day and
+  // the backend picks that day's latest batch.
+  const { currentDateLabel, historicalDateOptions } = useMemo(() => {
+    const liveDate = histDates[0] ?? "";
+    if (scopedRuns === null) {
+      return {
+        currentDateLabel: liveDate ? formatDqmDate(liveDate) : "Current",
+        historicalDateOptions: histDates
+          .filter((d) => d !== liveDate)
+          .map<DqmDateOption>((d) => ({
+            value: d,
+            date: d,
+            batchId: null,
+            label: formatDqmDate(d),
+          })),
+      };
+    }
+    const archived = scopedRuns.filter((r) => r.batchId !== null);
+    const runsOnDay = (d: string) =>
+      archived.filter((r) => r.exceptionDate === d).length +
+      (d === liveDate ? 1 : 0);
+    const live = scopedRuns.find((r) => r.batchId === null);
+    const liveTime =
+      liveDate && runsOnDay(liveDate) > 1 && live
+        ? formatDqmTime(live.exceptionTime)
+        : "";
+    return {
+      currentDateLabel: liveDate
+        ? `${formatDqmDate(liveDate)}${liveTime ? ` ${liveTime}` : ""}`
+        : "Current",
+      historicalDateOptions: archived.map<DqmDateOption>((r) => {
+        const time =
+          runsOnDay(r.exceptionDate) > 1 ? formatDqmTime(r.exceptionTime) : "";
+        return {
+          value: `${r.exceptionDate}#${r.batchId}`,
+          date: r.exceptionDate,
+          batchId: r.batchId,
+          label: `${formatDqmDate(r.exceptionDate)}${time ? ` ${time}` : ""}`,
+        };
+      }),
+    };
+  }, [scopedRuns, histDates]);
+
+  const dqmSelectValue =
+    dqmDate === "" ? "" : dqmBatchId === null ? dqmDate : `${dqmDate}#${dqmBatchId}`;
+  const selectDqmOption = useCallback(
+    (value: string) => {
+      const option = historicalDateOptions.find((o) => o.value === value);
+      setDqmDate(option ? option.date : "");
+      setDqmBatchId(option ? option.batchId : null);
+    },
+    [historicalDateOptions]
+  );
+
+  // Changing the tree scope can drop the picked entry from the list.
+  // Keep the same day when the new list still has it (its latest run),
+  // otherwise fall back to the live date instead of querying a day the
+  // new scope has nothing for. Waits for the scoped list to land so a
+  // half-loaded scope never resets a valid pick.
+  useEffect(() => {
+    if (dateScopeActive && scopedRuns === null) return;
+    if (dqmSelectValue === "") return;
+    if (historicalDateOptions.some((o) => o.value === dqmSelectValue)) return;
+    const sameDay = historicalDateOptions.find((o) => o.date === dqmDate);
+    setDqmDate(sameDay ? sameDay.date : "");
+    setDqmBatchId(sameDay ? sameDay.batchId : null);
+  }, [dateScopeActive, scopedRuns, historicalDateOptions, dqmSelectValue, dqmDate]);
+
   const filteredRuleOptions = (() => {
     if (!ruleQuery) return ruleOptions;
     const needle = ruleQuery.toLowerCase();
@@ -1448,7 +1582,8 @@ export default function DqMonitorPage() {
             g,
             exceptionState,
             assignToFilter,
-            ruleNameSearchApplied
+            ruleNameSearchApplied,
+            dqmBatchId
           )
         : fetchExceptions(
             assetArg,
@@ -1538,6 +1673,7 @@ export default function DqMonitorPage() {
     ruleNameSearchApplied,
     treeSelected,
     dqmDate,
+    dqmBatchId,
     // Picking a security group has to refetch: the filter is applied
     // server-side by a different query, not by narrowing rows already
     // in the browser.
@@ -1717,10 +1853,16 @@ export default function DqMonitorPage() {
   // the current-day EXCEPTION table — historical EXCEPTION_HIST days
   // must stay read-only (see ExceptionsTable readOnly wiring). Any
   // failing criterion hides the button and forces its panel closed.
+  //
+  // exceptionsReadOnly locks the whole Exceptions grid. A historical
+  // date locks it for everyone; a role outside canEditExceptions
+  // (anything but DM_ADMIN / DM_USER / IT_SUPPORT) locks it on every
+  // date, exactly as if a historical date were picked.
+  const exceptionsReadOnly = dqmDate !== "" || !canEditExceptions(dmRole);
   const bulkScopeAllowed =
     inSecurityMasterFamily(viewByGroup) &&
     viewMode !== "security" &&
-    dqmDate === "";
+    !exceptionsReadOnly;
 
   // Bulk Assign stays restricted to privileged roles (DM_ADMIN,
   // IT_SUPPORT, IT_USER via isPrivilegedRole): reassigning other
@@ -2632,8 +2774,8 @@ export default function DqMonitorPage() {
                   <select
                     id="dq-dqm-date-select"
                     className="dq-sidebar-select"
-                    value={dqmDate}
-                    onChange={(e) => setDqmDate(e.target.value)}
+                    value={dqmSelectValue}
+                    onChange={(e) => selectDqmOption(e.target.value)}
                   >
                     {/* histDates[0] is MAX(EXCEPTION.EXCEPTION_DATE)
                         from the backend union — the "current" label
@@ -2643,15 +2785,13 @@ export default function DqMonitorPage() {
                         param), which the SP defaults to today. When
                         EXCEPTION is empty (no live rows), the top
                         entry falls back to "Current" so the option
-                        isn't blank. */}
-                    <option value="">
-                      {histDates.length > 0
-                        ? formatDqmDate(histDates[0])
-                        : "Current"}
-                    </option>
-                    {histDates.slice(1).map((d) => (
-                      <option key={d} value={d}>
-                        {formatDqmDate(d)}
+                        isn't blank. It is the only editable entry;
+                        every other one, including an archived run
+                        from the live date, is read-only history. */}
+                    <option value="">{currentDateLabel}</option>
+                    {historicalDateOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
                       </option>
                     ))}
                   </select>
@@ -3813,8 +3953,10 @@ export default function DqMonitorPage() {
               // Any non-empty dqmDate means the grid is showing
               // EXCEPTION_HIST for a prior day. Historical rows must
               // stay read-only — mutating them would rewrite an
-              // already-archived snapshot.
-              readOnly={dqmDate !== ""}
+              // already-archived snapshot. Operators whose role is not
+              // DM_ADMIN / DM_USER / IT_SUPPORT get the same lock on
+              // every date (see exceptionsReadOnly).
+              readOnly={exceptionsReadOnly}
               // Open Date / Close Date columns render at the far right
               // of the grid only for the Security-Master-family groups.
               // Every other group keeps the grid focused on triage

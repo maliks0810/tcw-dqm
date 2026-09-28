@@ -96,10 +96,11 @@ function toExceptionRow(e: ApiException): ExceptionRow {
   };
 }
 
-// Read-only view over EXCEPTION_HIST for a specific ISO date. The backend
-// picks the LATEST BATCH_ID for that day within the caller's
-// rule/catalog/group scope, so the grid reflects the last archived
-// snapshot for the LHS tree selection.
+// Read-only view over EXCEPTION_HIST for a specific ISO date. Without a
+// batchId the backend picks the LATEST BATCH_ID for that day within the
+// caller's rule/catalog/group scope, so the grid reflects the last
+// archived snapshot for the LHS tree selection; with one, it reads that
+// specific run.
 export async function fetchExceptionsHist(
   exceptionDate: string,
   assetId: string,
@@ -112,10 +113,12 @@ export async function fetchExceptionsHist(
   ruleGroup?: string,
   exceptionState?: string,
   assignTo?: string,
-  ruleNamePattern?: string
+  ruleNamePattern?: string,
+  batchId?: number | null
 ): Promise<ExceptionRow[]> {
   const params = new URLSearchParams();
   params.set("exception_date", exceptionDate);
+  if (batchId != null) params.set("batch_id", String(batchId));
   if (assetId) params.set("asset_id", assetId);
   if (exceptionType) params.set("exception_type", exceptionType);
   if (severity && severity !== "All") params.set("severity", severity);

@@ -52,6 +52,16 @@ export function isPrivilegedRole(role: string): boolean {
   );
 }
 
+// DM_USER.ROLE values allowed to edit the Exceptions grid at all
+// (STATUS, SUPPRESS DATE, ASSIGN TO, COMMENTS). Every other role —
+// IT_USER, NULL, "", unknown user, or a role still loading — gets the
+// same locked grid as a historical Exceptions Date. Deliberately not
+// derived from isPrivilegedRole: IT_USER is privileged there but
+// read-only here, and DM_USER is the reverse.
+export function canEditExceptions(role: string): boolean {
+  return role === "DM_ADMIN" || role === "DM_USER" || role === "IT_SUPPORT";
+}
+
 const DEV_USER = "Joann Banks";
 
 // Parse the flag once at module load. Defaults to true when the var
