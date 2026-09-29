@@ -1148,11 +1148,20 @@ export default function DqMonitorPage() {
   }, [dateScopeActive, viewByGroup, viewByRuleCatalog, viewByRule, refreshTick]);
 
   // The live "current" entry (value "") and the entries under it. In a
-  // scope, a day with more than one run — archived batches, plus the
-  // live run on the live date — labels every entry for that day with
-  // its run time so they can be told apart; each archived entry pins
-  // its BATCH_ID. Without a scope the list stays one entry per day and
-  // the backend picks that day's latest batch.
+  // scope, every entry carries its run time and each archived entry
+  // pins its BATCH_ID.
+  //
+  // The time used to be shown only on days with more than one run, on
+  // the reasoning that it is what tells two same-day entries apart. But
+  // the time is worth knowing on its own — which run you are looking at
+  // is useful even when there is only one — and suppressing it made the
+  // dropdown inconsistent: the same day gained and lost its time as
+  // later batches arrived. Always showing it keeps every entry
+  // self-describing.
+  //
+  // Without a scope the list stays one entry per day with no time,
+  // because histDates carries dates only (no run times to show) and the
+  // backend picks that day's latest batch.
   const { currentDateLabel, historicalDateOptions } = useMemo(() => {
     const liveDate = histDates[0] ?? "";
     if (scopedRuns === null) {
@@ -1169,21 +1178,16 @@ export default function DqMonitorPage() {
       };
     }
     const archived = scopedRuns.filter((r) => r.batchId !== null);
-    const runsOnDay = (d: string) =>
-      archived.filter((r) => r.exceptionDate === d).length +
-      (d === liveDate ? 1 : 0);
     const live = scopedRuns.find((r) => r.batchId === null);
-    const liveTime =
-      liveDate && runsOnDay(liveDate) > 1 && live
-        ? formatDqmTime(live.exceptionTime)
-        : "";
+    // formatDqmTime returns "" for a missing or unparseable timestamp,
+    // so the label falls back to date-only rather than rendering junk.
+    const liveTime = liveDate && live ? formatDqmTime(live.exceptionTime) : "";
     return {
       currentDateLabel: liveDate
         ? `${formatDqmDate(liveDate)}${liveTime ? ` ${liveTime}` : ""}`
         : "Current",
       historicalDateOptions: archived.map<DqmDateOption>((r) => {
-        const time =
-          runsOnDay(r.exceptionDate) > 1 ? formatDqmTime(r.exceptionTime) : "";
+        const time = formatDqmTime(r.exceptionTime);
         return {
           value: `${r.exceptionDate}#${r.batchId}`,
           date: r.exceptionDate,
