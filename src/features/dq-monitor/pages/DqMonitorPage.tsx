@@ -529,6 +529,15 @@ export default function DqMonitorPage() {
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
   const [exceptionsLimitExceeded, setExceptionsLimitExceeded] = useState(false);
+  // Which ceiling the over-limit banner should name. The fetch applies
+  // EXCEPTION_LIMIT_ALL at tree-'All' and EXCEPTION_LIMIT everywhere
+  // else, so the banner cannot hard-code one without contradicting the
+  // other - it used to always print EXCEPTION_LIMIT (5000) even when
+  // 7000 was the figure actually enforced. Recorded by the fetch rather
+  // than recomputed here, so the number shown is by construction the
+  // one that was applied.
+  const [exceptionsLimitApplied, setExceptionsLimitApplied] =
+    useState<number>(EXCEPTION_LIMIT);
 
   const [refreshTick, setRefreshTick] = useState(0);
   // Two event flavors reach the footer: per-asset security exceptions
@@ -749,13 +758,20 @@ export default function DqMonitorPage() {
     viewByRuleCatalog === "All" &&
     viewByRule === "All";
 
-  // DM_USER and DM_ADMIN get a deliberately narrow 'All': rows limited
-  // to the Security-Master-family groups, and a fixed column set (see
-  // ALL_SCOPE_COLUMN_KEYS). Every other role sees All unrestricted -
-  // every group they can access, every column. Note this pairs the
-  // least-privileged role with the primary admin one; that is the
-  // stated rule, not an oversight about isPrivilegedRole, which groups
-  // DM_ADMIN with IT_SUPPORT / IT_USER for a different purpose.
+  // DM_USER and DM_ADMIN get a fixed COLUMN set at 'All' (see
+  // ALL_SCOPE_COLUMN_KEYS). Every other role sees All with every
+  // column. Note this pairs the least-privileged role with the primary
+  // admin one; that is the stated rule, not an oversight about
+  // isPrivilegedRole, which groups DM_ADMIN with IT_SUPPORT / IT_USER
+  // for a different purpose.
+  //
+  // Columns ONLY. This used to narrow the row set to the
+  // Security-Master-family groups as well, which made the Number of
+  // Exceptions panel report 0 for every other group. All roles now see
+  // every group they are authorised for; a fixed column list is what
+  // keeps the grid legible when the rows span groups with very
+  // different RESULT_DATA shapes, and spanning MORE groups is a reason
+  // to keep it, not to drop it.
   //
   // Scoped to All only: drilling into a group or catalog behaves
   // exactly as before for every role.
@@ -1563,15 +1579,21 @@ export default function DqMonitorPage() {
     // to RULE_GROUP_AUTHORIZATION on its own; naming each group
     // explicitly is what keeps 'All' to the operator's own groups
     // rather than the whole database.
-    // At restricted All the row set is limited to the Security-Master
-    // family, intersected with what the operator is authorised for -
-    // authorisation still wins, this only narrows further. The LHS tree
-    // and the Number of Exceptions panel are untouched and keep
-    // covering every group, as specified.
-    const allScopeGroups = allScopeRestricted
-      ? ruleGroupOptions.filter((g) => inSecurityMasterFamily(g))
-      : ruleGroupOptions;
-    const groupsToFetch = isAllFetchScope ? allScopeGroups : [ruleGroupArg];
+    // Every group the operator is authorised for, for every role.
+    //
+    // DM_USER and DM_ADMIN previously had this narrowed to the
+    // Security-Master family. That silently broke the Number of
+    // Exceptions panel: its 'All' branch tallies the rows this fan-out
+    // returns, so the groups never fetched (Pricing and Valuation, Cash
+    // Control, Investment Operations, Trading Agreements) could only
+    // ever report 0 - indistinguishable from genuinely having none.
+    //
+    // ruleGroupOptions comes from SP_GET_RULE_GROUPS_FOR_USER, i.e.
+    // RULE_GROUP_AUTHORIZATION, so authorisation is still the only
+    // thing deciding what an operator sees here. The fixed column set
+    // at All is a separate concern and still applies - see
+    // allScopeRestricted.
+    const groupsToFetch = isAllFetchScope ? ruleGroupOptions : [ruleGroupArg];
     const fetchForGroup = (g: string | undefined) =>
       dqmDate
         ? fetchExceptionsHist(
@@ -1649,6 +1671,7 @@ export default function DqMonitorPage() {
       .then((rows) => {
         if (rows.length > limit) {
           setExceptions([]);
+          setExceptionsLimitApplied(limit);
           setExceptionsLimitExceeded(true);
         } else {
           setExceptions(rows);
@@ -1687,11 +1710,6 @@ export default function DqMonitorPage() {
     // All scope bails on the empty-list guard and never retries once
     // the groups land. Set once per operator, so it does not churn.
     ruleGroupOptions,
-    // Decides which groups the All fan-out covers. Derived from dmRole,
-    // which also arrives asynchronously, so the fetch has to re-run
-    // when it resolves - otherwise a DM_USER's first All load queries
-    // every authorised group instead of the Security-Master family.
-    allScopeRestricted,
     // Track the LHS-dropdown latest date so a late-arriving
     // MAX(EXCEPTION_DATE) (e.g. on holidays when histDates resolves
     // after the initial exceptions fetch) triggers a re-fetch with
@@ -3101,7 +3119,8 @@ export default function DqMonitorPage() {
                 className="dq-section-subtitle"
                 style={{ color: "crimson", fontWeight: 700 }}
               >
-                More than {EXCEPTION_LIMIT} exceptions — refine your filters
+                More than {exceptionsLimitApplied} exceptions — refine your
+                filters
               </div>
             )}
 
