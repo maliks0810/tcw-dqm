@@ -58,14 +58,17 @@ const EXCEPTION_LIMIT: number = (() => {
 // Separate, higher cap for the tree's "All" scope, which unions every
 // rule group the operator is authorised for and so legitimately returns
 // more than any single-group view. Configured via
-// REACT_APP_EXCEPTION_LIMIT_ALL with a 7000 fallback. Kept as its own
-// knob rather than raising EXCEPTION_LIMIT for everyone: a single rule
-// returning 6000 rows is still a sign the operator should narrow down,
-// whereas All returning 6000 is just All doing its job.
+// REACT_APP_EXCEPTION_LIMIT_ALL with a 20000 fallback — matching the
+// value every env file ships, so a missing or non-numeric var does not
+// quietly enforce a tighter cap than the deployed config asks for.
+// Kept as its own knob rather than raising EXCEPTION_LIMIT for
+// everyone: a single rule returning 10000 rows is still a sign the
+// operator should narrow down, whereas All returning 10000 is just All
+// doing its job — it unions every authorised group.
 const EXCEPTION_LIMIT_ALL: number = (() => {
   const raw = process.env.REACT_APP_EXCEPTION_LIMIT_ALL;
   const n = raw ? parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 7000;
+  return Number.isFinite(n) && n > 0 ? n : 20000;
 })();
 
 // App version for the footer badge. Read from REACT_APP_VERSION, which
@@ -533,7 +536,7 @@ export default function DqMonitorPage() {
   // EXCEPTION_LIMIT_ALL at tree-'All' and EXCEPTION_LIMIT everywhere
   // else, so the banner cannot hard-code one without contradicting the
   // other - it used to always print EXCEPTION_LIMIT (5000) even when
-  // 7000 was the figure actually enforced. Recorded by the fetch rather
+  // 20000 was the figure actually enforced. Recorded by the fetch rather
   // than recomputed here, so the number shown is by construction the
   // one that was applied.
   const [exceptionsLimitApplied, setExceptionsLimitApplied] =
